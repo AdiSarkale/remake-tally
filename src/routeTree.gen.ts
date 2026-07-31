@@ -24,6 +24,7 @@ import { Route as MastersSuppliersRouteImport } from './routes/masters.suppliers
 import { Route as MastersWarehousesRouteImport } from './routes/masters.warehouses'
 import { Route as ProcurementOrdersRouteImport } from './routes/procurement.orders'
 import { Route as ProcurementRequisitionsRouteImport } from './routes/procurement.requisitions'
+import { Route as SalesDeliveriesRouteImport } from './routes/sales.deliveries'
 import { Route as SalesOrdersRouteImport } from './routes/sales.orders'
 import { Route as SalesQuotationsRouteImport } from './routes/sales.quotations'
 
@@ -102,6 +103,11 @@ const ProcurementRequisitionsRoute = ProcurementRequisitionsRouteImport.update({
   path: '/procurement/requisitions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SalesDeliveriesRoute = SalesDeliveriesRouteImport.update({
+  id: '/sales/deliveries',
+  path: '/sales/deliveries',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SalesOrdersRoute = SalesOrdersRouteImport.update({
   id: '/sales/orders',
   path: '/sales/orders',
@@ -129,6 +135,7 @@ export interface FileRoutesByFullPath {
   '/masters/warehouses': typeof MastersWarehousesRoute
   '/procurement/orders': typeof ProcurementOrdersRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
+  '/sales/deliveries': typeof SalesDeliveriesRoute
   '/sales/orders': typeof SalesOrdersRoute
   '/sales/quotations': typeof SalesQuotationsRoute
 }
@@ -148,6 +155,7 @@ export interface FileRoutesByTo {
   '/masters/warehouses': typeof MastersWarehousesRoute
   '/procurement/orders': typeof ProcurementOrdersRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
+  '/sales/deliveries': typeof SalesDeliveriesRoute
   '/sales/orders': typeof SalesOrdersRoute
   '/sales/quotations': typeof SalesQuotationsRoute
 }
@@ -168,6 +176,7 @@ export interface FileRoutesById {
   '/masters/warehouses': typeof MastersWarehousesRoute
   '/procurement/orders': typeof ProcurementOrdersRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
+  '/sales/deliveries': typeof SalesDeliveriesRoute
   '/sales/orders': typeof SalesOrdersRoute
   '/sales/quotations': typeof SalesQuotationsRoute
 }
@@ -189,6 +198,7 @@ export interface FileRouteTypes {
     | '/masters/warehouses'
     | '/procurement/orders'
     | '/procurement/requisitions'
+    | '/sales/deliveries'
     | '/sales/orders'
     | '/sales/quotations'
   fileRoutesByTo: FileRoutesByTo
@@ -208,6 +218,7 @@ export interface FileRouteTypes {
     | '/masters/warehouses'
     | '/procurement/orders'
     | '/procurement/requisitions'
+    | '/sales/deliveries'
     | '/sales/orders'
     | '/sales/quotations'
   id:
@@ -227,6 +238,7 @@ export interface FileRouteTypes {
     | '/masters/warehouses'
     | '/procurement/orders'
     | '/procurement/requisitions'
+    | '/sales/deliveries'
     | '/sales/orders'
     | '/sales/quotations'
   fileRoutesById: FileRoutesById
@@ -247,6 +259,7 @@ export interface RootRouteChildren {
   MastersWarehousesRoute: typeof MastersWarehousesRoute
   ProcurementOrdersRoute: typeof ProcurementOrdersRoute
   ProcurementRequisitionsRoute: typeof ProcurementRequisitionsRoute
+  SalesDeliveriesRoute: typeof SalesDeliveriesRoute
   SalesOrdersRoute: typeof SalesOrdersRoute
   SalesQuotationsRoute: typeof SalesQuotationsRoute
 }
@@ -358,6 +371,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProcurementRequisitionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sales/deliveries': {
+      id: '/sales/deliveries'
+      path: '/sales/deliveries'
+      fullPath: '/sales/deliveries'
+      preLoaderRoute: typeof SalesDeliveriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sales/orders': {
       id: '/sales/orders'
       path: '/sales/orders'
@@ -391,6 +411,7 @@ const rootRouteChildren: RootRouteChildren = {
   MastersWarehousesRoute: MastersWarehousesRoute,
   ProcurementOrdersRoute: ProcurementOrdersRoute,
   ProcurementRequisitionsRoute: ProcurementRequisitionsRoute,
+  SalesDeliveriesRoute: SalesDeliveriesRoute,
   SalesOrdersRoute: SalesOrdersRoute,
   SalesQuotationsRoute: SalesQuotationsRoute,
 }

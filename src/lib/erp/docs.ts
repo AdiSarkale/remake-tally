@@ -444,7 +444,7 @@ export function setSoStatus(id: string, status: SalesOrder["status"], username: 
 
 export interface DeliveryDraft {
   date: string;
-  soId?: string;
+  soId?: string | undefined;
   customerId: string;
   warehouseId: string;
   vehicleNo: string;
@@ -452,7 +452,7 @@ export interface DeliveryDraft {
   lrNumber: string;
   remarks: string;
   foc: boolean;
-  focPurpose?: string;
+  focPurpose?: string | undefined;
   lines: { productId: string; quantity: number }[];
 }
 
