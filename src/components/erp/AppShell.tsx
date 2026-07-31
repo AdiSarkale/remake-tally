@@ -159,6 +159,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { dark, toggle } = useTheme();
   const [mobileOpen, setMobileOpen] = useState(false);
   const company = useErp((s) => s.settings.name);
+  const financialYear = useErp((s) => s.settings.financialYear);
 
   useEffect(() => {
     if (ready && !session) void navigate({ to: "/login" });
@@ -232,7 +233,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           })}
         </nav>
         <div className="border-t border-sidebar-border px-4 py-3 text-[11px] text-sidebar-foreground/55">
-          FY {useErpYear()} · v1.0
+          FY {financialYear} · v1.0
         </div>
       </aside>
 
@@ -278,8 +279,4 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
     </div>
   );
-}
-
-function useErpYear() {
-  return useErp((s) => s.settings.financialYear);
 }
