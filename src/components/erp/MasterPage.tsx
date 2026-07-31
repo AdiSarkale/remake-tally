@@ -119,10 +119,10 @@ export function MasterPage({
       if (editing) {
         const idx = list.findIndex((r) => r.id === editing.id);
         if (idx >= 0) list[idx] = { ...(list[idx] as Row), ...payload } as Row;
-        logAudit(s as ErpState, session?.username ?? "system", "UPDATE", entity, String(payload.name ?? editing.id));
+        logAudit(s as ErpState, session?.username ?? "system", "UPDATE", entity, String(payload['name'] ?? editing.id));
       } else {
         list.unshift({ id: uid(), ...payload } as Row);
-        logAudit(s as ErpState, session?.username ?? "system", "CREATE", entity, String(payload.name ?? ""));
+        logAudit(s as ErpState, session?.username ?? "system", "CREATE", entity, String(payload['name'] ?? ""));
       }
       return s;
     });
