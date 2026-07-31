@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import ItemKind, MovementType, Role
+from app.models import InvoiceStatus, ItemKind, MovementType, Role
 
 
 class ORMModel(BaseModel):
@@ -184,3 +184,61 @@ class SettingsIn(BaseModel):
 
 class SettingsOut(SettingsIn, ORMModel):
     id: int
+
+
+# ---------- Sales invoices ----------
+class InvoiceLineIn(BaseModel):
+    product_id: str
+    quantity: float = Field(gt=0)
+    rate: float = Field(ge=0)
+    discount_percent: float = Field(default=0, ge=0, le=100)
+
+
+class InvoiceLineOut(ORMModel):
+    product_id: str
+    product_name: str
+    hsn: str
+    unit: str
+    quantity: float
+    rate: float
+    discount_percent: float
+    gst_rate: float
+    taxable: float
+    cgst: float
+    sgst: float
+    igst: float
+    total: float
+
+
+class InvoiceIn(BaseModel):
+    invoice_date: date
+    customer_id: str
+    po_reference: str = ""
+    notes: str = ""
+    status: InvoiceStatus = InvoiceStatus.unpaid
+    lines: list[InvoiceLineIn] = Field(min_length=1)
+
+
+class InvoiceOut(ORMModel):
+    id: str
+    invoice_no: str
+    invoice_date: date
+    customer_id: str
+    customer_name: str
+    po_reference: str
+    notes: str
+    inter_state: bool
+    sub_total: float
+    discount_total: float
+    taxable_total: float
+    cgst: float
+    sgst: float
+    igst: float
+    round_off: float
+    grand_total: float
+    status: InvoiceStatus
+    lines: list[InvoiceLineOut]
+
+
+class InvoiceStatusIn(BaseModel):
+    status: InvoiceStatus

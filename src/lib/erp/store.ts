@@ -1,7 +1,9 @@
 import { useRef, useSyncExternalStore } from "react";
 import { buildSeedState } from "./seed";
+import { buildLine, stateCode, totalsFor, type LineDraft } from "./gst";
 import type {
   ErpState,
+  Invoice,
   InventoryMovement,
   ItemKind,
   MovementType,
@@ -9,7 +11,7 @@ import type {
   ScrapEntry,
 } from "./types";
 
-const STORAGE_KEY = "minitally-erp-state-v1";
+const STORAGE_KEY = "minitally-erp-state-v2";
 
 let serverSnapshot: ErpState | null = null;
 function getSeed(): ErpState {
@@ -226,6 +228,140 @@ export function stockMovement(input: MoveInput, username: string) {
     return s;
   });
 }
+
+/* ------------------------------------------------------------------ */
+/* Sales invoices                                                       */
+/* ------------------------------------------------------------------ */
+
+/** Next sequential invoice number, e.g. SPW/26-27/0007 — gapless per prefix. */
+export function nextInvoiceNo(s: ErpState) {
+  const prefix = s.settings.invoicePrefix || "INV-";
+  const nums = s.invoices
+    .filter((i) => i.invoiceNo.startsWith(prefix))
+    .map((i) => Number(i.invoiceNo.slice(prefix.length).replace(/\D/g, "")))
+    .filter((n) => Number.isFinite(n));
+  return `${prefix}${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(4, "0")}`;
+}
+
+export interface InvoiceDraft {
+  date: string;
+  customerId: string;
+  poReference: string;
+  notes: string;
+  status: Invoice["status"];
+  lines: LineDraft[];
+}
+
+/** Signature used to block accidental duplicate submissions of the same bill. */
+function invoiceSignature(customerId: string, date: string, lines: LineDraft[]) {
+  return [
+    customerId,
+    date,
+    ...lines
+      .map((l) => `${l.productId}:${l.quantity}:${l.rate}:${l.discountPercent}`)
+      .sort(),
+  ].join("|");
+}
+
+export function createInvoice(draft: InvoiceDraft, username: string): string {
+  let invoiceNo = "";
+  update((s) => {
+    const customer = s.customers.find((c) => c.id === draft.customerId);
+    if (!customer) throw new Error("Select a customer");
+    const lines = draft.lines.filter((l) => l.productId && l.quantity > 0);
+    if (!lines.length) throw new Error("Add at least one line item");
+    if (new Set(lines.map((l) => l.productId)).size !== lines.length)
+      throw new Error("The same product is listed twice — merge those lines");
+
+    // Duplicate prevention: same customer, same date, identical lines.
+    const signature = invoiceSignature(draft.customerId, draft.date, lines);
+    const clash = s.invoices.find(
+      (i) =>
+        invoiceSignature(
+          i.customerId,
+          i.date,
+          i.lines.map((l) => ({
+            productId: l.productId,
+            quantity: l.quantity,
+            rate: l.rate,
+            discountPercent: l.discountPercent,
+          })),
+        ) === signature,
+    );
+    if (clash) throw new Error(`Identical invoice already exists (${clash.invoiceNo})`);
+
+    const interState = stateCode(customer.gstNumber) !== stateCode(s.settings.gstNumber);
+    const built = lines.map((l) => {
+      const product = s.products.find((p) => p.id === l.productId);
+      if (!product) throw new Error("Product not found");
+      if (l.quantity > product.stock)
+        throw new Error(`Only ${product.stock} ${product.unit} of ${product.name} in stock`);
+      return buildLine(product, l, interState);
+    });
+
+    invoiceNo = nextInvoiceNo(s);
+    if (s.invoices.some((i) => i.invoiceNo === invoiceNo)) throw new Error("Invoice number already used");
+
+    const invoice: Invoice = {
+      id: uid(),
+      invoiceNo,
+      date: draft.date,
+      customerId: customer.id,
+      customerName: customer.name,
+      customerGst: customer.gstNumber,
+      customerAddress: customer.address,
+      placeOfSupply: stateCode(customer.gstNumber),
+      interState,
+      poReference: draft.poReference,
+      notes: draft.notes,
+      lines: built,
+      ...totalsFor(built),
+      status: draft.status,
+      createdBy: username,
+    };
+
+    // Finished goods leave stock when the invoice is raised.
+    built.forEach((l) =>
+      applyMovement(s, {
+        itemKind: "product",
+        itemId: l.productId,
+        type: "OUT",
+        quantity: l.quantity,
+        reference: invoiceNo,
+        reason: `Sales invoice — ${customer.name}`,
+        date: invoice.date,
+        userId: username,
+      }),
+    );
+
+    s.invoices.unshift(invoice);
+    logAudit(s, username, "CREATE", "invoice", `${invoiceNo} · ${customer.name} · ₹${invoice.grandTotal}`);
+    return s;
+  });
+  return invoiceNo;
+}
+
+export function setInvoiceStatus(id: string, status: Invoice["status"], username: string) {
+  update((s) => {
+    const inv = s.invoices.find((i) => i.id === id);
+    if (!inv) throw new Error("Invoice not found");
+    inv.status = status;
+    logAudit(s, username, "UPDATE", "invoice", `${inv.invoiceNo} marked ${status}`);
+    return s;
+  });
+}
+
+export function salesStats(s: ErpState) {
+  const month = today().slice(0, 7);
+  const monthInvoices = s.invoices.filter((i) => i.date.startsWith(month));
+  return {
+    count: s.invoices.length,
+    monthValue: monthInvoices.reduce((t, i) => t + i.grandTotal, 0),
+    monthTax: monthInvoices.reduce((t, i) => t + i.cgst + i.sgst + i.igst, 0),
+    outstanding: s.invoices.filter((i) => i.status === "Unpaid").reduce((t, i) => t + i.grandTotal, 0),
+  };
+}
+
 
 /* ------------------------------------------------------------------ */
 /* Derived metrics                                                      */

@@ -110,6 +110,49 @@ export interface ScrapEntry {
   remarks: string;
 }
 
+export interface InvoiceLine {
+  productId: string;
+  productName: string;
+  hsnCode: string;
+  unit: string;
+  quantity: number;
+  rate: number;
+  discountPercent: number;
+  gstPercent: number;
+  taxable: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  total: number;
+}
+
+export type InvoiceStatus = "Paid" | "Unpaid";
+
+export interface Invoice {
+  id: string;
+  invoiceNo: string;
+  date: string;
+  customerId: string;
+  customerName: string;
+  customerGst: string;
+  customerAddress: string;
+  placeOfSupply: string;
+  interState: boolean;
+  poReference: string;
+  notes: string;
+  lines: InvoiceLine[];
+  subTotal: number;
+  discountTotal: number;
+  taxable: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+  roundOff: number;
+  grandTotal: number;
+  status: InvoiceStatus;
+  createdBy: string;
+}
+
 export interface AuditLog {
   id: string;
   at: string;
@@ -137,13 +180,14 @@ export interface ErpState {
   movements: InventoryMovement[];
   production: ProductionEntry[];
   scrap: ScrapEntry[];
+  invoices: Invoice[];
   audit: AuditLog[];
   settings: CompanySettings;
 }
 
 export const ROLE_PERMISSIONS: Record<Role, string[]> = {
-  Admin: ["masters", "inventory", "production", "scrap", "settings", "reports"],
-  Accountant: ["masters", "inventory", "reports"],
+  Admin: ["masters", "inventory", "production", "scrap", "sales", "settings", "reports"],
+  Accountant: ["masters", "inventory", "sales", "reports"],
   Operator: ["production", "scrap", "inventory"],
 };
 

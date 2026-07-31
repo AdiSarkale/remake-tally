@@ -8,6 +8,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  ReceiptText,
   Recycle,
   Search,
   Settings,
@@ -62,6 +63,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { to: "/inventory", label: "Inventory", icon: Boxes, area: "inventory" },
       { to: "/production", label: "Production", icon: Factory, area: "production" },
       { to: "/scrap", label: "Scrap", icon: Recycle, area: "scrap" },
+      { to: "/invoices", label: "Sales Invoices", icon: ReceiptText, area: "sales" },
     ],
   },
   {
@@ -98,6 +100,7 @@ function GlobalSearch() {
     customers: s.customers,
     suppliers: s.suppliers,
     production: s.production,
+    invoices: s.invoices,
   }));
 
   const results = useMemo(() => {
@@ -119,6 +122,9 @@ function GlobalSearch() {
     data.production
       .filter((p) => p.batchNo.toLowerCase().includes(term))
       .forEach((p) => hits.push({ label: p.batchNo, sub: `Batch · ${p.productName}`, to: "/production" }));
+    data.invoices
+      .filter((i) => `${i.invoiceNo} ${i.customerName} ${i.poReference}`.toLowerCase().includes(term))
+      .forEach((i) => hits.push({ label: i.invoiceNo, sub: `Invoice · ${i.customerName}`, to: "/invoices" }));
     return hits.slice(0, 8);
   }, [q, data]);
 
