@@ -174,3 +174,57 @@ class CompanySettings(Base):
     address: Mapped[str] = mapped_column(Text, default="")
     invoice_prefix: Mapped[str] = mapped_column(String(16), default="INV")
     financial_year: Mapped[str] = mapped_column(String(16), default="2026-2027")
+
+
+class InvoiceStatus(str, enum.Enum):
+    unpaid = "Unpaid"
+    paid = "Paid"
+    cancelled = "Cancelled"
+
+
+class Invoice(Base):
+    __tablename__ = "invoices"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    invoice_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    invoice_date: Mapped[date] = mapped_column(Date, index=True)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("parties.id"))
+    customer_name: Mapped[str] = mapped_column(String(160))
+    po_reference: Mapped[str] = mapped_column(String(64), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    inter_state: Mapped[bool] = mapped_column(Integer, default=0)
+    sub_total: Mapped[float] = mapped_column(Float, default=0)
+    discount_total: Mapped[float] = mapped_column(Float, default=0)
+    taxable_total: Mapped[float] = mapped_column(Float, default=0)
+    cgst: Mapped[float] = mapped_column(Float, default=0)
+    sgst: Mapped[float] = mapped_column(Float, default=0)
+    igst: Mapped[float] = mapped_column(Float, default=0)
+    round_off: Mapped[float] = mapped_column(Float, default=0)
+    grand_total: Mapped[float] = mapped_column(Float, default=0)
+    status: Mapped[InvoiceStatus] = mapped_column(Enum(InvoiceStatus), default=InvoiceStatus.unpaid)
+    signature: Mapped[str] = mapped_column(String(64), index=True, default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+
+    lines: Mapped[list["InvoiceLine"]] = relationship(back_populates="invoice", cascade="all, delete-orphan")
+
+
+class InvoiceLine(Base):
+    __tablename__ = "invoice_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    invoice_id: Mapped[str] = mapped_column(ForeignKey("invoices.id", ondelete="CASCADE"))
+    product_id: Mapped[str] = mapped_column(ForeignKey("products.id"))
+    product_name: Mapped[str] = mapped_column(String(160))
+    hsn: Mapped[str] = mapped_column(String(16), default="")
+    unit: Mapped[str] = mapped_column(String(16), default="PCS")
+    quantity: Mapped[float] = mapped_column(Float)
+    rate: Mapped[float] = mapped_column(Float)
+    discount_percent: Mapped[float] = mapped_column(Float, default=0)
+    gst_rate: Mapped[float] = mapped_column(Float, default=18)
+    taxable: Mapped[float] = mapped_column(Float, default=0)
+    cgst: Mapped[float] = mapped_column(Float, default=0)
+    sgst: Mapped[float] = mapped_column(Float, default=0)
+    igst: Mapped[float] = mapped_column(Float, default=0)
+    total: Mapped[float] = mapped_column(Float, default=0)
+
+    invoice: Mapped[Invoice] = relationship(back_populates="lines")
