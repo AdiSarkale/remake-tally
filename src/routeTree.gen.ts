@@ -21,6 +21,7 @@ import { Route as MastersMaterialsRouteImport } from './routes/masters.materials
 import { Route as MastersProductsRouteImport } from './routes/masters.products'
 import { Route as MastersScrapTypesRouteImport } from './routes/masters.scrap-types'
 import { Route as MastersSuppliersRouteImport } from './routes/masters.suppliers'
+import { Route as MastersWarehousesRouteImport } from './routes/masters.warehouses'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -82,6 +83,11 @@ const MastersSuppliersRoute = MastersSuppliersRouteImport.update({
   path: '/masters/suppliers',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MastersWarehousesRoute = MastersWarehousesRouteImport.update({
+  id: '/masters/warehouses',
+  path: '/masters/warehouses',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/masters/products': typeof MastersProductsRoute
   '/masters/scrap-types': typeof MastersScrapTypesRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
+  '/masters/warehouses': typeof MastersWarehousesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -110,6 +117,7 @@ export interface FileRoutesByTo {
   '/masters/products': typeof MastersProductsRoute
   '/masters/scrap-types': typeof MastersScrapTypesRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
+  '/masters/warehouses': typeof MastersWarehousesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -125,6 +133,7 @@ export interface FileRoutesById {
   '/masters/products': typeof MastersProductsRoute
   '/masters/scrap-types': typeof MastersScrapTypesRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
+  '/masters/warehouses': typeof MastersWarehousesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/masters/products'
     | '/masters/scrap-types'
     | '/masters/suppliers'
+    | '/masters/warehouses'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/masters/products'
     | '/masters/scrap-types'
     | '/masters/suppliers'
+    | '/masters/warehouses'
   id:
     | '__root__'
     | '/'
@@ -169,6 +180,7 @@ export interface FileRouteTypes {
     | '/masters/products'
     | '/masters/scrap-types'
     | '/masters/suppliers'
+    | '/masters/warehouses'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -184,6 +196,7 @@ export interface RootRouteChildren {
   MastersProductsRoute: typeof MastersProductsRoute
   MastersScrapTypesRoute: typeof MastersScrapTypesRoute
   MastersSuppliersRoute: typeof MastersSuppliersRoute
+  MastersWarehousesRoute: typeof MastersWarehousesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -272,6 +285,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MastersSuppliersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/masters/warehouses': {
+      id: '/masters/warehouses'
+      path: '/masters/warehouses'
+      fullPath: '/masters/warehouses'
+      preLoaderRoute: typeof MastersWarehousesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -288,6 +308,7 @@ const rootRouteChildren: RootRouteChildren = {
   MastersProductsRoute: MastersProductsRoute,
   MastersScrapTypesRoute: MastersScrapTypesRoute,
   MastersSuppliersRoute: MastersSuppliersRoute,
+  MastersWarehousesRoute: MastersWarehousesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

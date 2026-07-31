@@ -1,3 +1,5 @@
+import type { DocState } from "./doc-types";
+
 export type Role = "Admin" | "Accountant" | "Operator";
 
 export interface User {
@@ -170,7 +172,7 @@ export interface CompanySettings {
   financialYear: string;
 }
 
-export interface ErpState {
+export interface ErpState extends DocState {
   users: User[];
   customers: Customer[];
   suppliers: Supplier[];
@@ -186,11 +188,22 @@ export interface ErpState {
 }
 
 export const ROLE_PERMISSIONS: Record<Role, string[]> = {
-  Admin: ["masters", "inventory", "production", "scrap", "sales", "settings", "reports"],
-  Accountant: ["masters", "inventory", "sales", "reports"],
-  Operator: ["production", "scrap", "inventory"],
+  Admin: [
+    "masters",
+    "inventory",
+    "production",
+    "scrap",
+    "sales",
+    "procurement",
+    "logistics",
+    "settings",
+    "reports",
+  ],
+  Accountant: ["masters", "inventory", "sales", "procurement", "reports"],
+  Operator: ["production", "scrap", "inventory", "logistics"],
 };
 
 export function can(role: Role, area: string) {
   return ROLE_PERMISSIONS[role].includes(area);
 }
+
