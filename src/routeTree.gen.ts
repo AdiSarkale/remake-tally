@@ -10,33 +10,167 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as InventoryRouteImport } from './routes/inventory'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as ProductionRouteImport } from './routes/production'
+import { Route as ScrapRouteImport } from './routes/scrap'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as MastersCustomersRouteImport } from './routes/masters.customers'
+import { Route as MastersMaterialsRouteImport } from './routes/masters.materials'
+import { Route as MastersProductsRouteImport } from './routes/masters.products'
+import { Route as MastersScrapTypesRouteImport } from './routes/masters.scrap-types'
+import { Route as MastersSuppliersRouteImport } from './routes/masters.suppliers'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InventoryRoute = InventoryRouteImport.update({
+  id: '/inventory',
+  path: '/inventory',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductionRoute = ProductionRouteImport.update({
+  id: '/production',
+  path: '/production',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScrapRoute = ScrapRouteImport.update({
+  id: '/scrap',
+  path: '/scrap',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MastersCustomersRoute = MastersCustomersRouteImport.update({
+  id: '/masters/customers',
+  path: '/masters/customers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MastersMaterialsRoute = MastersMaterialsRouteImport.update({
+  id: '/masters/materials',
+  path: '/masters/materials',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MastersProductsRoute = MastersProductsRouteImport.update({
+  id: '/masters/products',
+  path: '/masters/products',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MastersScrapTypesRoute = MastersScrapTypesRouteImport.update({
+  id: '/masters/scrap-types',
+  path: '/masters/scrap-types',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MastersSuppliersRoute = MastersSuppliersRouteImport.update({
+  id: '/masters/suppliers',
+  path: '/masters/suppliers',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/inventory': typeof InventoryRoute
+  '/login': typeof LoginRoute
+  '/production': typeof ProductionRoute
+  '/scrap': typeof ScrapRoute
+  '/settings': typeof SettingsRoute
+  '/masters/customers': typeof MastersCustomersRoute
+  '/masters/materials': typeof MastersMaterialsRoute
+  '/masters/products': typeof MastersProductsRoute
+  '/masters/scrap-types': typeof MastersScrapTypesRoute
+  '/masters/suppliers': typeof MastersSuppliersRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/inventory': typeof InventoryRoute
+  '/login': typeof LoginRoute
+  '/production': typeof ProductionRoute
+  '/scrap': typeof ScrapRoute
+  '/settings': typeof SettingsRoute
+  '/masters/customers': typeof MastersCustomersRoute
+  '/masters/materials': typeof MastersMaterialsRoute
+  '/masters/products': typeof MastersProductsRoute
+  '/masters/scrap-types': typeof MastersScrapTypesRoute
+  '/masters/suppliers': typeof MastersSuppliersRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/inventory': typeof InventoryRoute
+  '/login': typeof LoginRoute
+  '/production': typeof ProductionRoute
+  '/scrap': typeof ScrapRoute
+  '/settings': typeof SettingsRoute
+  '/masters/customers': typeof MastersCustomersRoute
+  '/masters/materials': typeof MastersMaterialsRoute
+  '/masters/products': typeof MastersProductsRoute
+  '/masters/scrap-types': typeof MastersScrapTypesRoute
+  '/masters/suppliers': typeof MastersSuppliersRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/inventory'
+    | '/login'
+    | '/production'
+    | '/scrap'
+    | '/settings'
+    | '/masters/customers'
+    | '/masters/materials'
+    | '/masters/products'
+    | '/masters/scrap-types'
+    | '/masters/suppliers'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/inventory'
+    | '/login'
+    | '/production'
+    | '/scrap'
+    | '/settings'
+    | '/masters/customers'
+    | '/masters/materials'
+    | '/masters/products'
+    | '/masters/scrap-types'
+    | '/masters/suppliers'
+  id:
+    | '__root__'
+    | '/'
+    | '/inventory'
+    | '/login'
+    | '/production'
+    | '/scrap'
+    | '/settings'
+    | '/masters/customers'
+    | '/masters/materials'
+    | '/masters/products'
+    | '/masters/scrap-types'
+    | '/masters/suppliers'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  InventoryRoute: typeof InventoryRoute
+  LoginRoute: typeof LoginRoute
+  ProductionRoute: typeof ProductionRoute
+  ScrapRoute: typeof ScrapRoute
+  SettingsRoute: typeof SettingsRoute
+  MastersCustomersRoute: typeof MastersCustomersRoute
+  MastersMaterialsRoute: typeof MastersMaterialsRoute
+  MastersProductsRoute: typeof MastersProductsRoute
+  MastersScrapTypesRoute: typeof MastersScrapTypesRoute
+  MastersSuppliersRoute: typeof MastersSuppliersRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,22 +182,92 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/inventory': {
+      id: '/inventory'
+      path: '/inventory'
+      fullPath: '/inventory'
+      preLoaderRoute: typeof InventoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/production': {
+      id: '/production'
+      path: '/production'
+      fullPath: '/production'
+      preLoaderRoute: typeof ProductionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scrap': {
+      id: '/scrap'
+      path: '/scrap'
+      fullPath: '/scrap'
+      preLoaderRoute: typeof ScrapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/masters/customers': {
+      id: '/masters/customers'
+      path: '/masters/customers'
+      fullPath: '/masters/customers'
+      preLoaderRoute: typeof MastersCustomersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/masters/materials': {
+      id: '/masters/materials'
+      path: '/masters/materials'
+      fullPath: '/masters/materials'
+      preLoaderRoute: typeof MastersMaterialsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/masters/products': {
+      id: '/masters/products'
+      path: '/masters/products'
+      fullPath: '/masters/products'
+      preLoaderRoute: typeof MastersProductsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/masters/scrap-types': {
+      id: '/masters/scrap-types'
+      path: '/masters/scrap-types'
+      fullPath: '/masters/scrap-types'
+      preLoaderRoute: typeof MastersScrapTypesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/masters/suppliers': {
+      id: '/masters/suppliers'
+      path: '/masters/suppliers'
+      fullPath: '/masters/suppliers'
+      preLoaderRoute: typeof MastersSuppliersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  InventoryRoute: InventoryRoute,
+  LoginRoute: LoginRoute,
+  ProductionRoute: ProductionRoute,
+  ScrapRoute: ScrapRoute,
+  SettingsRoute: SettingsRoute,
+  MastersCustomersRoute: MastersCustomersRoute,
+  MastersMaterialsRoute: MastersMaterialsRoute,
+  MastersProductsRoute: MastersProductsRoute,
+  MastersScrapTypesRoute: MastersScrapTypesRoute,
+  MastersSuppliersRoute: MastersSuppliersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
