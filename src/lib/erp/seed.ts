@@ -1,6 +1,10 @@
 import type { ErpState, InventoryMovement, ProductionEntry, ScrapEntry } from "./types";
 
 /** Deterministic PRNG so seed data is stable across server/client renders. */
+function pick<T>(arr: T[], r: number): T {
+  return arr[Math.floor(r * arr.length)] as T;
+}
+
 function rng(seed: number) {
   let s = seed;
   return () => {
@@ -100,10 +104,10 @@ export function buildSeedState(): ErpState {
   for (let day = 13; day >= 0; day--) {
     const entriesToday = 1 + Math.floor(rand() * 2);
     for (let i = 0; i < entriesToday; i++) {
-      const product = products[Math.floor(rand() * products.length)];
+      const product = pick(products, rand());
       const qty = 40 + Math.floor(rand() * 260);
       const batchNo = `BATCH-${String(batch++).padStart(4, "0")}`;
-      const mats = [materials[Math.floor(rand() * 3)], materials[5]];
+      const mats = [pick(materials.slice(0, 3), rand()), materials[5] as (typeof materials)[number]];
       const entry: ProductionEntry = {
         id: `prod-${batchNo}`,
         batchNo,
@@ -111,9 +115,9 @@ export function buildSeedState(): ErpState {
         productId: product.id,
         productName: product.name,
         quantity: qty,
-        machine: machines[Math.floor(rand() * machines.length)],
-        operator: operators[Math.floor(rand() * operators.length)],
-        shift: shifts[Math.floor(rand() * shifts.length)],
+        machine: pick(machines, rand()),
+        operator: pick(operators, rand()),
+        shift: pick(shifts, rand()),
         remarks: "",
         consumption: mats.map((m) => ({
           materialId: m.id,
@@ -156,7 +160,7 @@ export function buildSeedState(): ErpState {
       });
 
       if (rand() > 0.35) {
-        const st = scrapTypes[Math.floor(rand() * scrapTypes.length)];
+        const st = pick(scrapTypes, rand());
         const sq = Math.round(qty * (0.01 + rand() * 0.05) * 10) / 10;
         scrap.push({
           id: `scr-${batchNo}`,
@@ -167,7 +171,7 @@ export function buildSeedState(): ErpState {
           scrapTypeId: st.id,
           scrapTypeName: st.name,
           quantity: sq,
-          reason: reasons[Math.floor(rand() * reasons.length)],
+          reason: pick(reasons, rand()),
           remarks: "",
         });
         movements.push({
