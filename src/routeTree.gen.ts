@@ -24,6 +24,7 @@ import { Route as MastersSuppliersRouteImport } from './routes/masters.suppliers
 import { Route as MastersWarehousesRouteImport } from './routes/masters.warehouses'
 import { Route as ProcurementOrdersRouteImport } from './routes/procurement.orders'
 import { Route as ProcurementRequisitionsRouteImport } from './routes/procurement.requisitions'
+import { Route as SalesQuotationsRouteImport } from './routes/sales.quotations'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -100,6 +101,11 @@ const ProcurementRequisitionsRoute = ProcurementRequisitionsRouteImport.update({
   path: '/procurement/requisitions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SalesQuotationsRoute = SalesQuotationsRouteImport.update({
+  id: '/sales/quotations',
+  path: '/sales/quotations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -117,6 +123,7 @@ export interface FileRoutesByFullPath {
   '/masters/warehouses': typeof MastersWarehousesRoute
   '/procurement/orders': typeof ProcurementOrdersRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
+  '/sales/quotations': typeof SalesQuotationsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -134,6 +141,7 @@ export interface FileRoutesByTo {
   '/masters/warehouses': typeof MastersWarehousesRoute
   '/procurement/orders': typeof ProcurementOrdersRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
+  '/sales/quotations': typeof SalesQuotationsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -152,6 +160,7 @@ export interface FileRoutesById {
   '/masters/warehouses': typeof MastersWarehousesRoute
   '/procurement/orders': typeof ProcurementOrdersRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
+  '/sales/quotations': typeof SalesQuotationsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -171,6 +180,7 @@ export interface FileRouteTypes {
     | '/masters/warehouses'
     | '/procurement/orders'
     | '/procurement/requisitions'
+    | '/sales/quotations'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -188,6 +198,7 @@ export interface FileRouteTypes {
     | '/masters/warehouses'
     | '/procurement/orders'
     | '/procurement/requisitions'
+    | '/sales/quotations'
   id:
     | '__root__'
     | '/'
@@ -205,6 +216,7 @@ export interface FileRouteTypes {
     | '/masters/warehouses'
     | '/procurement/orders'
     | '/procurement/requisitions'
+    | '/sales/quotations'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -223,6 +235,7 @@ export interface RootRouteChildren {
   MastersWarehousesRoute: typeof MastersWarehousesRoute
   ProcurementOrdersRoute: typeof ProcurementOrdersRoute
   ProcurementRequisitionsRoute: typeof ProcurementRequisitionsRoute
+  SalesQuotationsRoute: typeof SalesQuotationsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -332,6 +345,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProcurementRequisitionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sales/quotations': {
+      id: '/sales/quotations'
+      path: '/sales/quotations'
+      fullPath: '/sales/quotations'
+      preLoaderRoute: typeof SalesQuotationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -351,6 +371,7 @@ const rootRouteChildren: RootRouteChildren = {
   MastersWarehousesRoute: MastersWarehousesRoute,
   ProcurementOrdersRoute: ProcurementOrdersRoute,
   ProcurementRequisitionsRoute: ProcurementRequisitionsRoute,
+  SalesQuotationsRoute: SalesQuotationsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
