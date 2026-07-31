@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as FocRouteImport } from './routes/foc'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as InvoicesRouteImport } from './routes/invoices'
+import { Route as JobworkRouteImport } from './routes/jobwork'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ProductionRouteImport } from './routes/production'
 import { Route as ScrapRouteImport } from './routes/scrap'
@@ -48,6 +49,11 @@ const InventoryRoute = InventoryRouteImport.update({
 const InvoicesRoute = InvoicesRouteImport.update({
   id: '/invoices',
   path: '/invoices',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JobworkRoute = JobworkRouteImport.update({
+  id: '/jobwork',
+  path: '/jobwork',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -136,6 +142,7 @@ export interface FileRoutesByFullPath {
   '/foc': typeof FocRoute
   '/inventory': typeof InventoryRoute
   '/invoices': typeof InvoicesRoute
+  '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
   '/production': typeof ProductionRoute
   '/scrap': typeof ScrapRoute
@@ -158,6 +165,7 @@ export interface FileRoutesByTo {
   '/foc': typeof FocRoute
   '/inventory': typeof InventoryRoute
   '/invoices': typeof InvoicesRoute
+  '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
   '/production': typeof ProductionRoute
   '/scrap': typeof ScrapRoute
@@ -181,6 +189,7 @@ export interface FileRoutesById {
   '/foc': typeof FocRoute
   '/inventory': typeof InventoryRoute
   '/invoices': typeof InvoicesRoute
+  '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
   '/production': typeof ProductionRoute
   '/scrap': typeof ScrapRoute
@@ -205,6 +214,7 @@ export interface FileRouteTypes {
     | '/foc'
     | '/inventory'
     | '/invoices'
+    | '/jobwork'
     | '/login'
     | '/production'
     | '/scrap'
@@ -227,6 +237,7 @@ export interface FileRouteTypes {
     | '/foc'
     | '/inventory'
     | '/invoices'
+    | '/jobwork'
     | '/login'
     | '/production'
     | '/scrap'
@@ -249,6 +260,7 @@ export interface FileRouteTypes {
     | '/foc'
     | '/inventory'
     | '/invoices'
+    | '/jobwork'
     | '/login'
     | '/production'
     | '/scrap'
@@ -272,6 +284,7 @@ export interface RootRouteChildren {
   FocRoute: typeof FocRoute
   InventoryRoute: typeof InventoryRoute
   InvoicesRoute: typeof InvoicesRoute
+  JobworkRoute: typeof JobworkRoute
   LoginRoute: typeof LoginRoute
   ProductionRoute: typeof ProductionRoute
   ScrapRoute: typeof ScrapRoute
@@ -318,6 +331,13 @@ declare module '@tanstack/react-router' {
       path: '/invoices'
       fullPath: '/invoices'
       preLoaderRoute: typeof InvoicesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/jobwork': {
+      id: '/jobwork'
+      path: '/jobwork'
+      fullPath: '/jobwork'
+      preLoaderRoute: typeof JobworkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -440,6 +460,7 @@ const rootRouteChildren: RootRouteChildren = {
   FocRoute: FocRoute,
   InventoryRoute: InventoryRoute,
   InvoicesRoute: InvoicesRoute,
+  JobworkRoute: JobworkRoute,
   LoginRoute: LoginRoute,
   ProductionRoute: ProductionRoute,
   ScrapRoute: ScrapRoute,
