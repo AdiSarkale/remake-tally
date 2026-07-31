@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MastersCustomersRouteImport } from './routes/masters.customers'
+import { Route as MastersProductsRouteImport } from './routes/masters.products'
 import { Route as MastersSuppliersRouteImport } from './routes/masters.suppliers'
 
 const IndexRoute = IndexRouteImport.update({
@@ -29,6 +30,11 @@ const MastersCustomersRoute = MastersCustomersRouteImport.update({
   path: '/masters/customers',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MastersProductsRoute = MastersProductsRouteImport.update({
+  id: '/masters/products',
+  path: '/masters/products',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MastersSuppliersRoute = MastersSuppliersRouteImport.update({
   id: '/masters/suppliers',
   path: '/masters/suppliers',
@@ -39,12 +45,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/masters/customers': typeof MastersCustomersRoute
+  '/masters/products': typeof MastersProductsRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/masters/customers': typeof MastersCustomersRoute
+  '/masters/products': typeof MastersProductsRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
 }
 export interface FileRoutesById {
@@ -52,20 +60,38 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/masters/customers': typeof MastersCustomersRoute
+  '/masters/products': typeof MastersProductsRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/masters/customers' | '/masters/suppliers'
+  fullPaths:
+    | '/'
+    | '/login'
+    | '/masters/customers'
+    | '/masters/products'
+    | '/masters/suppliers'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/masters/customers' | '/masters/suppliers'
-  id: '__root__' | '/' | '/login' | '/masters/customers' | '/masters/suppliers'
+  to:
+    | '/'
+    | '/login'
+    | '/masters/customers'
+    | '/masters/products'
+    | '/masters/suppliers'
+  id:
+    | '__root__'
+    | '/'
+    | '/login'
+    | '/masters/customers'
+    | '/masters/products'
+    | '/masters/suppliers'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
   MastersCustomersRoute: typeof MastersCustomersRoute
+  MastersProductsRoute: typeof MastersProductsRoute
   MastersSuppliersRoute: typeof MastersSuppliersRoute
 }
 
@@ -92,6 +118,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MastersCustomersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/masters/products': {
+      id: '/masters/products'
+      path: '/masters/products'
+      fullPath: '/masters/products'
+      preLoaderRoute: typeof MastersProductsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/masters/suppliers': {
       id: '/masters/suppliers'
       path: '/masters/suppliers'
@@ -106,6 +139,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
   MastersCustomersRoute: MastersCustomersRoute,
+  MastersProductsRoute: MastersProductsRoute,
   MastersSuppliersRoute: MastersSuppliersRoute,
 }
 export const routeTree = rootRouteImport
