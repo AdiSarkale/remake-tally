@@ -39,7 +39,7 @@ export interface Field {
   step?: string;
 }
 
-type MasterKey = "customers" | "suppliers" | "products" | "materials" | "scrapTypes";
+type MasterKey = "customers" | "suppliers" | "products" | "materials" | "scrapTypes" | "warehouses";
 export type Row = {
   id: string;
   name?: string;
