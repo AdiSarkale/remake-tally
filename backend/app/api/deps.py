@@ -11,8 +11,8 @@ from app.db.session import get_db
 bearer = HTTPBearer(auto_error=False)
 
 ROLE_PERMISSIONS: dict[models.Role, set[str]] = {
-    models.Role.admin: {"masters", "inventory", "production", "scrap", "settings", "reports"},
-    models.Role.accountant: {"masters", "inventory", "reports"},
+    models.Role.admin: {"masters", "inventory", "production", "scrap", "sales", "settings", "reports"},
+    models.Role.accountant: {"masters", "inventory", "sales", "reports"},
     models.Role.operator: {"production", "scrap", "inventory"},
 }
 
