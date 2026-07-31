@@ -53,7 +53,7 @@ export const Route = createFileRoute("/scrap")({
   ),
 });
 
-const REASONS = ["Machine setup", "Material defect", "Operator error", "Tool wear", "Rejected at QC", "Other"];
+const REASONS: string[] = ["Machine setup", "Material defect", "Operator error", "Tool wear", "Rejected at QC", "Other"];
 const CHART_COLORS = [
   "var(--color-chart-1)",
   "var(--color-chart-2)",
@@ -73,7 +73,7 @@ function ScrapPage() {
     batchNo: "",
     scrapTypeId: "",
     quantity: "",
-    reason: REASONS[0],
+    reason: "Machine setup",
     remarks: "",
   });
 
@@ -131,8 +131,8 @@ function ScrapPage() {
       />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Scrap this month" value={`${num(stats.monthQty, 1)} units`} tone="warning" />
-        <StatCard label="Scrap rate" value={`${num(stats.rate, 2)}%`} hint="Scrap ÷ production" />
+        <StatCard label="Scrap this month" value={`${num(stats.monthly, 1)} units`} tone="warning" />
+        <StatCard label="Scrap rate" value={`${num(stats.percent, 2)}%`} hint="Scrap ÷ production" />
         <StatCard label="Entries logged" value={num(state.scrap.length)} />
         <StatCard label="Realisable value" value={inr(byType.reduce((t, b) => t + b.value, 0))} tone="success" />
       </div>

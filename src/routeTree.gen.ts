@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ProductionRouteImport } from './routes/production'
+import { Route as ScrapRouteImport } from './routes/scrap'
 import { Route as MastersCustomersRouteImport } from './routes/masters.customers'
 import { Route as MastersMaterialsRouteImport } from './routes/masters.materials'
 import { Route as MastersProductsRouteImport } from './routes/masters.products'
@@ -37,6 +38,11 @@ const LoginRoute = LoginRouteImport.update({
 const ProductionRoute = ProductionRouteImport.update({
   id: '/production',
   path: '/production',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScrapRoute = ScrapRouteImport.update({
+  id: '/scrap',
+  path: '/scrap',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MastersCustomersRoute = MastersCustomersRouteImport.update({
@@ -70,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/inventory': typeof InventoryRoute
   '/login': typeof LoginRoute
   '/production': typeof ProductionRoute
+  '/scrap': typeof ScrapRoute
   '/masters/customers': typeof MastersCustomersRoute
   '/masters/materials': typeof MastersMaterialsRoute
   '/masters/products': typeof MastersProductsRoute
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/inventory': typeof InventoryRoute
   '/login': typeof LoginRoute
   '/production': typeof ProductionRoute
+  '/scrap': typeof ScrapRoute
   '/masters/customers': typeof MastersCustomersRoute
   '/masters/materials': typeof MastersMaterialsRoute
   '/masters/products': typeof MastersProductsRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/inventory': typeof InventoryRoute
   '/login': typeof LoginRoute
   '/production': typeof ProductionRoute
+  '/scrap': typeof ScrapRoute
   '/masters/customers': typeof MastersCustomersRoute
   '/masters/materials': typeof MastersMaterialsRoute
   '/masters/products': typeof MastersProductsRoute
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/login'
     | '/production'
+    | '/scrap'
     | '/masters/customers'
     | '/masters/materials'
     | '/masters/products'
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/login'
     | '/production'
+    | '/scrap'
     | '/masters/customers'
     | '/masters/materials'
     | '/masters/products'
@@ -128,6 +139,7 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/login'
     | '/production'
+    | '/scrap'
     | '/masters/customers'
     | '/masters/materials'
     | '/masters/products'
@@ -140,6 +152,7 @@ export interface RootRouteChildren {
   InventoryRoute: typeof InventoryRoute
   LoginRoute: typeof LoginRoute
   ProductionRoute: typeof ProductionRoute
+  ScrapRoute: typeof ScrapRoute
   MastersCustomersRoute: typeof MastersCustomersRoute
   MastersMaterialsRoute: typeof MastersMaterialsRoute
   MastersProductsRoute: typeof MastersProductsRoute
@@ -175,6 +188,13 @@ declare module '@tanstack/react-router' {
       path: '/production'
       fullPath: '/production'
       preLoaderRoute: typeof ProductionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scrap': {
+      id: '/scrap'
+      path: '/scrap'
+      fullPath: '/scrap'
+      preLoaderRoute: typeof ScrapRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/masters/customers': {
@@ -220,6 +240,7 @@ const rootRouteChildren: RootRouteChildren = {
   InventoryRoute: InventoryRoute,
   LoginRoute: LoginRoute,
   ProductionRoute: ProductionRoute,
+  ScrapRoute: ScrapRoute,
   MastersCustomersRoute: MastersCustomersRoute,
   MastersMaterialsRoute: MastersMaterialsRoute,
   MastersProductsRoute: MastersProductsRoute,
