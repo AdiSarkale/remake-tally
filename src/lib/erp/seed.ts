@@ -1,4 +1,5 @@
-import type { ErpState, InventoryMovement, ProductionEntry, ScrapEntry } from "./types";
+import { buildLine, stateCode, totalsFor } from "./gst";
+import type { ErpState, InventoryMovement, Invoice, ProductionEntry, ScrapEntry } from "./types";
 
 /** Deterministic PRNG so seed data is stable across server/client renders. */
 function pick<T>(arr: T[], r: number): T {
@@ -192,6 +193,41 @@ export function buildSeedState(): ErpState {
     }
   }
 
+  const companyGst = "27AAACS4512P1ZV";
+  const invoicePrefix = "SPW/26-27/";
+  const invoiceSpecs: { customerIdx: number; daysAgo: number; status: Invoice["status"]; po: string; items: [number, number, number][] }[] = [
+    { customerIdx: 0, daysAgo: 11, status: "Paid", po: "PO/DAC/4471", items: [[0, 1200, 0], [1, 1800, 2.5]] },
+    { customerIdx: 2, daysAgo: 8, status: "Unpaid", po: "NOVA-2291", items: [[2, 180, 0]] },
+    { customerIdx: 1, daysAgo: 5, status: "Paid", po: "SEW/PO/1188", items: [[5, 45, 5], [4, 300, 0]] },
+    { customerIdx: 3, daysAgo: 2, status: "Unpaid", po: "KSD/26/0912", items: [[3, 120, 0], [0, 900, 0]] },
+  ];
+  const invoices: Invoice[] = invoiceSpecs.map((spec, idx) => {
+    const customer = customers[spec.customerIdx]!;
+    const interState = stateCode(customer.gstNumber) !== stateCode(companyGst);
+    const lines = spec.items.map(([pi, qty, disc]) =>
+      buildLine(products[pi]!, { productId: products[pi]!.id, quantity: qty, rate: products[pi]!.sellingPrice, discountPercent: disc }, interState),
+    );
+    return {
+      id: `inv-${idx + 1}`,
+      invoiceNo: `${invoicePrefix}${String(idx + 1).padStart(4, "0")}`,
+      date: iso(spec.daysAgo),
+      customerId: customer.id,
+      customerName: customer.name,
+      customerGst: customer.gstNumber,
+      customerAddress: customer.address,
+      placeOfSupply: stateCode(customer.gstNumber),
+      interState,
+      poReference: spec.po,
+      notes: "",
+      lines,
+      ...totalsFor(lines),
+      status: spec.status,
+      createdBy: "accounts",
+    };
+  });
+  invoices.reverse();
+
+
   return {
     users,
     customers,
@@ -202,6 +238,7 @@ export function buildSeedState(): ErpState {
     movements: movements.reverse(),
     production: production.reverse(),
     scrap: scrap.reverse(),
+    invoices,
     audit: [
       { id: "a1", at: `${iso(0)}T08:12:00Z`, user: "admin", action: "LOGIN", entity: "auth", detail: "Admin signed in" },
       { id: "a2", at: `${iso(1)}T17:44:00Z`, user: "operator", action: "CREATE", entity: "production", detail: "Production batch recorded" },
