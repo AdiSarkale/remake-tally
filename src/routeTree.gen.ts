@@ -22,6 +22,7 @@ import { Route as MastersProductsRouteImport } from './routes/masters.products'
 import { Route as MastersScrapTypesRouteImport } from './routes/masters.scrap-types'
 import { Route as MastersSuppliersRouteImport } from './routes/masters.suppliers'
 import { Route as MastersWarehousesRouteImport } from './routes/masters.warehouses'
+import { Route as ProcurementOrdersRouteImport } from './routes/procurement.orders'
 import { Route as ProcurementRequisitionsRouteImport } from './routes/procurement.requisitions'
 
 const IndexRoute = IndexRouteImport.update({
@@ -89,6 +90,11 @@ const MastersWarehousesRoute = MastersWarehousesRouteImport.update({
   path: '/masters/warehouses',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProcurementOrdersRoute = ProcurementOrdersRouteImport.update({
+  id: '/procurement/orders',
+  path: '/procurement/orders',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProcurementRequisitionsRoute = ProcurementRequisitionsRouteImport.update({
   id: '/procurement/requisitions',
   path: '/procurement/requisitions',
@@ -109,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/masters/scrap-types': typeof MastersScrapTypesRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
   '/masters/warehouses': typeof MastersWarehousesRoute
+  '/procurement/orders': typeof ProcurementOrdersRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
 }
 export interface FileRoutesByTo {
@@ -125,6 +132,7 @@ export interface FileRoutesByTo {
   '/masters/scrap-types': typeof MastersScrapTypesRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
   '/masters/warehouses': typeof MastersWarehousesRoute
+  '/procurement/orders': typeof ProcurementOrdersRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
 }
 export interface FileRoutesById {
@@ -142,6 +150,7 @@ export interface FileRoutesById {
   '/masters/scrap-types': typeof MastersScrapTypesRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
   '/masters/warehouses': typeof MastersWarehousesRoute
+  '/procurement/orders': typeof ProcurementOrdersRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
 }
 export interface FileRouteTypes {
@@ -160,6 +169,7 @@ export interface FileRouteTypes {
     | '/masters/scrap-types'
     | '/masters/suppliers'
     | '/masters/warehouses'
+    | '/procurement/orders'
     | '/procurement/requisitions'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -176,6 +186,7 @@ export interface FileRouteTypes {
     | '/masters/scrap-types'
     | '/masters/suppliers'
     | '/masters/warehouses'
+    | '/procurement/orders'
     | '/procurement/requisitions'
   id:
     | '__root__'
@@ -192,6 +203,7 @@ export interface FileRouteTypes {
     | '/masters/scrap-types'
     | '/masters/suppliers'
     | '/masters/warehouses'
+    | '/procurement/orders'
     | '/procurement/requisitions'
   fileRoutesById: FileRoutesById
 }
@@ -209,6 +221,7 @@ export interface RootRouteChildren {
   MastersScrapTypesRoute: typeof MastersScrapTypesRoute
   MastersSuppliersRoute: typeof MastersSuppliersRoute
   MastersWarehousesRoute: typeof MastersWarehousesRoute
+  ProcurementOrdersRoute: typeof ProcurementOrdersRoute
   ProcurementRequisitionsRoute: typeof ProcurementRequisitionsRoute
 }
 
@@ -305,6 +318,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MastersWarehousesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/procurement/orders': {
+      id: '/procurement/orders'
+      path: '/procurement/orders'
+      fullPath: '/procurement/orders'
+      preLoaderRoute: typeof ProcurementOrdersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/procurement/requisitions': {
       id: '/procurement/requisitions'
       path: '/procurement/requisitions'
@@ -329,6 +349,7 @@ const rootRouteChildren: RootRouteChildren = {
   MastersScrapTypesRoute: MastersScrapTypesRoute,
   MastersSuppliersRoute: MastersSuppliersRoute,
   MastersWarehousesRoute: MastersWarehousesRoute,
+  ProcurementOrdersRoute: ProcurementOrdersRoute,
   ProcurementRequisitionsRoute: ProcurementRequisitionsRoute,
 }
 export const routeTree = rootRouteImport

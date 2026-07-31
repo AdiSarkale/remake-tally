@@ -105,9 +105,9 @@ function PurchaseOrdersPage() {
       );
   };
 
-  const submit = () => {
+  const submit = (status: PurchaseOrder["status"]) => {
     try {
-      const poNo = createPurchaseOrder({ ...form, prIds, lines }, user);
+      const poNo = createPurchaseOrder({ ...form, status, prIds, lines }, user);
       toast.success(`${poNo} created`);
       setOpen(false);
       setLines([blankLine()]);
@@ -389,12 +389,10 @@ function PurchaseOrdersPage() {
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button variant="secondary" onClick={() => { setForm({ ...form, status: "Draft" }); submit(); }}>
+            <Button variant="secondary" onClick={() => submit("Draft")}>
               Save draft
             </Button>
-            <Button onClick={() => { setForm({ ...form, status: "Approved" }); createAndApprove(); }}>
-              Approve & save
-            </Button>
+            <Button onClick={() => submit("Approved")}>Approve &amp; save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -468,15 +466,4 @@ function PurchaseOrdersPage() {
     </>
   );
 
-  function createAndApprove() {
-    try {
-      const poNo = createPurchaseOrder({ ...form, status: "Approved", prIds, lines }, user);
-      toast.success(`${poNo} approved`);
-      setOpen(false);
-      setLines([blankLine()]);
-      setPrIds([]);
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  }
 }
