@@ -22,6 +22,7 @@ import {
 } from "recharts";
 import { AppShell } from "@/components/erp/AppShell";
 import { PageHeader, StatCard } from "@/components/erp/PageHeader";
+import { docStats } from "@/lib/erp/docs";
 import { inventoryValue, lowStockItems, scrapStats, seriesLastDays, today, useErp } from "@/lib/erp/store";
 import { dmy, inr, num } from "@/lib/erp/format";
 import { Badge } from "@/components/ui/badge";
@@ -66,6 +67,7 @@ function Dashboard() {
   const totalScrapStock = state.scrapTypes.reduce((t, s) => t + s.stock, 0);
   const scrapValue = state.scrapTypes.reduce((t, s) => t + s.stock * s.sellingRate, 0);
   const recentBatches = state.production.slice(0, 6);
+  const docs = docStats(state);
 
   return (
     <>
@@ -120,6 +122,22 @@ function Dashboard() {
           icon={<IndianRupee className="h-4 w-4" />}
           tone="primary"
         />
+      </div>
+
+      <div className="mt-3 grid gap-3 grid-cols-2 lg:grid-cols-6">
+        {[
+          { label: "Open PRs", value: num(docs.openPrs), to: "/procurement/requisitions" },
+          { label: "Open POs", value: num(docs.openPos), to: "/procurement/orders" },
+          { label: "Live quotes", value: num(docs.liveQuotes), to: "/sales/quotations" },
+          { label: "Open sales orders", value: num(docs.openSos), to: "/sales/orders" },
+          { label: "At vendor (job work)", value: num(docs.atVendor), to: "/jobwork" },
+          { label: "FOC issues", value: num(docs.focIssues), to: "/foc" },
+        ].map((k) => (
+          <Link key={k.label} to={k.to} className="panel hover:border-primary/50 p-3 transition-colors">
+            <p className="text-muted-foreground text-xs">{k.label}</p>
+            <p className="num mt-1 text-xl font-semibold">{k.value}</p>
+          </Link>
+        ))}
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-3">
