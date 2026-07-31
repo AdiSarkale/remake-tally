@@ -107,8 +107,14 @@ function InventoryPage() {
     if (!dialog) return;
     const [kind, id] = form.itemKey.split(":");
     const qty = Number(form.quantity);
-    if (!kind || !id) return toast.error("Select an item");
-    if (!Number.isFinite(qty) || qty < 0) return toast.error("Enter a valid quantity");
+    if (!kind || !id) {
+      toast.error("Select an item");
+      return;
+    }
+    if (!Number.isFinite(qty) || qty < 0) {
+      toast.error("Enter a valid quantity");
+      return;
+    }
     try {
       stockMovement(
         {
