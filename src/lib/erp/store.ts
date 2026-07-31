@@ -11,7 +11,7 @@ import type {
   ScrapEntry,
 } from "./types";
 
-const STORAGE_KEY = "minitally-erp-state-v2";
+const STORAGE_KEY = "minitally-erp-state-v3";
 
 let serverSnapshot: ErpState | null = null;
 function getSeed(): ErpState {
@@ -263,7 +263,11 @@ function invoiceSignature(customerId: string, date: string, lines: LineDraft[]) 
   ].join("|");
 }
 
-export function createInvoice(draft: InvoiceDraft, username: string): string {
+export function createInvoice(
+  draft: InvoiceDraft,
+  username: string,
+  opts: { skipStock?: boolean } = {},
+): string {
   let invoiceNo = "";
   update((s) => {
     const customer = s.customers.find((c) => c.id === draft.customerId);
@@ -294,7 +298,7 @@ export function createInvoice(draft: InvoiceDraft, username: string): string {
     const built = lines.map((l) => {
       const product = s.products.find((p) => p.id === l.productId);
       if (!product) throw new Error("Product not found");
-      if (l.quantity > product.stock)
+      if (!opts.skipStock && l.quantity > product.stock)
         throw new Error(`Only ${product.stock} ${product.unit} of ${product.name} in stock`);
       return buildLine(product, l, interState);
     });
@@ -320,19 +324,22 @@ export function createInvoice(draft: InvoiceDraft, username: string): string {
       createdBy: username,
     };
 
-    // Finished goods leave stock when the invoice is raised.
-    built.forEach((l) =>
-      applyMovement(s, {
-        itemKind: "product",
-        itemId: l.productId,
-        type: "OUT",
-        quantity: l.quantity,
-        reference: invoiceNo,
-        reason: `Sales invoice — ${customer.name}`,
-        date: invoice.date,
-        userId: username,
-      }),
-    );
+    // Finished goods leave stock when the invoice is raised — unless the goods
+    // already left on a delivery note (skipStock).
+    if (!opts.skipStock)
+      built.forEach((l) =>
+        applyMovement(s, {
+          itemKind: "product",
+          itemId: l.productId,
+          type: "OUT",
+          quantity: l.quantity,
+          reference: invoiceNo,
+          reason: `Sales invoice — ${customer.name}`,
+          date: invoice.date,
+          userId: username,
+        }),
+      );
+
 
     s.invoices.unshift(invoice);
     logAudit(s, username, "CREATE", "invoice", `${invoiceNo} · ${customer.name} · ₹${invoice.grandTotal}`);

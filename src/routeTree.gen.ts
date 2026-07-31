@@ -10,21 +10,35 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as FocRouteImport } from './routes/foc'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as InvoicesRouteImport } from './routes/invoices'
+import { Route as JobworkRouteImport } from './routes/jobwork'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ProductionRouteImport } from './routes/production'
 import { Route as ScrapRouteImport } from './routes/scrap'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as TransfersRouteImport } from './routes/transfers'
 import { Route as MastersCustomersRouteImport } from './routes/masters.customers'
 import { Route as MastersMaterialsRouteImport } from './routes/masters.materials'
 import { Route as MastersProductsRouteImport } from './routes/masters.products'
 import { Route as MastersScrapTypesRouteImport } from './routes/masters.scrap-types'
 import { Route as MastersSuppliersRouteImport } from './routes/masters.suppliers'
+import { Route as MastersWarehousesRouteImport } from './routes/masters.warehouses'
+import { Route as ProcurementOrdersRouteImport } from './routes/procurement.orders'
+import { Route as ProcurementRequisitionsRouteImport } from './routes/procurement.requisitions'
+import { Route as SalesDeliveriesRouteImport } from './routes/sales.deliveries'
+import { Route as SalesOrdersRouteImport } from './routes/sales.orders'
+import { Route as SalesQuotationsRouteImport } from './routes/sales.quotations'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FocRoute = FocRouteImport.update({
+  id: '/foc',
+  path: '/foc',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InventoryRoute = InventoryRouteImport.update({
@@ -35,6 +49,11 @@ const InventoryRoute = InventoryRouteImport.update({
 const InvoicesRoute = InvoicesRouteImport.update({
   id: '/invoices',
   path: '/invoices',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const JobworkRoute = JobworkRouteImport.update({
+  id: '/jobwork',
+  path: '/jobwork',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -55,6 +74,11 @@ const ScrapRoute = ScrapRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TransfersRoute = TransfersRouteImport.update({
+  id: '/transfers',
+  path: '/transfers',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MastersCustomersRoute = MastersCustomersRouteImport.update({
@@ -82,108 +106,201 @@ const MastersSuppliersRoute = MastersSuppliersRouteImport.update({
   path: '/masters/suppliers',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MastersWarehousesRoute = MastersWarehousesRouteImport.update({
+  id: '/masters/warehouses',
+  path: '/masters/warehouses',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProcurementOrdersRoute = ProcurementOrdersRouteImport.update({
+  id: '/procurement/orders',
+  path: '/procurement/orders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProcurementRequisitionsRoute = ProcurementRequisitionsRouteImport.update({
+  id: '/procurement/requisitions',
+  path: '/procurement/requisitions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SalesDeliveriesRoute = SalesDeliveriesRouteImport.update({
+  id: '/sales/deliveries',
+  path: '/sales/deliveries',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SalesOrdersRoute = SalesOrdersRouteImport.update({
+  id: '/sales/orders',
+  path: '/sales/orders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SalesQuotationsRoute = SalesQuotationsRouteImport.update({
+  id: '/sales/quotations',
+  path: '/sales/quotations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/foc': typeof FocRoute
   '/inventory': typeof InventoryRoute
   '/invoices': typeof InvoicesRoute
+  '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
   '/production': typeof ProductionRoute
   '/scrap': typeof ScrapRoute
   '/settings': typeof SettingsRoute
+  '/transfers': typeof TransfersRoute
   '/masters/customers': typeof MastersCustomersRoute
   '/masters/materials': typeof MastersMaterialsRoute
   '/masters/products': typeof MastersProductsRoute
   '/masters/scrap-types': typeof MastersScrapTypesRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
+  '/masters/warehouses': typeof MastersWarehousesRoute
+  '/procurement/orders': typeof ProcurementOrdersRoute
+  '/procurement/requisitions': typeof ProcurementRequisitionsRoute
+  '/sales/deliveries': typeof SalesDeliveriesRoute
+  '/sales/orders': typeof SalesOrdersRoute
+  '/sales/quotations': typeof SalesQuotationsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/foc': typeof FocRoute
   '/inventory': typeof InventoryRoute
   '/invoices': typeof InvoicesRoute
+  '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
   '/production': typeof ProductionRoute
   '/scrap': typeof ScrapRoute
   '/settings': typeof SettingsRoute
+  '/transfers': typeof TransfersRoute
   '/masters/customers': typeof MastersCustomersRoute
   '/masters/materials': typeof MastersMaterialsRoute
   '/masters/products': typeof MastersProductsRoute
   '/masters/scrap-types': typeof MastersScrapTypesRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
+  '/masters/warehouses': typeof MastersWarehousesRoute
+  '/procurement/orders': typeof ProcurementOrdersRoute
+  '/procurement/requisitions': typeof ProcurementRequisitionsRoute
+  '/sales/deliveries': typeof SalesDeliveriesRoute
+  '/sales/orders': typeof SalesOrdersRoute
+  '/sales/quotations': typeof SalesQuotationsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/foc': typeof FocRoute
   '/inventory': typeof InventoryRoute
   '/invoices': typeof InvoicesRoute
+  '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
   '/production': typeof ProductionRoute
   '/scrap': typeof ScrapRoute
   '/settings': typeof SettingsRoute
+  '/transfers': typeof TransfersRoute
   '/masters/customers': typeof MastersCustomersRoute
   '/masters/materials': typeof MastersMaterialsRoute
   '/masters/products': typeof MastersProductsRoute
   '/masters/scrap-types': typeof MastersScrapTypesRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
+  '/masters/warehouses': typeof MastersWarehousesRoute
+  '/procurement/orders': typeof ProcurementOrdersRoute
+  '/procurement/requisitions': typeof ProcurementRequisitionsRoute
+  '/sales/deliveries': typeof SalesDeliveriesRoute
+  '/sales/orders': typeof SalesOrdersRoute
+  '/sales/quotations': typeof SalesQuotationsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/foc'
     | '/inventory'
     | '/invoices'
+    | '/jobwork'
     | '/login'
     | '/production'
     | '/scrap'
     | '/settings'
+    | '/transfers'
     | '/masters/customers'
     | '/masters/materials'
     | '/masters/products'
     | '/masters/scrap-types'
     | '/masters/suppliers'
+    | '/masters/warehouses'
+    | '/procurement/orders'
+    | '/procurement/requisitions'
+    | '/sales/deliveries'
+    | '/sales/orders'
+    | '/sales/quotations'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/foc'
     | '/inventory'
     | '/invoices'
+    | '/jobwork'
     | '/login'
     | '/production'
     | '/scrap'
     | '/settings'
+    | '/transfers'
     | '/masters/customers'
     | '/masters/materials'
     | '/masters/products'
     | '/masters/scrap-types'
     | '/masters/suppliers'
+    | '/masters/warehouses'
+    | '/procurement/orders'
+    | '/procurement/requisitions'
+    | '/sales/deliveries'
+    | '/sales/orders'
+    | '/sales/quotations'
   id:
     | '__root__'
     | '/'
+    | '/foc'
     | '/inventory'
     | '/invoices'
+    | '/jobwork'
     | '/login'
     | '/production'
     | '/scrap'
     | '/settings'
+    | '/transfers'
     | '/masters/customers'
     | '/masters/materials'
     | '/masters/products'
     | '/masters/scrap-types'
     | '/masters/suppliers'
+    | '/masters/warehouses'
+    | '/procurement/orders'
+    | '/procurement/requisitions'
+    | '/sales/deliveries'
+    | '/sales/orders'
+    | '/sales/quotations'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  FocRoute: typeof FocRoute
   InventoryRoute: typeof InventoryRoute
   InvoicesRoute: typeof InvoicesRoute
+  JobworkRoute: typeof JobworkRoute
   LoginRoute: typeof LoginRoute
   ProductionRoute: typeof ProductionRoute
   ScrapRoute: typeof ScrapRoute
   SettingsRoute: typeof SettingsRoute
+  TransfersRoute: typeof TransfersRoute
   MastersCustomersRoute: typeof MastersCustomersRoute
   MastersMaterialsRoute: typeof MastersMaterialsRoute
   MastersProductsRoute: typeof MastersProductsRoute
   MastersScrapTypesRoute: typeof MastersScrapTypesRoute
   MastersSuppliersRoute: typeof MastersSuppliersRoute
+  MastersWarehousesRoute: typeof MastersWarehousesRoute
+  ProcurementOrdersRoute: typeof ProcurementOrdersRoute
+  ProcurementRequisitionsRoute: typeof ProcurementRequisitionsRoute
+  SalesDeliveriesRoute: typeof SalesDeliveriesRoute
+  SalesOrdersRoute: typeof SalesOrdersRoute
+  SalesQuotationsRoute: typeof SalesQuotationsRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -193,6 +310,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/foc': {
+      id: '/foc'
+      path: '/foc'
+      fullPath: '/foc'
+      preLoaderRoute: typeof FocRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/inventory': {
@@ -207,6 +331,13 @@ declare module '@tanstack/react-router' {
       path: '/invoices'
       fullPath: '/invoices'
       preLoaderRoute: typeof InvoicesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/jobwork': {
+      id: '/jobwork'
+      path: '/jobwork'
+      fullPath: '/jobwork'
+      preLoaderRoute: typeof JobworkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -235,6 +366,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/transfers': {
+      id: '/transfers'
+      path: '/transfers'
+      fullPath: '/transfers'
+      preLoaderRoute: typeof TransfersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/masters/customers': {
@@ -272,22 +410,73 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MastersSuppliersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/masters/warehouses': {
+      id: '/masters/warehouses'
+      path: '/masters/warehouses'
+      fullPath: '/masters/warehouses'
+      preLoaderRoute: typeof MastersWarehousesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/procurement/orders': {
+      id: '/procurement/orders'
+      path: '/procurement/orders'
+      fullPath: '/procurement/orders'
+      preLoaderRoute: typeof ProcurementOrdersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/procurement/requisitions': {
+      id: '/procurement/requisitions'
+      path: '/procurement/requisitions'
+      fullPath: '/procurement/requisitions'
+      preLoaderRoute: typeof ProcurementRequisitionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sales/deliveries': {
+      id: '/sales/deliveries'
+      path: '/sales/deliveries'
+      fullPath: '/sales/deliveries'
+      preLoaderRoute: typeof SalesDeliveriesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sales/orders': {
+      id: '/sales/orders'
+      path: '/sales/orders'
+      fullPath: '/sales/orders'
+      preLoaderRoute: typeof SalesOrdersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sales/quotations': {
+      id: '/sales/quotations'
+      path: '/sales/quotations'
+      fullPath: '/sales/quotations'
+      preLoaderRoute: typeof SalesQuotationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  FocRoute: FocRoute,
   InventoryRoute: InventoryRoute,
   InvoicesRoute: InvoicesRoute,
+  JobworkRoute: JobworkRoute,
   LoginRoute: LoginRoute,
   ProductionRoute: ProductionRoute,
   ScrapRoute: ScrapRoute,
   SettingsRoute: SettingsRoute,
+  TransfersRoute: TransfersRoute,
   MastersCustomersRoute: MastersCustomersRoute,
   MastersMaterialsRoute: MastersMaterialsRoute,
   MastersProductsRoute: MastersProductsRoute,
   MastersScrapTypesRoute: MastersScrapTypesRoute,
   MastersSuppliersRoute: MastersSuppliersRoute,
+  MastersWarehousesRoute: MastersWarehousesRoute,
+  ProcurementOrdersRoute: ProcurementOrdersRoute,
+  ProcurementRequisitionsRoute: ProcurementRequisitionsRoute,
+  SalesDeliveriesRoute: SalesDeliveriesRoute,
+  SalesOrdersRoute: SalesOrdersRoute,
+  SalesQuotationsRoute: SalesQuotationsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

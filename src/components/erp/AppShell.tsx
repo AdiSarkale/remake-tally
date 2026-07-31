@@ -17,6 +17,14 @@ import {
   Users,
   Wrench,
   Package,
+  ArrowLeftRight,
+  ClipboardList,
+  ClipboardCheck,
+  FileSignature,
+  Gift,
+  Hammer,
+  PackageCheck,
+  Warehouse,
   X,
 } from "lucide-react";
 import { useAuth } from "@/lib/erp/auth";
@@ -55,6 +63,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { to: "/masters/products", label: "Products", icon: Package, area: "masters" },
       { to: "/masters/materials", label: "Raw Materials", icon: Wrench, area: "masters" },
       { to: "/masters/scrap-types", label: "Scrap Types", icon: Recycle, area: "masters" },
+      { to: "/masters/warehouses", label: "Plants & Warehouses", icon: Warehouse, area: "masters" },
     ],
   },
   {
@@ -63,7 +72,25 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { to: "/inventory", label: "Inventory", icon: Boxes, area: "inventory" },
       { to: "/production", label: "Production", icon: Factory, area: "production" },
       { to: "/scrap", label: "Scrap", icon: Recycle, area: "scrap" },
+      { to: "/transfers", label: "Interplant Transfers", icon: ArrowLeftRight, area: "logistics" },
+      { to: "/jobwork", label: "Job Work", icon: Hammer, area: "logistics" },
+    ],
+  },
+  {
+    group: "Procurement",
+    items: [
+      { to: "/procurement/requisitions", label: "Requisitions", icon: ClipboardList, area: "procurement" },
+      { to: "/procurement/orders", label: "Purchase Orders", icon: PackageCheck, area: "procurement" },
+    ],
+  },
+  {
+    group: "Sales",
+    items: [
+      { to: "/sales/quotations", label: "Quotations", icon: FileSignature, area: "sales" },
+      { to: "/sales/orders", label: "Sales Orders", icon: ClipboardCheck, area: "sales" },
+      { to: "/sales/deliveries", label: "Delivery Notes", icon: Truck, area: "sales" },
       { to: "/invoices", label: "Sales Invoices", icon: ReceiptText, area: "sales" },
+      { to: "/foc", label: "FOC Issues", icon: Gift, area: "sales" },
     ],
   },
   {
@@ -101,6 +128,13 @@ function GlobalSearch() {
     suppliers: s.suppliers,
     production: s.production,
     invoices: s.invoices,
+    requisitions: s.requisitions,
+    purchaseOrders: s.purchaseOrders,
+    quotations: s.quotations,
+    salesOrders: s.salesOrders,
+    deliveries: s.deliveries,
+    jobWorks: s.jobWorks,
+    transfers: s.transfers,
   }));
 
   const results = useMemo(() => {
@@ -125,6 +159,27 @@ function GlobalSearch() {
     data.invoices
       .filter((i) => `${i.invoiceNo} ${i.customerName} ${i.poReference}`.toLowerCase().includes(term))
       .forEach((i) => hits.push({ label: i.invoiceNo, sub: `Invoice · ${i.customerName}`, to: "/invoices" }));
+    data.requisitions
+      .filter((d) => `${d.prNo} ${d.materialName}`.toLowerCase().includes(term))
+      .forEach((d) => hits.push({ label: d.prNo, sub: `Requisition · ${d.materialName}`, to: "/procurement/requisitions" }));
+    data.purchaseOrders
+      .filter((d) => `${d.poNo} ${d.supplierName}`.toLowerCase().includes(term))
+      .forEach((d) => hits.push({ label: d.poNo, sub: `PO · ${d.supplierName}`, to: "/procurement/orders" }));
+    data.quotations
+      .filter((d) => `${d.quoteNo} ${d.customerName}`.toLowerCase().includes(term))
+      .forEach((d) => hits.push({ label: d.quoteNo, sub: `Quotation · ${d.customerName}`, to: "/sales/quotations" }));
+    data.salesOrders
+      .filter((d) => `${d.soNo} ${d.customerName}`.toLowerCase().includes(term))
+      .forEach((d) => hits.push({ label: d.soNo, sub: `Sales order · ${d.customerName}`, to: "/sales/orders" }));
+    data.deliveries
+      .filter((d) => `${d.dnNo} ${d.customerName} ${d.vehicleNo}`.toLowerCase().includes(term))
+      .forEach((d) => hits.push({ label: d.dnNo, sub: `${d.foc ? "FOC" : "Delivery"} · ${d.customerName}`, to: d.foc ? "/foc" : "/sales/deliveries" }));
+    data.jobWorks
+      .filter((d) => `${d.jwNo} ${d.vendorName}`.toLowerCase().includes(term))
+      .forEach((d) => hits.push({ label: d.jwNo, sub: `Job work · ${d.vendorName}`, to: "/jobwork" }));
+    data.transfers
+      .filter((d) => `${d.transferNo} ${d.itemName}`.toLowerCase().includes(term))
+      .forEach((d) => hits.push({ label: d.transferNo, sub: `Transfer · ${d.itemName}`, to: "/transfers" }));
     return hits.slice(0, 8);
   }, [q, data]);
 
