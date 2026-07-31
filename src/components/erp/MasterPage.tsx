@@ -40,7 +40,26 @@ export interface Field {
 }
 
 type MasterKey = "customers" | "suppliers" | "products" | "materials" | "scrapTypes";
-type Row = Record<string, unknown> & { id: string };
+export type Row = {
+  id: string;
+  name?: string;
+  code?: string;
+  category?: string;
+  unit?: string;
+  sellingPrice?: number;
+  costPrice?: number;
+  hsnCode?: string;
+  gstPercent?: number;
+  minStock?: number;
+  stock?: number;
+  cost?: number;
+  sellingRate?: number;
+  gstNumber?: string;
+  mobile?: string;
+  email?: string;
+  contact?: string;
+  address?: string;
+} & Record<string, unknown>;
 
 interface Props {
   title: string;
@@ -100,10 +119,10 @@ export function MasterPage({
       if (editing) {
         const idx = list.findIndex((r) => r.id === editing.id);
         if (idx >= 0) list[idx] = { ...(list[idx] as Row), ...payload } as Row;
-        logAudit(s as ErpState, session?.username ?? "system", "UPDATE", entity, String(payload['name'] ?? editing.id));
+        logAudit(s as ErpState, session?.username ?? "system", "UPDATE", entity, String(payload.name ?? editing.id));
       } else {
         list.unshift({ id: uid(), ...payload } as Row);
-        logAudit(s as ErpState, session?.username ?? "system", "CREATE", entity, String(payload['name'] ?? ""));
+        logAudit(s as ErpState, session?.username ?? "system", "CREATE", entity, String(payload.name ?? ""));
       }
       return s;
     });
@@ -117,7 +136,7 @@ export function MasterPage({
       const list = s[entity] as unknown as Row[];
       const idx = list.findIndex((r) => r.id === deleting.id);
       if (idx >= 0) list.splice(idx, 1);
-      logAudit(s as ErpState, session?.username ?? "system", "DELETE", entity, String(deleting['name'] ?? deleting.id));
+      logAudit(s as ErpState, session?.username ?? "system", "DELETE", entity, String(deleting.name ?? deleting.id));
       return s;
     });
     toast.success("Record deleted");
