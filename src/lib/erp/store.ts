@@ -46,16 +46,22 @@ function commit(next: ErpState) {
 
 function subscribe(l: () => void) {
   listeners.add(l);
-  return () => listeners.delete(l);
+  return () => {
+    listeners.delete(l);
+  };
 }
 
 export function useErp<T>(selector: (s: ErpState) => T): T {
-  return useSyncExternalStore(
-    subscribe,
-    () => selector(load()),
-    () => selector(getSeed()),
-  );
+  const snapshot = useSyncExternalStore(subscribe, load, getSeed);
+  // Selector runs on the cached snapshot reference so derived arrays/objects
+  // stay stable between renders (otherwise useSyncExternalStore loops).
+  const ref = useRef<{ snapshot: ErpState; value: T } | null>(null);
+  if (!ref.current || ref.current.snapshot !== snapshot) {
+    ref.current = { snapshot, value: selector(snapshot) };
+  }
+  return ref.current.value;
 }
+
 
 export function getState(): ErpState {
   return load();
