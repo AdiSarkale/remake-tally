@@ -1,0 +1,186 @@
+"""Pydantic request/response schemas."""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.models import ItemKind, MovementType, Role
+
+
+class ORMModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---------- Auth ----------
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: Role
+    full_name: str
+
+
+class UserOut(ORMModel):
+    id: str
+    username: str
+    full_name: str
+    role: Role
+
+
+# ---------- Masters ----------
+class PartyIn(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    gst_number: str = ""
+    phone: str = ""
+    email: str = ""
+    address: str = ""
+
+
+class PartyOut(PartyIn, ORMModel):
+    id: str
+    kind: str
+
+
+class ProductIn(BaseModel):
+    code: str
+    name: str
+    unit: str = "PCS"
+    hsn: str = ""
+    cost_price: float = 0
+    selling_price: float = 0
+    gst_rate: float = 18
+    min_stock: float = 0
+
+
+class ProductOut(ProductIn, ORMModel):
+    id: str
+    stock: float
+
+
+class RawMaterialIn(BaseModel):
+    name: str
+    unit: str = "KG"
+    cost: float = 0
+    min_stock: float = 0
+
+
+class RawMaterialOut(RawMaterialIn, ORMModel):
+    id: str
+    stock: float
+
+
+class ScrapTypeIn(BaseModel):
+    name: str
+    unit: str = "KG"
+    selling_rate: float = 0
+
+
+class ScrapTypeOut(ScrapTypeIn, ORMModel):
+    id: str
+    stock: float
+
+
+# ---------- Inventory ----------
+class MovementIn(BaseModel):
+    item_kind: ItemKind
+    item_id: str
+    movement_type: MovementType
+    quantity: float = Field(ge=0)
+    reference: str = ""
+    reason: str = ""
+    entry_date: date | None = None
+
+
+class MovementOut(ORMModel):
+    id: str
+    entry_date: date
+    item_kind: ItemKind
+    item_id: str
+    item_name: str
+    movement_type: MovementType
+    quantity: float
+    unit: str
+    balance: float
+    reference: str
+    reason: str
+
+
+# ---------- Production ----------
+class ConsumptionIn(BaseModel):
+    material_id: str
+    quantity: float = Field(gt=0)
+
+
+class ProductionIn(BaseModel):
+    entry_date: date
+    product_id: str
+    quantity: float = Field(gt=0)
+    machine: str = ""
+    operator: str = ""
+    shift: str = "A"
+    remarks: str = ""
+    consumption: list[ConsumptionIn]
+
+
+class ProductionOut(ORMModel):
+    id: str
+    batch_no: str
+    entry_date: date
+    product_id: str
+    quantity: float
+    machine: str
+    operator: str
+    shift: str
+    remarks: str
+
+
+# ---------- Scrap ----------
+class ScrapIn(BaseModel):
+    entry_date: date
+    product_id: str
+    batch_no: str = ""
+    scrap_type_id: str
+    quantity: float = Field(gt=0)
+    reason: str = ""
+    remarks: str = ""
+
+
+class ScrapOut(ScrapIn, ORMModel):
+    id: str
+
+
+# ---------- Dashboard / settings ----------
+class DashboardOut(BaseModel):
+    produced_today: float
+    produced_month: float
+    scrap_month: float
+    scrap_rate: float
+    inventory_value: float
+    low_stock_count: int
+
+
+class AuditOut(ORMModel):
+    id: str
+    at: datetime
+    username: str
+    action: str
+    entity: str
+    detail: str
+
+
+class SettingsIn(BaseModel):
+    name: str
+    gst_number: str = ""
+    address: str = ""
+    invoice_prefix: str = "INV"
+    financial_year: str = "2026-2027"
+
+
+class SettingsOut(SettingsIn, ORMModel):
+    id: int
