@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ProductionRouteImport } from './routes/production'
 import { Route as MastersCustomersRouteImport } from './routes/masters.customers'
 import { Route as MastersMaterialsRouteImport } from './routes/masters.materials'
 import { Route as MastersProductsRouteImport } from './routes/masters.products'
@@ -31,6 +32,11 @@ const InventoryRoute = InventoryRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductionRoute = ProductionRouteImport.update({
+  id: '/production',
+  path: '/production',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MastersCustomersRoute = MastersCustomersRouteImport.update({
@@ -63,6 +69,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/inventory': typeof InventoryRoute
   '/login': typeof LoginRoute
+  '/production': typeof ProductionRoute
   '/masters/customers': typeof MastersCustomersRoute
   '/masters/materials': typeof MastersMaterialsRoute
   '/masters/products': typeof MastersProductsRoute
@@ -73,6 +80,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/inventory': typeof InventoryRoute
   '/login': typeof LoginRoute
+  '/production': typeof ProductionRoute
   '/masters/customers': typeof MastersCustomersRoute
   '/masters/materials': typeof MastersMaterialsRoute
   '/masters/products': typeof MastersProductsRoute
@@ -84,6 +92,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/inventory': typeof InventoryRoute
   '/login': typeof LoginRoute
+  '/production': typeof ProductionRoute
   '/masters/customers': typeof MastersCustomersRoute
   '/masters/materials': typeof MastersMaterialsRoute
   '/masters/products': typeof MastersProductsRoute
@@ -96,6 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/inventory'
     | '/login'
+    | '/production'
     | '/masters/customers'
     | '/masters/materials'
     | '/masters/products'
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/inventory'
     | '/login'
+    | '/production'
     | '/masters/customers'
     | '/masters/materials'
     | '/masters/products'
@@ -116,6 +127,7 @@ export interface FileRouteTypes {
     | '/'
     | '/inventory'
     | '/login'
+    | '/production'
     | '/masters/customers'
     | '/masters/materials'
     | '/masters/products'
@@ -127,6 +139,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   InventoryRoute: typeof InventoryRoute
   LoginRoute: typeof LoginRoute
+  ProductionRoute: typeof ProductionRoute
   MastersCustomersRoute: typeof MastersCustomersRoute
   MastersMaterialsRoute: typeof MastersMaterialsRoute
   MastersProductsRoute: typeof MastersProductsRoute
@@ -155,6 +168,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/production': {
+      id: '/production'
+      path: '/production'
+      fullPath: '/production'
+      preLoaderRoute: typeof ProductionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/masters/customers': {
@@ -199,6 +219,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   InventoryRoute: InventoryRoute,
   LoginRoute: LoginRoute,
+  ProductionRoute: ProductionRoute,
   MastersCustomersRoute: MastersCustomersRoute,
   MastersMaterialsRoute: MastersMaterialsRoute,
   MastersProductsRoute: MastersProductsRoute,
