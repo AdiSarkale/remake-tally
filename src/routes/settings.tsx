@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/erp/AppShell";
 import { PageHeader } from "@/components/erp/PageHeader";
 import { DataTable } from "@/components/erp/DataTable";
+import { UsersPanel } from "@/components/erp/UsersPanel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -110,24 +111,7 @@ function SettingsPage() {
           </div>
         </div>
 
-        <div className="panel p-4">
-          <h2 className="mb-4 text-sm font-semibold">Users & roles</h2>
-          <div className="divide-border divide-y">
-            {state.users.map((u) => (
-              <div key={u.id} className="flex items-center justify-between py-2.5">
-                <div>
-                  <p className="text-sm font-medium">{u.fullName}</p>
-                  <p className="text-muted-foreground text-xs">@{u.username}</p>
-                </div>
-                <Badge variant={u.role === "Admin" ? "default" : "secondary"}>{u.role}</Badge>
-              </div>
-            ))}
-          </div>
-          <p className="text-muted-foreground mt-4 text-xs">
-            Roles map to module access: Admin (all), Accountant (masters, inventory, reports), Operator (production,
-            scrap, inventory).
-          </p>
-        </div>
+        <UsersPanel />
       </div>
 
       <div className="mt-4">
