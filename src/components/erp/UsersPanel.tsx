@@ -54,7 +54,10 @@ export function UsersPanel() {
 
   const submitAdd = () => {
     const res = createUser(draft, actor);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
     toast.success(`User @${draft.username.trim().toLowerCase()} created`);
     setAddOpen(false);
     setDraft(emptyDraft);
@@ -63,16 +66,25 @@ export function UsersPanel() {
   const submitEdit = () => {
     if (!editUser) return;
     const res = updateUser(editUser.id, editDraft, actor);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
     toast.success("User updated");
     setEditUser(null);
   };
 
   const submitReset = () => {
     if (!pwdUser) return;
-    if (pwd !== pwd2) return toast.error("Passwords do not match");
+    if (pwd !== pwd2) {
+      toast.error("Passwords do not match");
+      return;
+    }
     const res = resetUserPassword(pwdUser.id, pwd, actor);
-    if (!res.ok) return toast.error(res.error);
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
     toast.success(`Password reset for @${pwdUser.username}`);
     setPwdUser(null);
     setPwd("");
@@ -266,7 +278,10 @@ export function UsersPanel() {
               onClick={() => {
                 if (!editUser) return;
                 const res = setUserActive(editUser.id, !editUser.active, actor);
-                if (!res.ok) return toast.error(res.error);
+                if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
                 toast.success(editUser.active ? "User disabled" : "User enabled");
                 setEditUser(null);
               }}
