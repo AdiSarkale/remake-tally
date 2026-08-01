@@ -31,6 +31,35 @@ class UserOut(ORMModel):
     username: str
     full_name: str
     role: Role
+    email: str = ""
+    active: bool = True
+
+
+class UserCreate(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    full_name: str = Field(min_length=1, max_length=120)
+    email: str = ""
+    role: Role = Role.operator
+    password: str = Field(min_length=6, max_length=128)
+    active: bool = True
+
+
+class UserUpdate(BaseModel):
+    full_name: str = Field(min_length=1, max_length=120)
+    email: str = ""
+    role: Role
+    active: bool = True
+
+
+class PasswordReset(BaseModel):
+    """Admin reset — the target user's current password is NOT required."""
+
+    new_password: str = Field(min_length=6, max_length=128)
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=6, max_length=128)
 
 
 # ---------- Masters ----------
