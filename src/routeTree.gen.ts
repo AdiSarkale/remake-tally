@@ -15,6 +15,7 @@ import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as InvoicesRouteImport } from './routes/invoices'
 import { Route as JobworkRouteImport } from './routes/jobwork'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as PpcRouteImport } from './routes/ppc'
 import { Route as ProductionRouteImport } from './routes/production'
 import { Route as ScrapRouteImport } from './routes/scrap'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -59,6 +60,11 @@ const JobworkRoute = JobworkRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PpcRoute = PpcRouteImport.update({
+  id: '/ppc',
+  path: '/ppc',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProductionRoute = ProductionRouteImport.update({
@@ -144,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/invoices': typeof InvoicesRoute
   '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
+  '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
   '/scrap': typeof ScrapRoute
   '/settings': typeof SettingsRoute
@@ -167,6 +174,7 @@ export interface FileRoutesByTo {
   '/invoices': typeof InvoicesRoute
   '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
+  '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
   '/scrap': typeof ScrapRoute
   '/settings': typeof SettingsRoute
@@ -191,6 +199,7 @@ export interface FileRoutesById {
   '/invoices': typeof InvoicesRoute
   '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
+  '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
   '/scrap': typeof ScrapRoute
   '/settings': typeof SettingsRoute
@@ -216,6 +225,7 @@ export interface FileRouteTypes {
     | '/invoices'
     | '/jobwork'
     | '/login'
+    | '/ppc'
     | '/production'
     | '/scrap'
     | '/settings'
@@ -239,6 +249,7 @@ export interface FileRouteTypes {
     | '/invoices'
     | '/jobwork'
     | '/login'
+    | '/ppc'
     | '/production'
     | '/scrap'
     | '/settings'
@@ -262,6 +273,7 @@ export interface FileRouteTypes {
     | '/invoices'
     | '/jobwork'
     | '/login'
+    | '/ppc'
     | '/production'
     | '/scrap'
     | '/settings'
@@ -286,6 +298,7 @@ export interface RootRouteChildren {
   InvoicesRoute: typeof InvoicesRoute
   JobworkRoute: typeof JobworkRoute
   LoginRoute: typeof LoginRoute
+  PpcRoute: typeof PpcRoute
   ProductionRoute: typeof ProductionRoute
   ScrapRoute: typeof ScrapRoute
   SettingsRoute: typeof SettingsRoute
@@ -345,6 +358,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ppc': {
+      id: '/ppc'
+      path: '/ppc'
+      fullPath: '/ppc'
+      preLoaderRoute: typeof PpcRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/production': {
@@ -462,6 +482,7 @@ const rootRouteChildren: RootRouteChildren = {
   InvoicesRoute: InvoicesRoute,
   JobworkRoute: JobworkRoute,
   LoginRoute: LoginRoute,
+  PpcRoute: PpcRoute,
   ProductionRoute: ProductionRoute,
   ScrapRoute: ScrapRoute,
   SettingsRoute: SettingsRoute,
@@ -481,13 +502,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}
