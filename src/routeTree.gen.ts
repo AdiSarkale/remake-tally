@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountsRouteImport } from './routes/accounts'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as CrmRouteImport } from './routes/crm'
 import { Route as DesignRouteImport } from './routes/design'
 import { Route as DispatchRouteImport } from './routes/dispatch'
 import { Route as FocRouteImport } from './routes/foc'
@@ -53,6 +54,11 @@ const AccountsRoute = AccountsRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CrmRoute = CrmRouteImport.update({
+  id: '/crm',
+  path: '/crm',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DesignRoute = DesignRouteImport.update({
@@ -195,6 +201,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
   '/admin': typeof AdminRoute
+  '/crm': typeof CrmRoute
   '/design': typeof DesignRoute
   '/dispatch': typeof DispatchRoute
   '/foc': typeof FocRoute
@@ -227,6 +234,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
   '/admin': typeof AdminRoute
+  '/crm': typeof CrmRoute
   '/design': typeof DesignRoute
   '/dispatch': typeof DispatchRoute
   '/foc': typeof FocRoute
@@ -260,6 +268,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
   '/admin': typeof AdminRoute
+  '/crm': typeof CrmRoute
   '/design': typeof DesignRoute
   '/dispatch': typeof DispatchRoute
   '/foc': typeof FocRoute
@@ -294,6 +303,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accounts'
     | '/admin'
+    | '/crm'
     | '/design'
     | '/dispatch'
     | '/foc'
@@ -326,6 +336,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accounts'
     | '/admin'
+    | '/crm'
     | '/design'
     | '/dispatch'
     | '/foc'
@@ -358,6 +369,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accounts'
     | '/admin'
+    | '/crm'
     | '/design'
     | '/dispatch'
     | '/foc'
@@ -391,6 +403,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountsRoute: typeof AccountsRoute
   AdminRoute: typeof AdminRoute
+  CrmRoute: typeof CrmRoute
   DesignRoute: typeof DesignRoute
   DispatchRoute: typeof DispatchRoute
   FocRoute: typeof FocRoute
@@ -441,6 +454,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/crm': {
+      id: '/crm'
+      path: '/crm'
+      fullPath: '/crm'
+      preLoaderRoute: typeof CrmRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/design': {
@@ -639,6 +659,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountsRoute: AccountsRoute,
   AdminRoute: AdminRoute,
+  CrmRoute: CrmRoute,
   DesignRoute: DesignRoute,
   DispatchRoute: DispatchRoute,
   FocRoute: FocRoute,
