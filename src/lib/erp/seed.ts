@@ -1,5 +1,6 @@
 import { buildLine, stateCode, totalsFor } from "./gst";
 import { buildDocSeed } from "./seed-docs";
+import { buildOpsSeed } from "./seed-ops";
 import type { ErpState, InventoryMovement, Invoice, ProductionEntry, ScrapEntry } from "./types";
 
 /** Deterministic PRNG so seed data is stable across server/client renders. */
@@ -231,6 +232,7 @@ export function buildSeedState(): ErpState {
 
   return {
     ...buildDocSeed({ products, materials, customers, suppliers, scrapTypes, iso }),
+    ...buildOpsSeed(iso),
     users,
 
     customers,

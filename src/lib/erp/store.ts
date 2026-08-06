@@ -11,7 +11,7 @@ import type {
   ScrapEntry,
 } from "./types";
 
-const STORAGE_KEY = "minitally-erp-state-v3";
+const STORAGE_KEY = "minitally-erp-state-v4";
 
 let serverSnapshot: ErpState | null = null;
 function getSeed(): ErpState {
