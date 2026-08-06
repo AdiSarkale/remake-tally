@@ -1,4 +1,5 @@
 import type { DocState } from "./doc-types";
+import type { OpsState } from "./ops-types";
 
 export type Role = "Admin" | "Accountant" | "Operator";
 
