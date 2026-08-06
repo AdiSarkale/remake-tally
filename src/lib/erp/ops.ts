@@ -191,10 +191,10 @@ export function qualityStats(s: ErpState) {
 export function maintenanceStats(s: ErpState) {
   const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   return {
-    pmDue: s.maintenancePlans.filter((p) => p.status !== "Completed" && daysUntil(p.nextDue) <= 7).length,
+    pmDue: s.maintenancePlans.filter((p) => daysUntil(p.nextDue) <= 7).length,
     openBreakdowns: s.breakdowns.filter((b) => b.status !== "Resolved").length,
     downtimeMinutes: s.breakdowns.filter((b) => b.date >= cutoff).reduce((t, b) => t + b.downtimeMinutes, 0),
-    lowSpares: s.spares.filter((p) => p.stock <= p.reorderLevel).length,
+    lowSpares: s.spares.filter((p) => p.stock <= p.minStock).length,
   };
 }
 
