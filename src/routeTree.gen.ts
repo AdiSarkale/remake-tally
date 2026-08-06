@@ -38,6 +38,7 @@ import { Route as MastersProductsRouteImport } from './routes/masters.products'
 import { Route as MastersScrapTypesRouteImport } from './routes/masters.scrap-types'
 import { Route as MastersSuppliersRouteImport } from './routes/masters.suppliers'
 import { Route as MastersWarehousesRouteImport } from './routes/masters.warehouses'
+import { Route as PortalCustomerRouteImport } from './routes/portal.customer'
 import { Route as ProcurementOrdersRouteImport } from './routes/procurement.orders'
 import { Route as ProcurementRequisitionsRouteImport } from './routes/procurement.requisitions'
 import { Route as SalesDeliveriesRouteImport } from './routes/sales.deliveries'
@@ -189,6 +190,11 @@ const MastersWarehousesRoute = MastersWarehousesRouteImport.update({
   path: '/masters/warehouses',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PortalCustomerRoute = PortalCustomerRouteImport.update({
+  id: '/portal/customer',
+  path: '/portal/customer',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProcurementOrdersRoute = ProcurementOrdersRouteImport.update({
   id: '/procurement/orders',
   path: '/procurement/orders',
@@ -245,6 +251,7 @@ export interface FileRoutesByFullPath {
   '/masters/scrap-types': typeof MastersScrapTypesRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
   '/masters/warehouses': typeof MastersWarehousesRoute
+  '/portal/customer': typeof PortalCustomerRoute
   '/procurement/orders': typeof ProcurementOrdersRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
   '/sales/deliveries': typeof SalesDeliveriesRoute
@@ -281,6 +288,7 @@ export interface FileRoutesByTo {
   '/masters/scrap-types': typeof MastersScrapTypesRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
   '/masters/warehouses': typeof MastersWarehousesRoute
+  '/portal/customer': typeof PortalCustomerRoute
   '/procurement/orders': typeof ProcurementOrdersRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
   '/sales/deliveries': typeof SalesDeliveriesRoute
@@ -318,6 +326,7 @@ export interface FileRoutesById {
   '/masters/scrap-types': typeof MastersScrapTypesRoute
   '/masters/suppliers': typeof MastersSuppliersRoute
   '/masters/warehouses': typeof MastersWarehousesRoute
+  '/portal/customer': typeof PortalCustomerRoute
   '/procurement/orders': typeof ProcurementOrdersRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
   '/sales/deliveries': typeof SalesDeliveriesRoute
@@ -356,6 +365,7 @@ export interface FileRouteTypes {
     | '/masters/scrap-types'
     | '/masters/suppliers'
     | '/masters/warehouses'
+    | '/portal/customer'
     | '/procurement/orders'
     | '/procurement/requisitions'
     | '/sales/deliveries'
@@ -392,6 +402,7 @@ export interface FileRouteTypes {
     | '/masters/scrap-types'
     | '/masters/suppliers'
     | '/masters/warehouses'
+    | '/portal/customer'
     | '/procurement/orders'
     | '/procurement/requisitions'
     | '/sales/deliveries'
@@ -428,6 +439,7 @@ export interface FileRouteTypes {
     | '/masters/scrap-types'
     | '/masters/suppliers'
     | '/masters/warehouses'
+    | '/portal/customer'
     | '/procurement/orders'
     | '/procurement/requisitions'
     | '/sales/deliveries'
@@ -465,6 +477,7 @@ export interface RootRouteChildren {
   MastersScrapTypesRoute: typeof MastersScrapTypesRoute
   MastersSuppliersRoute: typeof MastersSuppliersRoute
   MastersWarehousesRoute: typeof MastersWarehousesRoute
+  PortalCustomerRoute: typeof PortalCustomerRoute
   ProcurementOrdersRoute: typeof ProcurementOrdersRoute
   ProcurementRequisitionsRoute: typeof ProcurementRequisitionsRoute
   SalesDeliveriesRoute: typeof SalesDeliveriesRoute
@@ -677,6 +690,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MastersWarehousesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/portal/customer': {
+      id: '/portal/customer'
+      path: '/portal/customer'
+      fullPath: '/portal/customer'
+      preLoaderRoute: typeof PortalCustomerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/procurement/orders': {
       id: '/procurement/orders'
       path: '/procurement/orders'
@@ -745,6 +765,7 @@ const rootRouteChildren: RootRouteChildren = {
   MastersScrapTypesRoute: MastersScrapTypesRoute,
   MastersSuppliersRoute: MastersSuppliersRoute,
   MastersWarehousesRoute: MastersWarehousesRoute,
+  PortalCustomerRoute: PortalCustomerRoute,
   ProcurementOrdersRoute: ProcurementOrdersRoute,
   ProcurementRequisitionsRoute: ProcurementRequisitionsRoute,
   SalesDeliveriesRoute: SalesDeliveriesRoute,
