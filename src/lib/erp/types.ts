@@ -1,4 +1,5 @@
 import type { DocState } from "./doc-types";
+import type { OpsState } from "./ops-types";
 
 export type Role = "Admin" | "Accountant" | "Operator";
 
@@ -172,7 +173,7 @@ export interface CompanySettings {
   financialYear: string;
 }
 
-export interface ErpState extends DocState {
+export interface ErpState extends DocState, OpsState {
   users: User[];
   customers: Customer[];
   suppliers: Supplier[];
@@ -198,9 +199,45 @@ export const ROLE_PERMISSIONS: Record<Role, string[]> = {
     "logistics",
     "settings",
     "reports",
+    "ppc",
+    "design",
+    "quality",
+    "maintenance",
+    "dispatch",
+    "hr",
+    "accounts",
+    "security",
+    "admin",
+    "crm",
+    "approvals",
+    "portal",
   ],
-  Accountant: ["masters", "inventory", "sales", "procurement", "reports"],
-  Operator: ["production", "scrap", "inventory", "logistics"],
+  Accountant: [
+    "masters",
+    "inventory",
+    "sales",
+    "procurement",
+    "reports",
+    "accounts",
+    "crm",
+    "dispatch",
+    "approvals",
+    "portal",
+    "hr",
+  ],
+  Operator: [
+    "production",
+    "scrap",
+    "inventory",
+    "logistics",
+    "ppc",
+    "quality",
+    "maintenance",
+    "dispatch",
+    "design",
+    "security",
+    "approvals",
+  ],
 };
 
 export function can(role: Role, area: string) {

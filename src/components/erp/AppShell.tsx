@@ -94,8 +94,34 @@ const NAV: { group: string; items: NavItem[] }[] = [
     ],
   },
   {
+    group: "Plant",
+    items: [
+      { to: "/ppc", label: "Planning & Control", icon: ClipboardList, area: "ppc" },
+      { to: "/design", label: "Design & Artwork", icon: FileSignature, area: "design" },
+      { to: "/quality", label: "Quality", icon: ClipboardCheck, area: "quality" },
+      { to: "/maintenance", label: "Maintenance", icon: Wrench, area: "maintenance" },
+      { to: "/dispatch", label: "Dispatch & Logistics", icon: Truck, area: "dispatch" },
+    ],
+  },
+  {
+    group: "Business",
+    items: [
+      { to: "/crm", label: "Enquiries & CRM", icon: Users, area: "crm" },
+      { to: "/accounts", label: "Accounts", icon: ReceiptText, area: "accounts" },
+      { to: "/hr", label: "HR & Workforce", icon: Users, area: "hr" },
+      { to: "/security", label: "Security & Gate", icon: PackageCheck, area: "security" },
+      { to: "/admin", label: "Administration", icon: Warehouse, area: "admin" },
+      { to: "/portal/customer", label: "Customer Portal", icon: Gift, area: "portal" },
+    ],
+  },
+  {
     group: "System",
-    items: [{ to: "/settings", label: "Settings", icon: Settings, area: "settings" }],
+    items: [
+      { to: "/approvals", label: "Approvals", icon: ClipboardCheck, area: "approvals" },
+      { to: "/notifications", label: "Notifications", icon: Boxes, area: "approvals" },
+      { to: "/reports", label: "Reports & Analytics", icon: LayoutDashboard, area: "reports" },
+      { to: "/settings", label: "Settings", icon: Settings, area: "settings" },
+    ],
   },
 ];
 
