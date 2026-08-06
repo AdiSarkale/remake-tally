@@ -18,6 +18,7 @@ import { Route as JobworkRouteImport } from './routes/jobwork'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as PpcRouteImport } from './routes/ppc'
 import { Route as ProductionRouteImport } from './routes/production'
+import { Route as QualityRouteImport } from './routes/quality'
 import { Route as ScrapRouteImport } from './routes/scrap'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TransfersRouteImport } from './routes/transfers'
@@ -76,6 +77,11 @@ const PpcRoute = PpcRouteImport.update({
 const ProductionRoute = ProductionRouteImport.update({
   id: '/production',
   path: '/production',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QualityRoute = QualityRouteImport.update({
+  id: '/quality',
+  path: '/quality',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ScrapRoute = ScrapRouteImport.update({
@@ -159,6 +165,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
+  '/quality': typeof QualityRoute
   '/scrap': typeof ScrapRoute
   '/settings': typeof SettingsRoute
   '/transfers': typeof TransfersRoute
@@ -184,6 +191,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
+  '/quality': typeof QualityRoute
   '/scrap': typeof ScrapRoute
   '/settings': typeof SettingsRoute
   '/transfers': typeof TransfersRoute
@@ -210,6 +218,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
+  '/quality': typeof QualityRoute
   '/scrap': typeof ScrapRoute
   '/settings': typeof SettingsRoute
   '/transfers': typeof TransfersRoute
@@ -237,6 +246,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/ppc'
     | '/production'
+    | '/quality'
     | '/scrap'
     | '/settings'
     | '/transfers'
@@ -262,6 +272,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/ppc'
     | '/production'
+    | '/quality'
     | '/scrap'
     | '/settings'
     | '/transfers'
@@ -287,6 +298,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/ppc'
     | '/production'
+    | '/quality'
     | '/scrap'
     | '/settings'
     | '/transfers'
@@ -313,6 +325,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   PpcRoute: typeof PpcRoute
   ProductionRoute: typeof ProductionRoute
+  QualityRoute: typeof QualityRoute
   ScrapRoute: typeof ScrapRoute
   SettingsRoute: typeof SettingsRoute
   TransfersRoute: typeof TransfersRoute
@@ -392,6 +405,13 @@ declare module '@tanstack/react-router' {
       path: '/production'
       fullPath: '/production'
       preLoaderRoute: typeof ProductionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/quality': {
+      id: '/quality'
+      path: '/quality'
+      fullPath: '/quality'
+      preLoaderRoute: typeof QualityRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/scrap': {
@@ -505,6 +525,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   PpcRoute: PpcRoute,
   ProductionRoute: ProductionRoute,
+  QualityRoute: QualityRoute,
   ScrapRoute: ScrapRoute,
   SettingsRoute: SettingsRoute,
   TransfersRoute: TransfersRoute,
