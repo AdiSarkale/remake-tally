@@ -26,6 +26,7 @@ import { Route as MaintenanceRouteImport } from './routes/maintenance'
 import { Route as PpcRouteImport } from './routes/ppc'
 import { Route as ProductionRouteImport } from './routes/production'
 import { Route as QualityRouteImport } from './routes/quality'
+import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as ScrapRouteImport } from './routes/scrap'
 import { Route as SecurityRouteImport } from './routes/security'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -127,6 +128,11 @@ const QualityRoute = QualityRouteImport.update({
   path: '/quality',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ScrapRoute = ScrapRouteImport.update({
   id: '/scrap',
   path: '/scrap',
@@ -221,6 +227,7 @@ export interface FileRoutesByFullPath {
   '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
   '/quality': typeof QualityRoute
+  '/reports': typeof ReportsRoute
   '/scrap': typeof ScrapRoute
   '/security': typeof SecurityRoute
   '/settings': typeof SettingsRoute
@@ -255,6 +262,7 @@ export interface FileRoutesByTo {
   '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
   '/quality': typeof QualityRoute
+  '/reports': typeof ReportsRoute
   '/scrap': typeof ScrapRoute
   '/security': typeof SecurityRoute
   '/settings': typeof SettingsRoute
@@ -290,6 +298,7 @@ export interface FileRoutesById {
   '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
   '/quality': typeof QualityRoute
+  '/reports': typeof ReportsRoute
   '/scrap': typeof ScrapRoute
   '/security': typeof SecurityRoute
   '/settings': typeof SettingsRoute
@@ -326,6 +335,7 @@ export interface FileRouteTypes {
     | '/ppc'
     | '/production'
     | '/quality'
+    | '/reports'
     | '/scrap'
     | '/security'
     | '/settings'
@@ -360,6 +370,7 @@ export interface FileRouteTypes {
     | '/ppc'
     | '/production'
     | '/quality'
+    | '/reports'
     | '/scrap'
     | '/security'
     | '/settings'
@@ -394,6 +405,7 @@ export interface FileRouteTypes {
     | '/ppc'
     | '/production'
     | '/quality'
+    | '/reports'
     | '/scrap'
     | '/security'
     | '/settings'
@@ -429,6 +441,7 @@ export interface RootRouteChildren {
   PpcRoute: typeof PpcRoute
   ProductionRoute: typeof ProductionRoute
   QualityRoute: typeof QualityRoute
+  ReportsRoute: typeof ReportsRoute
   ScrapRoute: typeof ScrapRoute
   SecurityRoute: typeof SecurityRoute
   SettingsRoute: typeof SettingsRoute
@@ -567,6 +580,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof QualityRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/scrap': {
       id: '/scrap'
       path: '/scrap'
@@ -693,6 +713,7 @@ const rootRouteChildren: RootRouteChildren = {
   PpcRoute: PpcRoute,
   ProductionRoute: ProductionRoute,
   QualityRoute: QualityRoute,
+  ReportsRoute: ReportsRoute,
   ScrapRoute: ScrapRoute,
   SecurityRoute: SecurityRoute,
   SettingsRoute: SettingsRoute,
