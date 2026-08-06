@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountsRouteImport } from './routes/accounts'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as ApprovalsRouteImport } from './routes/approvals'
 import { Route as CrmRouteImport } from './routes/crm'
 import { Route as DesignRouteImport } from './routes/design'
 import { Route as DispatchRouteImport } from './routes/dispatch'
@@ -54,6 +55,11 @@ const AccountsRoute = AccountsRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApprovalsRoute = ApprovalsRouteImport.update({
+  id: '/approvals',
+  path: '/approvals',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CrmRoute = CrmRouteImport.update({
@@ -201,6 +207,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
   '/admin': typeof AdminRoute
+  '/approvals': typeof ApprovalsRoute
   '/crm': typeof CrmRoute
   '/design': typeof DesignRoute
   '/dispatch': typeof DispatchRoute
@@ -234,6 +241,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
   '/admin': typeof AdminRoute
+  '/approvals': typeof ApprovalsRoute
   '/crm': typeof CrmRoute
   '/design': typeof DesignRoute
   '/dispatch': typeof DispatchRoute
@@ -268,6 +276,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/accounts': typeof AccountsRoute
   '/admin': typeof AdminRoute
+  '/approvals': typeof ApprovalsRoute
   '/crm': typeof CrmRoute
   '/design': typeof DesignRoute
   '/dispatch': typeof DispatchRoute
@@ -303,6 +312,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accounts'
     | '/admin'
+    | '/approvals'
     | '/crm'
     | '/design'
     | '/dispatch'
@@ -336,6 +346,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accounts'
     | '/admin'
+    | '/approvals'
     | '/crm'
     | '/design'
     | '/dispatch'
@@ -369,6 +380,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accounts'
     | '/admin'
+    | '/approvals'
     | '/crm'
     | '/design'
     | '/dispatch'
@@ -403,6 +415,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountsRoute: typeof AccountsRoute
   AdminRoute: typeof AdminRoute
+  ApprovalsRoute: typeof ApprovalsRoute
   CrmRoute: typeof CrmRoute
   DesignRoute: typeof DesignRoute
   DispatchRoute: typeof DispatchRoute
@@ -454,6 +467,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/approvals': {
+      id: '/approvals'
+      path: '/approvals'
+      fullPath: '/approvals'
+      preLoaderRoute: typeof ApprovalsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/crm': {
@@ -659,6 +679,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountsRoute: AccountsRoute,
   AdminRoute: AdminRoute,
+  ApprovalsRoute: ApprovalsRoute,
   CrmRoute: CrmRoute,
   DesignRoute: DesignRoute,
   DispatchRoute: DispatchRoute,

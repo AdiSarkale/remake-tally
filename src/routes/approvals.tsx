@@ -68,7 +68,10 @@ function ApprovalsPage() {
   const pendingValue = pending.reduce((t, a) => t + a.amount, 0);
 
   function submit() {
-    if (!form.subject.trim()) return toast.error("Subject is required");
+    if (!form.subject.trim()) {
+      toast.error("Subject is required");
+      return;
+    }
     raiseApproval(
       {
         type: form.type,
