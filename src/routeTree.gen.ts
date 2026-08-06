@@ -16,6 +16,7 @@ import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as InvoicesRouteImport } from './routes/invoices'
 import { Route as JobworkRouteImport } from './routes/jobwork'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as MaintenanceRouteImport } from './routes/maintenance'
 import { Route as PpcRouteImport } from './routes/ppc'
 import { Route as ProductionRouteImport } from './routes/production'
 import { Route as QualityRouteImport } from './routes/quality'
@@ -67,6 +68,11 @@ const JobworkRoute = JobworkRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MaintenanceRoute = MaintenanceRouteImport.update({
+  id: '/maintenance',
+  path: '/maintenance',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PpcRoute = PpcRouteImport.update({
@@ -163,6 +169,7 @@ export interface FileRoutesByFullPath {
   '/invoices': typeof InvoicesRoute
   '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
+  '/maintenance': typeof MaintenanceRoute
   '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
   '/quality': typeof QualityRoute
@@ -189,6 +196,7 @@ export interface FileRoutesByTo {
   '/invoices': typeof InvoicesRoute
   '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
+  '/maintenance': typeof MaintenanceRoute
   '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
   '/quality': typeof QualityRoute
@@ -216,6 +224,7 @@ export interface FileRoutesById {
   '/invoices': typeof InvoicesRoute
   '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
+  '/maintenance': typeof MaintenanceRoute
   '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
   '/quality': typeof QualityRoute
@@ -244,6 +253,7 @@ export interface FileRouteTypes {
     | '/invoices'
     | '/jobwork'
     | '/login'
+    | '/maintenance'
     | '/ppc'
     | '/production'
     | '/quality'
@@ -270,6 +280,7 @@ export interface FileRouteTypes {
     | '/invoices'
     | '/jobwork'
     | '/login'
+    | '/maintenance'
     | '/ppc'
     | '/production'
     | '/quality'
@@ -296,6 +307,7 @@ export interface FileRouteTypes {
     | '/invoices'
     | '/jobwork'
     | '/login'
+    | '/maintenance'
     | '/ppc'
     | '/production'
     | '/quality'
@@ -323,6 +335,7 @@ export interface RootRouteChildren {
   InvoicesRoute: typeof InvoicesRoute
   JobworkRoute: typeof JobworkRoute
   LoginRoute: typeof LoginRoute
+  MaintenanceRoute: typeof MaintenanceRoute
   PpcRoute: typeof PpcRoute
   ProductionRoute: typeof ProductionRoute
   QualityRoute: typeof QualityRoute
@@ -391,6 +404,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/maintenance': {
+      id: '/maintenance'
+      path: '/maintenance'
+      fullPath: '/maintenance'
+      preLoaderRoute: typeof MaintenanceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ppc': {
@@ -523,6 +543,7 @@ const rootRouteChildren: RootRouteChildren = {
   InvoicesRoute: InvoicesRoute,
   JobworkRoute: JobworkRoute,
   LoginRoute: LoginRoute,
+  MaintenanceRoute: MaintenanceRoute,
   PpcRoute: PpcRoute,
   ProductionRoute: ProductionRoute,
   QualityRoute: QualityRoute,
