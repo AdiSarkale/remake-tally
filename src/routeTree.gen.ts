@@ -24,6 +24,7 @@ import { Route as PpcRouteImport } from './routes/ppc'
 import { Route as ProductionRouteImport } from './routes/production'
 import { Route as QualityRouteImport } from './routes/quality'
 import { Route as ScrapRouteImport } from './routes/scrap'
+import { Route as SecurityRouteImport } from './routes/security'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TransfersRouteImport } from './routes/transfers'
 import { Route as MastersCustomersRouteImport } from './routes/masters.customers'
@@ -113,6 +114,11 @@ const ScrapRoute = ScrapRouteImport.update({
   path: '/scrap',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SecurityRoute = SecurityRouteImport.update({
+  id: '/security',
+  path: '/security',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -195,6 +201,7 @@ export interface FileRoutesByFullPath {
   '/production': typeof ProductionRoute
   '/quality': typeof QualityRoute
   '/scrap': typeof ScrapRoute
+  '/security': typeof SecurityRoute
   '/settings': typeof SettingsRoute
   '/transfers': typeof TransfersRoute
   '/masters/customers': typeof MastersCustomersRoute
@@ -225,6 +232,7 @@ export interface FileRoutesByTo {
   '/production': typeof ProductionRoute
   '/quality': typeof QualityRoute
   '/scrap': typeof ScrapRoute
+  '/security': typeof SecurityRoute
   '/settings': typeof SettingsRoute
   '/transfers': typeof TransfersRoute
   '/masters/customers': typeof MastersCustomersRoute
@@ -256,6 +264,7 @@ export interface FileRoutesById {
   '/production': typeof ProductionRoute
   '/quality': typeof QualityRoute
   '/scrap': typeof ScrapRoute
+  '/security': typeof SecurityRoute
   '/settings': typeof SettingsRoute
   '/transfers': typeof TransfersRoute
   '/masters/customers': typeof MastersCustomersRoute
@@ -288,6 +297,7 @@ export interface FileRouteTypes {
     | '/production'
     | '/quality'
     | '/scrap'
+    | '/security'
     | '/settings'
     | '/transfers'
     | '/masters/customers'
@@ -318,6 +328,7 @@ export interface FileRouteTypes {
     | '/production'
     | '/quality'
     | '/scrap'
+    | '/security'
     | '/settings'
     | '/transfers'
     | '/masters/customers'
@@ -348,6 +359,7 @@ export interface FileRouteTypes {
     | '/production'
     | '/quality'
     | '/scrap'
+    | '/security'
     | '/settings'
     | '/transfers'
     | '/masters/customers'
@@ -379,6 +391,7 @@ export interface RootRouteChildren {
   ProductionRoute: typeof ProductionRoute
   QualityRoute: typeof QualityRoute
   ScrapRoute: typeof ScrapRoute
+  SecurityRoute: typeof SecurityRoute
   SettingsRoute: typeof SettingsRoute
   TransfersRoute: typeof TransfersRoute
   MastersCustomersRoute: typeof MastersCustomersRoute
@@ -501,6 +514,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScrapRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/security': {
+      id: '/security'
+      path: '/security'
+      fullPath: '/security'
+      preLoaderRoute: typeof SecurityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -611,6 +631,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProductionRoute: ProductionRoute,
   QualityRoute: QualityRoute,
   ScrapRoute: ScrapRoute,
+  SecurityRoute: SecurityRoute,
   SettingsRoute: SettingsRoute,
   TransfersRoute: TransfersRoute,
   MastersCustomersRoute: MastersCustomersRoute,
