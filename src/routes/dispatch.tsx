@@ -28,7 +28,7 @@ export const Route = createFileRoute("/dispatch")({
 function DispatchPage() {
   const dispatches = useErp((s) => s.dispatches);
   const customers = useErp((s) => s.customers.map((c) => c.name));
-  const dnNos = useErp((s) => s.deliveryNotes.map((d) => d.dnNo));
+  const dnNos = useErp((s) => s.deliveries.map((d) => d.dnNo));
 
   const inTransit = dispatches.filter((d) => d.status === "In Transit").length;
   const delivered = dispatches.filter((d) => d.status === "Delivered").length;

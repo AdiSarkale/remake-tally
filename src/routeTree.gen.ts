@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DesignRouteImport } from './routes/design'
+import { Route as DispatchRouteImport } from './routes/dispatch'
 import { Route as FocRouteImport } from './routes/foc'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as InvoicesRouteImport } from './routes/invoices'
@@ -43,6 +44,11 @@ const IndexRoute = IndexRouteImport.update({
 const DesignRoute = DesignRouteImport.update({
   id: '/design',
   path: '/design',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DispatchRoute = DispatchRouteImport.update({
+  id: '/dispatch',
+  path: '/dispatch',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FocRoute = FocRouteImport.update({
@@ -164,6 +170,7 @@ const SalesQuotationsRoute = SalesQuotationsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/design': typeof DesignRoute
+  '/dispatch': typeof DispatchRoute
   '/foc': typeof FocRoute
   '/inventory': typeof InventoryRoute
   '/invoices': typeof InvoicesRoute
@@ -191,6 +198,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/design': typeof DesignRoute
+  '/dispatch': typeof DispatchRoute
   '/foc': typeof FocRoute
   '/inventory': typeof InventoryRoute
   '/invoices': typeof InvoicesRoute
@@ -219,6 +227,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/design': typeof DesignRoute
+  '/dispatch': typeof DispatchRoute
   '/foc': typeof FocRoute
   '/inventory': typeof InventoryRoute
   '/invoices': typeof InvoicesRoute
@@ -248,6 +257,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/design'
+    | '/dispatch'
     | '/foc'
     | '/inventory'
     | '/invoices'
@@ -275,6 +285,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/design'
+    | '/dispatch'
     | '/foc'
     | '/inventory'
     | '/invoices'
@@ -302,6 +313,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/design'
+    | '/dispatch'
     | '/foc'
     | '/inventory'
     | '/invoices'
@@ -330,6 +342,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DesignRoute: typeof DesignRoute
+  DispatchRoute: typeof DispatchRoute
   FocRoute: typeof FocRoute
   InventoryRoute: typeof InventoryRoute
   InvoicesRoute: typeof InvoicesRoute
@@ -369,6 +382,13 @@ declare module '@tanstack/react-router' {
       path: '/design'
       fullPath: '/design'
       preLoaderRoute: typeof DesignRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dispatch': {
+      id: '/dispatch'
+      path: '/dispatch'
+      fullPath: '/dispatch'
+      preLoaderRoute: typeof DispatchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/foc': {
@@ -538,6 +558,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DesignRoute: DesignRoute,
+  DispatchRoute: DispatchRoute,
   FocRoute: FocRoute,
   InventoryRoute: InventoryRoute,
   InvoicesRoute: InvoicesRoute,
