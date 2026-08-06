@@ -75,7 +75,7 @@ function CustomerPortal() {
             columns={[
               { key: "soNo", header: "Order", value: (o) => o.soNo },
               { key: "date", header: "Date", value: (o) => o.date, render: (o) => dmy(o.date) },
-              { key: "total", header: "Value", align: "right", value: (o) => o.total, render: (o) => <span className="num">{inr(o.total)}</span> },
+              { key: "grandTotal", header: "Value", align: "right", value: (o) => o.grandTotal, render: (o) => <span className="num">{inr(o.grandTotal)}</span> },
               { key: "status", header: "Status", value: (o) => o.status, render: (o) => <StatusBadge status={o.status} /> },
             ]}
           />
