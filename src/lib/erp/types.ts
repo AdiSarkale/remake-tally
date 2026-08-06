@@ -173,7 +173,7 @@ export interface CompanySettings {
   financialYear: string;
 }
 
-export interface ErpState extends DocState {
+export interface ErpState extends DocState, OpsState {
   users: User[];
   customers: Customer[];
   suppliers: Supplier[];
