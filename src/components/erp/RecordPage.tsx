@@ -219,7 +219,7 @@ export function RecordPage({
         columns={allColumns}
         rowKey={(r) => r.id}
         searchable={searchable}
-        empty={empty}
+        {...(empty ? { empty } : {})}
       />
 
       <Dialog open={open} onOpenChange={setOpen}>
