@@ -23,6 +23,7 @@ import { Route as InvoicesRouteImport } from './routes/invoices'
 import { Route as JobworkRouteImport } from './routes/jobwork'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MaintenanceRouteImport } from './routes/maintenance'
+import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as PpcRouteImport } from './routes/ppc'
 import { Route as ProductionRouteImport } from './routes/production'
 import { Route as QualityRouteImport } from './routes/quality'
@@ -111,6 +112,11 @@ const LoginRoute = LoginRouteImport.update({
 const MaintenanceRoute = MaintenanceRouteImport.update({
   id: '/maintenance',
   path: '/maintenance',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PpcRoute = PpcRouteImport.update({
@@ -224,6 +230,7 @@ export interface FileRoutesByFullPath {
   '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
+  '/notifications': typeof NotificationsRoute
   '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
   '/quality': typeof QualityRoute
@@ -259,6 +266,7 @@ export interface FileRoutesByTo {
   '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
+  '/notifications': typeof NotificationsRoute
   '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
   '/quality': typeof QualityRoute
@@ -295,6 +303,7 @@ export interface FileRoutesById {
   '/jobwork': typeof JobworkRoute
   '/login': typeof LoginRoute
   '/maintenance': typeof MaintenanceRoute
+  '/notifications': typeof NotificationsRoute
   '/ppc': typeof PpcRoute
   '/production': typeof ProductionRoute
   '/quality': typeof QualityRoute
@@ -332,6 +341,7 @@ export interface FileRouteTypes {
     | '/jobwork'
     | '/login'
     | '/maintenance'
+    | '/notifications'
     | '/ppc'
     | '/production'
     | '/quality'
@@ -367,6 +377,7 @@ export interface FileRouteTypes {
     | '/jobwork'
     | '/login'
     | '/maintenance'
+    | '/notifications'
     | '/ppc'
     | '/production'
     | '/quality'
@@ -402,6 +413,7 @@ export interface FileRouteTypes {
     | '/jobwork'
     | '/login'
     | '/maintenance'
+    | '/notifications'
     | '/ppc'
     | '/production'
     | '/quality'
@@ -438,6 +450,7 @@ export interface RootRouteChildren {
   JobworkRoute: typeof JobworkRoute
   LoginRoute: typeof LoginRoute
   MaintenanceRoute: typeof MaintenanceRoute
+  NotificationsRoute: typeof NotificationsRoute
   PpcRoute: typeof PpcRoute
   ProductionRoute: typeof ProductionRoute
   QualityRoute: typeof QualityRoute
@@ -557,6 +570,13 @@ declare module '@tanstack/react-router' {
       path: '/maintenance'
       fullPath: '/maintenance'
       preLoaderRoute: typeof MaintenanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ppc': {
@@ -710,6 +730,7 @@ const rootRouteChildren: RootRouteChildren = {
   JobworkRoute: JobworkRoute,
   LoginRoute: LoginRoute,
   MaintenanceRoute: MaintenanceRoute,
+  NotificationsRoute: NotificationsRoute,
   PpcRoute: PpcRoute,
   ProductionRoute: ProductionRoute,
   QualityRoute: QualityRoute,
