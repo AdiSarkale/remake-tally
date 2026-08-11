@@ -279,6 +279,19 @@ def create_invoice(
         inter_state=int(inter_state),
         signature=signature,
         created_by=user.username,
+
+         sub_total=0.0,
+        discount_total=0.0,
+        taxable_total=0.0,
+        cgst=0.0,
+        sgst=0.0,
+        igst=0.0,
+        round_off=0.0,
+        grand_total=0.0,
+
+        # Payment tracking
+        paid_amount=0.0,
+        balance_amount=0.0,
     )
 
     sub_total = 0.0
