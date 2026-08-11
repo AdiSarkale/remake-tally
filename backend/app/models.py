@@ -182,32 +182,122 @@ class InvoiceStatus(str, enum.Enum):
     unpaid = "Unpaid"
     paid = "Paid"
     cancelled = "Cancelled"
+    partial = 'Partial'
 
 
 class Invoice(Base):
     __tablename__ = "invoices"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    invoice_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
-    invoice_date: Mapped[date] = mapped_column(Date, index=True)
-    customer_id: Mapped[str] = mapped_column(ForeignKey("parties.id"))
-    customer_name: Mapped[str] = mapped_column(String(160))
-    po_reference: Mapped[str] = mapped_column(String(64), default="")
-    notes: Mapped[str] = mapped_column(Text, default="")
-    inter_state: Mapped[bool] = mapped_column(Integer, default=0)
-    sub_total: Mapped[float] = mapped_column(Float, default=0)
-    discount_total: Mapped[float] = mapped_column(Float, default=0)
-    taxable_total: Mapped[float] = mapped_column(Float, default=0)
-    cgst: Mapped[float] = mapped_column(Float, default=0)
-    sgst: Mapped[float] = mapped_column(Float, default=0)
-    igst: Mapped[float] = mapped_column(Float, default=0)
-    round_off: Mapped[float] = mapped_column(Float, default=0)
-    grand_total: Mapped[float] = mapped_column(Float, default=0)
-    status: Mapped[InvoiceStatus] = mapped_column(Enum(InvoiceStatus), default=InvoiceStatus.unpaid)
-    signature: Mapped[str] = mapped_column(String(64), index=True, default="")
-    created_by: Mapped[str] = mapped_column(String(64), default="")
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=_uuid,
+    )
 
-    lines: Mapped[list["InvoiceLine"]] = relationship(back_populates="invoice", cascade="all, delete-orphan")
+    invoice_no: Mapped[str] = mapped_column(
+        String(32),
+        unique=True,
+        index=True,
+    )
+
+    invoice_date: Mapped[date] = mapped_column(
+        Date,
+        index=True,
+    )
+
+    customer_id: Mapped[str] = mapped_column(
+        ForeignKey("parties.id")
+    )
+
+    customer_name: Mapped[str] = mapped_column(
+        String(160)
+    )
+
+    po_reference: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    notes: Mapped[str] = mapped_column(
+        Text,
+        default="",
+    )
+
+    inter_state: Mapped[bool] = mapped_column(
+        Integer,
+        default=0,
+    )
+
+    sub_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    discount_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    taxable_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    cgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    sgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    igst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    round_off: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    grand_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    paid_amount: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    balance_amount: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    status: Mapped[InvoiceStatus] = mapped_column(
+        Enum(InvoiceStatus),
+        default=InvoiceStatus.unpaid,
+    )
+
+    signature: Mapped[str] = mapped_column(
+        String(64),
+        index=True,
+        default="",
+    )
+
+    created_by: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    lines: Mapped[list["InvoiceLine"]] = relationship(
+        back_populates="invoice",
+        cascade="all, delete-orphan",
+    )
 
 
 class InvoiceLine(Base):

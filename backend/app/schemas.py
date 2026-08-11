@@ -266,11 +266,32 @@ class SettingsOut(SettingsIn, ORMModel):
 
 
 # ---------- Sales invoices ----------
+# ---------- Sales invoices ----------
+
 class InvoiceLineIn(BaseModel):
     product_id: str
-    quantity: float = Field(gt=0)
-    rate: float = Field(ge=0)
-    discount_percent: float = Field(default=0, ge=0, le=100)
+
+    quantity: float = Field(
+        gt=0,
+    )
+
+    rate: float = Field(
+        ge=0,
+    )
+
+    discount_percent: float = Field(
+        default=0,
+        ge=0,
+        le=100,
+    )
+
+    # None = use product master GST.
+    # A number = custom GST for this invoice line.
+    gst_rate: float | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+    )
 
 
 class InvoiceLineOut(ORMModel):
@@ -294,30 +315,61 @@ class InvoiceIn(BaseModel):
     customer_id: str
     po_reference: str = ""
     notes: str = ""
+
+    # Backend can derive this from paid_percent,
+    # but keeping it here makes the API explicit.
     status: InvoiceStatus = InvoiceStatus.unpaid
-    lines: list[InvoiceLineIn] = Field(min_length=1)
+
+    paid_percent: float = Field(
+        default=0,
+        ge=0,
+        le=100,
+    )
+
+    lines: list[InvoiceLineIn] = Field(
+        min_length=1,
+    )
 
 
 class InvoiceOut(ORMModel):
     id: str
     invoice_no: str
     invoice_date: date
+
     customer_id: str
     customer_name: str
+
     po_reference: str
     notes: str
+
     inter_state: bool
+
     sub_total: float
     discount_total: float
     taxable_total: float
+
     cgst: float
     sgst: float
     igst: float
+
     round_off: float
     grand_total: float
+
+    paid_amount: float
+    balance_amount: float
+
     status: InvoiceStatus
+
     lines: list[InvoiceLineOut]
 
 
 class InvoiceStatusIn(BaseModel):
     status: InvoiceStatus
+
+    # Required when changing to Partial.
+    # Optional for Paid/Unpaid; backend derives the amount.
+    paid_percent: float | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+    )
