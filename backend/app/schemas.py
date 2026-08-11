@@ -241,7 +241,7 @@ class DashboardOut(BaseModel):
     production_series: list[ProductionSeriesOut]
     recent_production: list[RecentProductionOut]
     low_stock_items: list[LowStockOut]
-    top_scrap_reason: list[ScrapReasonOut]
+    top_scrap_reasons: list[ScrapReasonOut]
 
 
 class AuditOut(ORMModel):
