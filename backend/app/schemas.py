@@ -104,6 +104,10 @@ class RawMaterialOut(RawMaterialIn, ORMModel):
     stock: float
 
 
+class ScrapReasonOut(BaseModel):
+    reason: str
+    quantity: float
+
 class ScrapTypeIn(BaseModel):
     name: str
     unit: str = "KG"
@@ -184,8 +188,38 @@ class ScrapOut(ScrapIn, ORMModel):
     id: str
 
 
-# ---------- Dashboard / settings ----------
+
+# ---------- Dashboard ----------
+
+class ProductionSeriesOut(BaseModel):
+    date: date
+    label: str
+    produced: float
+    scrap: float
+
+
+class RecentProductionOut(BaseModel):
+    id: str
+    batch_no: str
+    entry_date: date
+    product_name: str
+    quantity: float
+    machine: str
+    operator: str
+    shift: str
+
+
+class LowStockOut(BaseModel):
+    id: str
+    name: str
+    stock: float
+    min_stock: float
+    unit: str
+    kind: str
+
+
 class DashboardOut(BaseModel):
+    # KPI cards
     produced_today: float
     produced_month: float
     scrap_month: float
@@ -202,6 +236,12 @@ class DashboardOut(BaseModel):
 
     raw_material_value: float
     raw_material_count: int
+
+    # Dashboard tables / charts
+    production_series: list[ProductionSeriesOut]
+    recent_production: list[RecentProductionOut]
+    low_stock_items: list[LowStockOut]
+    top_scrap_reason: list[ScrapReasonOut]
 
 
 class AuditOut(ORMModel):
