@@ -193,6 +193,16 @@ class DashboardOut(BaseModel):
     inventory_value: float
     low_stock_count: int
 
+    finished_goods_quantity: float
+    finished_goods_sku_count: int
+    finished_goods_value: float
+
+    scrap_stock_quantity: float
+    scrap_stock_value: float
+
+    raw_material_value: float
+    raw_material_count: int
+
 
 class AuditOut(ORMModel):
     id: str

@@ -23,9 +23,25 @@ def dashboard(db: Session = Depends(get_db), user: models.User = Depends(current
     produced_month = sum(e.quantity for e in entries if e.entry_date.strftime("%Y-%m") == today.strftime("%Y-%m"))
     scrap_month = sum(s.quantity for s in scrap if s.entry_date.strftime("%Y-%m") == today.strftime("%Y-%m"))
 
-    fg = sum(p.stock * p.cost_price for p in db.query(models.Product).all())
-    rm = sum(m.stock * m.cost for m in db.query(models.RawMaterial).all())
-    sc = sum(s.stock * s.selling_rate for s in db.query(models.ScrapType).all())
+    products = db.query(models.Product).all()
+    materials = db.query(models.RawMaterial).all()
+    scrap_types = db.query(models.ScrapType).all()
+
+    finished_goods_quantity = sum(p.stock for p in products)
+    finished_goods_sku_count = len(products)
+    finished_goods_value = sum(p.stock * p.cost_price for p in products)
+
+    raw_material_value = sum(m.stock * m.cost for m in materials)
+    raw_material_count = len(materials)
+
+    scrap_stock_quantity = sum(s.stock for s in scrap_types)
+    scrap_stock_value = sum(s.stock * s.selling_rate for s in scrap_types)
+
+    inventory_value = (
+        finished_goods_value
+        + raw_material_value
+        + scrap_stock_value
+    )
     low = db.query(models.Product).filter(models.Product.stock <= models.Product.min_stock).count()
     low += db.query(models.RawMaterial).filter(models.RawMaterial.stock <= models.RawMaterial.min_stock).count()
 
@@ -34,8 +50,18 @@ def dashboard(db: Session = Depends(get_db), user: models.User = Depends(current
         produced_month=produced_month,
         scrap_month=scrap_month,
         scrap_rate=(scrap_month / produced_month * 100) if produced_month else 0.0,
-        inventory_value=fg + rm + sc,
+        inventory_value=inventory_value,
         low_stock_count=low,
+
+        finished_goods_quantity=finished_goods_quantity,
+        finished_goods_sku_count=finished_goods_sku_count,
+        finished_goods_value=finished_goods_value,
+
+        scrap_stock_quantity=scrap_stock_quantity,
+        scrap_stock_value=scrap_stock_value,
+
+        raw_material_value=raw_material_value,
+        raw_material_count=raw_material_count,
     )
 
 
