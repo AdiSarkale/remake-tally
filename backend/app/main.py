@@ -3,12 +3,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, dashboard, inventory, masters, production, sales, scrap, users
+from app.api.routes import auth, dashboard, inventory, masters, production, sales, scrap, users, quotations
 from app.core.config import get_settings
 from app.db.session import Base, engine
+from app import models
 
 settings = get_settings()
-Base.metadata.create_all(bind=engine)  # replace with Alembic migrations in production
+# Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title=settings.app_name, version="1.0.0")
 
@@ -20,7 +21,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (auth.router, masters.router, inventory.router, production.router, scrap.router, sales.router, dashboard.router, users.router):
+for router in (auth.router, masters.router, inventory.router, production.router, scrap.router, sales.router, dashboard.router, users.router, quotations.router):
     app.include_router(router, prefix=settings.api_v1_prefix)
 
 

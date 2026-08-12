@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import InvoiceStatus, ItemKind, MovementType, Role
+from app.models import InvoiceStatus, ItemKind, MovementType, Role, QuotationStatus, QuotationLine
 
 
 class ORMModel(BaseModel):
@@ -368,8 +368,89 @@ class InvoiceStatusIn(BaseModel):
 
     # Required when changing to Partial.
     # Optional for Paid/Unpaid; backend derives the amount.
-    paid_percent: float | None = Field(
+    paid_percent: float = Field(
+        default=0,
+        ge=0,
+        le=100,
+    )
+
+class QuotationIn(BaseModel):
+    quotation_date : date
+    valid_until : date | None = None
+    customer_id : str
+    po_reference: str = ''
+    notes: str = ''
+    status :QuotationStatus = QuotationStatus.draft
+    lines: list["QuotationLineIn"]
+
+
+class QuotationLineIn(BaseModel):
+    product_id: str
+    quantity: float = Field(gt=0)
+    rate: float = Field(ge=0)
+    discount_percent: float = Field(
+        ge=0,
+        le=100,
+        default=0,
+    )
+
+    # None = use product's GST
+    # Number = custom GST for this quotation line
+    gst_rate: float | None = Field(
         default=None,
         ge=0,
         le=100,
     )
+
+
+class QuotationLineOut(ORMModel):
+    id: int
+    product_id: str
+    product_name: str
+    hsn: str
+    unit: str
+
+    quantity: float
+    rate: float
+    discount_percent: float
+    gst_rate: float
+
+    taxable: float
+    cgst: float
+    sgst: float
+    igst: float
+    total: float
+
+
+class QuotationOut(ORMModel):
+    id: str
+    quotation_no: str
+    quotation_date: date
+    valid_until: date | None
+
+    customer_id: str
+    customer_name: str
+
+    po_reference: str
+    notes: str
+
+    inter_state: bool
+
+    sub_total: float
+    discount_total: float
+    taxable_total: float
+
+    cgst: float
+    sgst: float
+    igst: float
+
+    round_off: float
+    grand_total: float
+
+    status: QuotationStatus
+    created_by: str
+
+    lines: list[QuotationLineOut]
+
+class QuotationStatusIn(BaseModel):
+    status: QuotationStatus

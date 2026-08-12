@@ -320,3 +320,198 @@ class InvoiceLine(Base):
     total: Mapped[float] = mapped_column(Float, default=0)
 
     invoice: Mapped[Invoice] = relationship(back_populates="lines")
+
+class QuotationStatus(str, enum.Enum):
+    draft = 'Draft'
+    sent = 'Sent'
+    accepted = 'Accepted'
+    rejected = 'Rejected'
+    expired = 'Expired'
+    converted = 'Converted'
+
+
+class Quotation(Base):
+    __tablename__ = "quotations"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=_uuid,
+    )
+
+    quotation_no: Mapped[str] = mapped_column(
+        String(32),
+        unique=True,
+        index=True,
+    )
+
+    quotation_date: Mapped[date] = mapped_column(
+        Date,
+        index=True,
+    )
+
+    valid_until: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
+    customer_id: Mapped[str] = mapped_column(
+        ForeignKey("parties.id"),
+    )
+
+    customer_name: Mapped[str] = mapped_column(
+        String(160),
+    )
+
+    po_reference: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    notes: Mapped[str] = mapped_column(
+        Text,
+        default="",
+    )
+
+    inter_state: Mapped[bool] = mapped_column(
+        Integer,
+        default=0,
+    )
+
+    sub_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    discount_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    taxable_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    cgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    sgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    igst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    round_off: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    grand_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    status: Mapped[QuotationStatus] = mapped_column(
+        Enum(QuotationStatus),
+        default=QuotationStatus.draft,
+    )
+
+    created_by: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    lines: Mapped[list["QuotationLine"]] = relationship(
+        back_populates="quotation",
+        cascade="all, delete-orphan",
+    )
+
+
+class QuotationLine(Base):
+    __tablename__ = "quotation_lines"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    quotation_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "quotations.id",
+            ondelete="CASCADE",
+        )
+    )
+
+    product_id: Mapped[str] = mapped_column(
+        ForeignKey("products.id"),
+    )
+
+    product_name: Mapped[str] = mapped_column(
+        String(160),
+    )
+
+    hsn: Mapped[str] = mapped_column(
+        String(16),
+        default="",
+    )
+
+    unit: Mapped[str] = mapped_column(
+        String(16),
+        default="PCS",
+    )
+
+    quantity: Mapped[float] = mapped_column(
+        Float,
+    )
+
+    rate: Mapped[float] = mapped_column(
+        Float,
+    )
+
+    discount_percent: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    gst_rate: Mapped[float] = mapped_column(
+        Float,
+        default=18,
+    )
+
+    taxable: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    cgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    sgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    igst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    quotation: Mapped[Quotation] = relationship(
+        back_populates="lines",
+    )
+
