@@ -6,7 +6,7 @@ import enum
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -515,3 +515,393 @@ class QuotationLine(Base):
         back_populates="lines",
     )
 
+
+
+
+class SalesOrderStatus(str, enum.Enum):
+    open = "Open"
+    partially_delivered = "Partially Delivered"
+    delivered = "Delivered"
+    invoiced = "Invoiced"
+    cancelled = "Cancelled"
+
+
+class SalesOrder(Base):
+    __tablename__ = "sales_orders"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=_uuid,
+    )
+
+    so_no: Mapped[str] = mapped_column(
+        String(32),
+        unique=True,
+        index=True,
+    )
+
+    order_date: Mapped[date] = mapped_column(
+        Date,
+        index=True,
+    )
+
+    delivery_date: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
+    customer_id: Mapped[str] = mapped_column(
+        ForeignKey("parties.id"),
+    )
+
+    customer_name: Mapped[str] = mapped_column(
+        String(160),
+    )
+
+    notes: Mapped[str] = mapped_column(
+        Text,
+        default="",
+    )
+
+    status: Mapped[SalesOrderStatus] = mapped_column(
+        Enum(SalesOrderStatus),
+        default=SalesOrderStatus.open,
+    )
+
+    quote_id: Mapped[str | None] = mapped_column(
+        ForeignKey("quotations.id"),
+        nullable=True,
+        index=True,
+    )
+
+    quote_no: Mapped[str] = mapped_column(
+        String(32),
+        default="",
+    )
+
+    taxable_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    cgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    sgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    igst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    grand_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    created_by: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    lines: Mapped[list["SalesOrderLine"]] = relationship(
+        back_populates="sales_order",
+        cascade="all, delete-orphan",
+    )
+
+
+class SalesOrderLine(Base):
+    __tablename__ = "sales_order_lines"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    sales_order_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "sales_orders.id",
+            ondelete="CASCADE",
+        ),
+    )
+
+    product_id: Mapped[str] = mapped_column(
+        ForeignKey("products.id"),
+    )
+
+    product_name: Mapped[str] = mapped_column(
+        String(160),
+    )
+
+    hsn: Mapped[str] = mapped_column(
+        String(16),
+        default="",
+    )
+
+    unit: Mapped[str] = mapped_column(
+        String(16),
+        default="PCS",
+    )
+
+    quantity: Mapped[float] = mapped_column(
+        Float,
+    )
+
+    rate: Mapped[float] = mapped_column(
+        Float,
+    )
+
+    discount_percent: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    gst_rate: Mapped[float] = mapped_column(
+        Float,
+        default=18,
+    )
+
+    taxable: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    cgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    sgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    igst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    delivered_quantity: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    sales_order: Mapped[SalesOrder] = relationship(
+        back_populates="lines",
+    )
+
+class DeliveryNote(Base):
+    __tablename__ = "delivery_notes"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=_uuid,
+    )
+
+    delivery_no: Mapped[str] = mapped_column(
+        String(32),
+        unique=True,
+        index=True,
+    )
+
+    delivery_date: Mapped[date] = mapped_column(
+        Date,
+        index=True,
+    )
+
+    sales_order_id: Mapped[str | None] = mapped_column(
+        ForeignKey("sales_orders.id"),
+        nullable=True,
+        index=True,
+    )
+
+    so_no: Mapped[str] = mapped_column(
+        String(32),
+        default="",
+    )
+
+    customer_id: Mapped[str] = mapped_column(
+        ForeignKey("parties.id"),
+    )
+
+    customer_name: Mapped[str] = mapped_column(
+        String(160),
+    )
+
+    vehicle_no: Mapped[str] = mapped_column(
+        String(32),
+        default="",
+    )
+
+    driver_name: Mapped[str] = mapped_column(
+        String(120),
+        default="",
+    )
+
+    lr_number: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    remarks: Mapped[str] = mapped_column(
+        Text,
+        default="",
+    )
+
+    created_by: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    lines: Mapped[list["DeliveryLine"]] = relationship(
+        back_populates="delivery",
+        cascade="all, delete-orphan",
+    )
+
+
+class DeliveryLine(Base):
+    __tablename__ = "delivery_lines"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    delivery_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "delivery_notes.id",
+            ondelete="CASCADE",
+        ),
+    )
+
+    product_id: Mapped[str] = mapped_column(
+        ForeignKey("products.id"),
+    )
+
+    product_name: Mapped[str] = mapped_column(
+        String(160),
+    )
+
+    unit: Mapped[str] = mapped_column(
+        String(16),
+        default="PCS",
+    )
+
+    quantity: Mapped[float] = mapped_column(
+        Float,
+    )
+
+    delivery: Mapped[DeliveryNote] = relationship(
+        back_populates="lines",
+    )
+
+class DispatchStatus(str, enum.Enum):
+    planned = "Planned"
+    loading = "Loading"
+    in_transit = "In Transit"
+    delivered = "Delivered"
+    delayed = "Delayed"
+
+
+class Dispatch(Base):
+    __table_args__ = (
+    UniqueConstraint(
+        "delivery_id",
+        name="uq_dispatch_delivery",
+    ),
+)
+    __tablename__ = "dispatches"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=_uuid,
+    )
+
+    dispatch_no: Mapped[str] = mapped_column(
+        String(32),
+        unique=True,
+        index=True,
+    )
+
+    dispatch_date: Mapped[date] = mapped_column(
+        Date,
+        index=True,
+    )
+
+    delivery_id: Mapped[str | None] = mapped_column(
+        ForeignKey("delivery_notes.id"),
+        nullable=True,
+    )
+
+    delivery_no: Mapped[str] = mapped_column(
+        String(32),
+        default="",
+    )
+
+    customer_id: Mapped[str] = mapped_column(
+        ForeignKey("parties.id"),
+    )
+
+    customer_name: Mapped[str] = mapped_column(
+        String(160),
+    )
+
+    transporter: Mapped[str] = mapped_column(
+        String(160),
+        default="",
+    )
+
+    vehicle_no: Mapped[str] = mapped_column(
+        String(32),
+        default="",
+    )
+
+    driver_name: Mapped[str] = mapped_column(
+        String(120),
+        default="",
+    )
+
+    driver_phone: Mapped[str] = mapped_column(
+        String(32),
+        default="",
+    )
+
+    lr_number: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    status: Mapped[DispatchStatus] = mapped_column(
+        Enum(DispatchStatus),
+        default=DispatchStatus.planned,
+    )
+
+    delivered_on: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
+    pod_ref: Mapped[str] = mapped_column(
+        String(160),
+        default="",
+    )
+
+    created_by: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )

@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import InvoiceStatus, ItemKind, MovementType, Role, QuotationStatus, QuotationLine
+from app.models import InvoiceStatus, ItemKind, MovementType, Role, QuotationStatus, QuotationLine, SalesOrderStatus, DispatchStatus
 
 
 class ORMModel(BaseModel):
@@ -454,3 +454,123 @@ class QuotationOut(ORMModel):
 
 class QuotationStatusIn(BaseModel):
     status: QuotationStatus
+
+
+class SalesOrderLineOut(ORMModel):
+    id: int
+    product_id: str
+    product_name: str
+    hsn: str
+    unit: str
+    quantity: float
+    rate: float
+    discount_percent: float
+    gst_rate: float
+    taxable: float
+    cgst: float
+    sgst: float
+    igst: float
+    total: float
+    delivered_quantity: float
+
+
+class SalesOrderOut(ORMModel):
+    id: str
+    so_no: str
+    order_date: date
+    delivery_date: date | None
+    customer_id: str
+    customer_name: str
+    notes: str
+    status: SalesOrderStatus
+    quote_id: str | None
+    quote_no: str
+    taxable_total: float
+    cgst: float
+    sgst: float
+    igst: float
+    grand_total: float
+    created_by: str
+    lines: list[SalesOrderLineOut]
+
+
+class SalesOrderStatusIn(BaseModel):
+    status: SalesOrderStatus
+
+
+class DeliveryLineIn(BaseModel):
+    product_id: str
+    quantity: float
+
+
+class DeliveryCreate(BaseModel):
+    delivery_date: date
+    sales_order_id: str
+    vehicle_no: str = ""
+    driver_name: str = ""
+    lr_number: str = ""
+    remarks: str = ""
+    lines: list[DeliveryLineIn]
+
+
+class DeliveryLineOut(BaseModel):
+    id: int
+    product_id: str
+    product_name: str
+    unit: str
+    quantity: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DeliveryOut(BaseModel):
+    id: str
+    delivery_no: str
+    delivery_date: date
+    sales_order_id: str | None
+    so_no: str
+    customer_id: str
+    customer_name: str
+    vehicle_no: str
+    driver_name: str
+    lr_number: str
+    remarks: str
+    created_by: str
+    lines: list[DeliveryLineOut]
+
+    model_config = ConfigDict(from_attributes=True)
+
+class DispatchIn(BaseModel):
+    dispatch_date: date
+    delivery_id: str | None = None
+    transporter: str = ""
+    vehicle_no: str = ""
+    driver_name: str = ""
+    driver_phone: str = ""
+    lr_number: str = ""
+    status: DispatchStatus = DispatchStatus.planned
+    delivered_on: date | None = None
+    pod_ref: str = ""
+
+
+class DispatchStatusIn(BaseModel):
+    status: DispatchStatus
+
+
+class DispatchOut(ORMModel):
+    id: str
+    dispatch_no: str
+    dispatch_date: date
+    delivery_id: str | None
+    delivery_no: str
+    customer_id: str
+    customer_name: str
+    transporter: str
+    vehicle_no: str
+    driver_name: str
+    driver_phone: str
+    lr_number: str
+    status: DispatchStatus
+    delivered_on: date | None
+    pod_ref: str
+    created_by: str
