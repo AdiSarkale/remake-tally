@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Plus, Receipt, Truck } from "lucide-react";
 import { toast } from "sonner";
+
 import { AppShell } from "@/components/erp/AppShell";
 import { PageHeader, StatCard } from "@/components/erp/PageHeader";
 import { DataTable } from "@/components/erp/DataTable";
@@ -10,29 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createInvoice, today, useErp } from "@/lib/erp/store";
-import { createDelivery, defaultWarehouse, linkInvoiceToDelivery, nextDocNo } from "@/lib/erp/docs";
-import { dmy, inr, num } from "@/lib/erp/format";
-import { useAuth } from "@/lib/erp/auth";
+import { createDelivery, getCustomers, getDeliveries, getSalesOrders, type DeliveryData, type PartyData, type SalesOrderData } from "@/lib/erp/api";
+import { dmy, num } from "@/lib/erp/format";
 
 export const Route = createFileRoute("/sales/deliveries")({
-  head: () => ({
-    meta: [
-      { title: "Delivery Notes — MiniTally ERP" },
-      { name: "description", content: "Dispatch goods with vehicle, driver and LR details; stock leaves on dispatch and invoices link back." },
-      { property: "og:title", content: "Delivery Notes — MiniTally ERP" },
-      { property: "og:description", content: "Dispatch documentation and invoicing for MiniTally ERP." },
-    ],
-  }),
+  head: () => ({ meta: [{ title: "Delivery Notes — MiniTally ERP" }] }),
   component: () => (
     <AppShell>
       <DeliveriesPage />
@@ -40,16 +25,20 @@ export const Route = createFileRoute("/sales/deliveries")({
   ),
 });
 
+const today = () => new Date().toISOString().slice(0, 10);
+
 function DeliveriesPage() {
-  const state = useErp((s) => s);
-  const { session } = useAuth();
-  const user = session?.username ?? "system";
+  const [deliveries, setDeliveries] = useState<DeliveryData[]>([]);
+  const [salesOrders, setSalesOrders] = useState<SalesOrderData[]>([]);
+  const [customers, setCustomers] = useState<PartyData[]>([]);
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [mode, setMode] = useState<"so" | "direct">("so");
   const [form, setForm] = useState({
     date: today(),
     soId: "",
     customerId: "",
-    warehouseId: defaultWarehouse(state),
     vehicleNo: "",
     driverName: "",
     lrNumber: "",
@@ -57,208 +46,124 @@ function DeliveriesPage() {
   });
   const [qty, setQty] = useState<Record<string, string>>({});
 
-  const so = state.salesOrders.find((o) => o.id === form.soId);
-  const openSos = state.salesOrders.filter((o) => o.status === "Open" || o.status === "Partially Delivered");
-  const dispatchables = so
-    ? so.lines.map((l) => ({ productId: l.productId, name: l.productName, unit: l.unit, pending: l.quantity - l.deliveredQty }))
-    : state.products.map((p) => ({ productId: p.id, name: p.name, unit: p.unit, pending: p.stock }));
-
-  const submit = () => {
+  async function load() {
     try {
-      const dnNo = createDelivery(
-        {
-          date: form.date,
-          soId: form.soId || undefined,
-          customerId: so?.customerId ?? form.customerId,
-          warehouseId: form.warehouseId,
-          vehicleNo: form.vehicleNo,
-          driverName: form.driverName,
-          lrNumber: form.lrNumber,
-          remarks: form.remarks,
-          foc: false,
-          lines: Object.entries(qty)
-            .filter(([, v]) => Number(v) > 0)
-            .map(([productId, v]) => ({ productId, quantity: Number(v) })),
-        },
-        user,
-      );
-      toast.success(`${dnNo} dispatched — finished goods reduced`);
+      setLoading(true);
+      const [d, so, c] = await Promise.all([getDeliveries(), getSalesOrders(), getCustomers()]);
+      setDeliveries(d);
+      setSalesOrders(so);
+      setCustomers(c.filter((x) => x.kind === "customer"));
+    } catch (e) {
+      toast.error((e as Error).message || "Failed to load deliveries");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  const openSos = salesOrders.filter((o) => o.status === "Open" || o.status === "Partially Delivered");
+  const selectedSo = salesOrders.find((o) => o.id === form.soId);
+  const dispatchables = selectedSo
+    ? selectedSo.lines
+        .map((l) => ({ productId: l.product_id, name: l.product_name, unit: l.unit, rate: l.rate, ordered: l.quantity, delivered: l.delivered_quantity, pending: Math.max(0, l.quantity - l.delivered_quantity) }))
+        .filter((x) => x.pending > 0)
+    : [];
+
+  const previewValue = useMemo(() => dispatchables.reduce((t, l) => t + Number(qty[l.productId] ?? 0) * l.rate, 0), [dispatchables, qty]);
+
+  function reset() {
+    setMode("so");
+    setForm({ date: today(), soId: "", customerId: "", vehicleNo: "", driverName: "", lrNumber: "", remarks: "" });
+    setQty({});
+  }
+
+  async function submit() {
+    const lines = mode === "so"
+      ? dispatchables.map((l) => ({ product_id: l.productId, quantity: Number(qty[l.productId] ?? 0) })).filter((x) => x.quantity > 0)
+      : [];
+
+    if (mode === "so" && !form.soId) return toast.error("Select a Sales Order");
+    if (mode === "direct" && !form.customerId) return toast.error("Select a customer for direct dispatch");
+    if (!lines.length) return toast.error("Enter at least one delivery quantity");
+
+    for (const line of lines) {
+      const src = dispatchables.find((x) => x.productId === line.product_id);
+      if (src && line.quantity > src.pending) return toast.error(`${src.name}: maximum ${num(src.pending)} ${src.unit}`);
+    }
+
+    try {
+      setSaving(true);
+      const delivery = await createDelivery({
+        delivery_date: form.date,
+        sales_order_id: mode === "so" ? form.soId : null,
+        customer_id: mode === "direct" ? form.customerId : null,
+        vehicle_no: form.vehicleNo,
+        driver_name: form.driverName,
+        lr_number: form.lrNumber,
+        remarks: form.remarks,
+        lines,
+      });
+      toast.success(`${delivery.delivery_no} posted — stock reduced`);
       setOpen(false);
-      setQty({});
+      reset();
+      await load();
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error((e as Error).message || "Failed to post delivery");
+    } finally {
+      setSaving(false);
     }
-  };
+  }
 
-  const invoiceFor = (deliveryId: string) => {
-    const dn = state.deliveries.find((d) => d.id === deliveryId);
-    if (!dn) return;
-    try {
-      const invoiceNo = createInvoice(
-        {
-          date: today(),
-          customerId: dn.customerId,
-          poReference: dn.soNo ?? dn.dnNo,
-          notes: `Against delivery note ${dn.dnNo}`,
-          status: "Unpaid",
-          lines: dn.lines.map((l) => ({ productId: l.productId, quantity: l.quantity, rate: l.rate, discountPercent: 0 })),
-        },
-        user,
-        { skipStock: true },
-      );
-      linkInvoiceToDelivery(dn.id, invoiceNo);
-      toast.success(`${invoiceNo} raised from ${dn.dnNo}`);
-    } catch (e) {
-      toast.error((e as Error).message);
-    }
-  };
-
-  const rows = state.deliveries.filter((d) => !d.foc);
+  const rows = deliveries;
 
   return (
     <>
-      <PageHeader
-        title="Delivery Notes"
-        subtitle="Dispatch documentation — stock leaves here, the invoice is raised against the delivery."
-        actions={
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="mr-1 h-4 w-4" /> New dispatch
-          </Button>
-        }
-      />
+      <PageHeader title="Delivery Notes" subtitle="Dispatch documentation — stock leaves here; invoice is raised against the delivery." actions={<Button onClick={() => { reset(); setOpen(true); }}><Plus className="mr-1 h-4 w-4" /> New delivery</Button>} />
 
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Dispatches" value={num(rows.length)} tone="primary" icon={<Truck className="h-4 w-4" />} />
-        <StatCard label="Awaiting invoice" value={num(rows.filter((d) => !d.invoiceNo).length)} tone="warning" />
-        <StatCard label="Invoiced" value={num(rows.filter((d) => d.invoiceNo).length)} tone="success" />
+        <StatCard label="Delivery notes" value={num(rows.length)} tone="primary" icon={<Truck className="h-4 w-4" />} />
+        <StatCard label="Pending SOs" value={num(openSos.length)} />
         <StatCard label="Pieces dispatched" value={num(rows.reduce((t, d) => t + d.lines.reduce((x, l) => x + l.quantity, 0), 0))} />
+        <StatCard label="SO-linked notes" value={num(rows.filter((d) => Boolean(d.so_no)).length)} />
       </div>
 
-      <DataTable
-        rows={rows}
-        rowKey={(r) => r.id}
-        searchable={(r) => `${r.dnNo} ${r.customerName} ${r.vehicleNo} ${r.driverName} ${r.lrNumber} ${r.soNo ?? ""}`}
-        columns={[
-          { key: "no", header: "DN No", value: (r) => r.dnNo, render: (r) => <span className="num font-medium">{r.dnNo}</span> },
-          { key: "date", header: "Date", value: (r) => r.date, render: (r) => <span className="num">{dmy(r.date)}</span> },
-          { key: "customer", header: "Customer", value: (r) => r.customerName },
-          { key: "items", header: "Dispatched", render: (r) => <span className="text-muted-foreground text-xs">{r.lines.map((l) => `${l.productName} ×${num(l.quantity)}`).join(", ")}</span> },
-          { key: "vehicle", header: "Vehicle", value: (r) => r.vehicleNo, render: (r) => <span className="num text-xs">{r.vehicleNo}</span> },
-          { key: "driver", header: "Driver", value: (r) => r.driverName },
-          { key: "lr", header: "LR No", value: (r) => r.lrNumber, render: (r) => <span className="num text-xs">{r.lrNumber}</span> },
-          { key: "value", header: "Value", align: "right", render: (r) => <span className="num">{inr(r.lines.reduce((t, l) => t + l.quantity * l.rate, 0))}</span> },
-          { key: "trail", header: "Trail", render: (r) => <DocTrail steps={[r.soNo, r.dnNo, r.invoiceNo]} /> },
-          {
-            key: "actions",
-            header: "",
-            align: "right",
-            render: (r) =>
-              r.invoiceNo ? (
-                <Badge variant="secondary" className="num">{r.invoiceNo}</Badge>
-              ) : (
-                <Button size="sm" onClick={() => invoiceFor(r.id)}>
-                  <Receipt className="mr-1 h-3.5 w-3.5" /> Invoice
-                </Button>
-              ),
-          },
-        ]}
-      />
+      <DataTable rows={rows} rowKey={(r) => r.id} searchable={(r) => `${r.delivery_no} ${r.so_no} ${r.customer_name} ${r.vehicle_no} ${r.driver_name} ${r.lr_number}`} columns={[
+        { key: "no", header: "DN No", value: (r) => r.delivery_no, render: (r) => <span className="num font-medium">{r.delivery_no}</span> },
+        { key: "date", header: "Date", value: (r) => r.delivery_date, render: (r) => <span className="num">{dmy(r.delivery_date)}</span> },
+        { key: "so", header: "SO", value: (r) => r.so_no || "Direct" },
+        { key: "customer", header: "Customer", value: (r) => r.customer_name },
+        { key: "items", header: "Dispatched", render: (r) => <span className="text-muted-foreground text-xs">{r.lines.map((l: DeliveryData["lines"][number]) => `${l.product_name} ×${num(l.quantity)}`).join(", ")}</span> },
+        { key: "vehicle", header: "Vehicle", value: (r) => r.vehicle_no },
+        { key: "driver", header: "Driver", value: (r) => r.driver_name },
+        { key: "lr", header: "LR No", value: (r) => r.lr_number },
+        { key: "trail", header: "Trail", render: (r) => <DocTrail steps={[r.so_no, r.delivery_no]} /> },
+        { key: "invoice", header: "Invoice", render: () => <Badge variant="outline"><Receipt className="mr-1 h-3 w-3" /> Next</Badge> },
+      ]} />
+
+      {loading && <div className="py-8 text-center text-sm text-muted-foreground">Loading delivery notes...</div>}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>New delivery note</DialogTitle>
-            <DialogDescription>Numbered {nextDocNo(state, "DN", form.date)} on save.</DialogDescription>
-          </DialogHeader>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+          <DialogHeader><DialogTitle>New delivery note</DialogTitle><DialogDescription>Choose an open Sales Order or use direct dispatch.</DialogDescription></DialogHeader>
+
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Against sales order" full>
-              <Select value={form.soId || "none"} onValueChange={(v) => { setForm({ ...form, soId: v === "none" ? "" : v }); setQty({}); }}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Direct dispatch (no SO)</SelectItem>
-                  {openSos.map((o) => (
-                    <SelectItem key={o.id} value={o.id}>
-                      {o.soNo} · {o.customerName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            {!form.soId && (
-              <Field label="Customer" full>
-                <Select value={form.customerId} onValueChange={(v) => setForm({ ...form, customerId: v })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select customer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {state.customers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            )}
-            <Field label="Dispatch date">
-              <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
-            </Field>
-            <Field label="Dispatch from">
-              <Select value={form.warehouseId} onValueChange={(v) => setForm({ ...form, warehouseId: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {state.warehouses.map((w) => (
-                    <SelectItem key={w.id} value={w.id}>
-                      {w.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Vehicle number">
-              <Input value={form.vehicleNo} onChange={(e) => setForm({ ...form, vehicleNo: e.target.value })} placeholder="MH 14 AB 1234" />
-            </Field>
-            <Field label="Driver name">
-              <Input value={form.driverName} onChange={(e) => setForm({ ...form, driverName: e.target.value })} />
-            </Field>
-            <Field label="LR number">
-              <Input value={form.lrNumber} onChange={(e) => setForm({ ...form, lrNumber: e.target.value })} />
-            </Field>
+            <Field label="Delivery mode" full><Select value={mode} onValueChange={(v) => { setMode(v as "so" | "direct"); setForm({ ...form, soId: "", customerId: "" }); setQty({}); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="so">Against Sales Order</SelectItem><SelectItem value="direct">Direct dispatch</SelectItem></SelectContent></Select></Field>
+
+            {mode === "so" ? <Field label="Sales Order" full><Select value={form.soId} onValueChange={(v) => { setForm({ ...form, soId: v }); setQty({}); }}><SelectTrigger><SelectValue placeholder="Select Sales Order" /></SelectTrigger><SelectContent>{openSos.map((o) => <SelectItem key={o.id} value={o.id}>{o.so_no} · {o.customer_name} · {o.status}</SelectItem>)}</SelectContent></Select></Field> : <Field label="Customer" full><Select value={form.customerId} onValueChange={(v) => setForm({ ...form, customerId: v })}><SelectTrigger><SelectValue placeholder="Select customer" /></SelectTrigger><SelectContent>{customers.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent></Select></Field>}
+
+            <Field label="Delivery date"><Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
+            <Field label="Vehicle number"><Input value={form.vehicleNo} onChange={(e) => setForm({ ...form, vehicleNo: e.target.value })} /></Field>
+            <Field label="Driver name"><Input value={form.driverName} onChange={(e) => setForm({ ...form, driverName: e.target.value })} /></Field>
+            <Field label="LR number"><Input value={form.lrNumber} onChange={(e) => setForm({ ...form, lrNumber: e.target.value })} /></Field>
           </div>
 
-          <div className="mt-3 space-y-2">
-            <p className="text-xs font-semibold">Dispatch quantities</p>
-            {dispatchables.map((d) => (
-              <div key={d.productId} className="grid grid-cols-12 items-center gap-2">
-                <div className="col-span-8 text-sm">
-                  <p>{d.name}</p>
-                  <p className="text-muted-foreground num text-xs">
-                    available {num(d.pending, 2)} {d.unit}
-                  </p>
-                </div>
-                <Input
-                  className="col-span-4"
-                  type="number"
-                  placeholder="Qty"
-                  value={qty[d.productId] ?? ""}
-                  onChange={(e) => setQty({ ...qty, [d.productId]: e.target.value })}
-                />
-              </div>
-            ))}
-          </div>
+          {mode === "so" && selectedSo && <div className="mt-4 space-y-2"><p className="text-xs font-semibold">Delivery quantities</p><div className="grid grid-cols-12 gap-2 border-b pb-2 text-xs text-muted-foreground"><div className="col-span-5">Product</div><div className="col-span-2 text-right">Ordered</div><div className="col-span-2 text-right">Delivered</div><div className="col-span-2 text-right">Remaining</div><div className="col-span-1" /></div>{dispatchables.map((l) => <div key={l.productId} className="grid grid-cols-12 items-center gap-2"><div className="col-span-5 text-sm">{l.name}<span className="ml-1 text-xs text-muted-foreground">({l.unit})</span></div><div className="col-span-2 text-right num text-sm">{num(l.ordered)}</div><div className="col-span-2 text-right num text-sm">{num(l.delivered)}</div><div className="col-span-2 text-right num font-medium text-sm">{num(l.pending)}</div><Input className="col-span-1" type="number" min="0" max={l.pending} step="any" value={qty[l.productId] ?? ""} onChange={(e) => { const v = e.target.value; if (v !== "" && Number(v) > l.pending) return toast.error(`Maximum ${num(l.pending)} ${l.unit}`); setQty({ ...qty, [l.productId]: v }); }} /></div>)}</div>}
 
           <Textarea className="mt-3" rows={2} placeholder="Remarks" value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} />
+          {mode === "so" && <p className="num text-right text-sm font-semibold">Delivery value: {inr(previewValue)}</p>}
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={submit}>Post dispatch</Button>
-          </DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button><Button disabled={saving} onClick={() => void submit()}>{saving ? "Posting..." : "Post delivery"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </>

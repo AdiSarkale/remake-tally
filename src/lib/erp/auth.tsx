@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { getState, logAudit, update } from "./store";
 import type { Role, User } from "./types";
+import { apiFetch } from "../api";
 
 const SESSION_KEY = "minitally-session-v1";
 
@@ -15,18 +16,17 @@ export interface Session {
 interface AuthValue {
   session: Session | null;
   ready: boolean;
-  login: (username: string, password: string) => { ok: boolean; error?: string };
+  login: (
+  username: string,
+  password: string,
+) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
   changePassword: (current: string, next: string) => { ok: boolean; error?: string };
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
 
-/** Demo token. The FastAPI backend issues a real signed HS256 JWT. */
-function issueToken(user: User) {
-  const payload = { sub: user.id, role: user.role, exp: Date.now() + 8 * 3600 * 1000 };
-  return `demo.${btoa(JSON.stringify(payload))}`;
-}
+
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -42,29 +42,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setReady(true);
   }, []);
 
-  const login = useCallback((username: string, password: string) => {
-    const user = getState().users.find(
-      (u) => u.username.toLowerCase() === username.trim().toLowerCase() && u.active,
-    );
-    if (!user || user.password !== password) return { ok: false, error: "Invalid username or password" };
-    const next: Session = {
-      token: issueToken(user),
-      userId: user.id,
-      username: user.username,
-      fullName: user.fullName,
-      role: user.role,
-    };
-    window.localStorage.setItem(SESSION_KEY, JSON.stringify(next));
-    setSession(next);
-    update((s) => {
-      logAudit(s, user.username, "LOGIN", "auth", `${user.fullName} signed in`);
-      return s;
+ const login = useCallback(async (username: string, password: string) => {
+  try {
+    const data = await apiFetch("/api/v1/auth/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        username: username.trim(),
+        password,
+      }),
     });
+
+    localStorage.setItem("minitally-token", data.access_token);
+
+    const next: Session = {
+      token: data.access_token,
+      userId: data.sub ?? username,
+      username,
+      fullName: data.full_name,
+      role: data.role,
+    };
+
+    localStorage.setItem(SESSION_KEY, JSON.stringify(next));
+    setSession(next);
+
     return { ok: true };
-  }, []);
+  } catch (error) {
+    return {
+      ok: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Invalid username or password",
+    };
+  }
+}, []);
 
   const logout = useCallback(() => {
     window.localStorage.removeItem(SESSION_KEY);
+    window.localStorage.removeItem("minitally-token");
     setSession(null);
   }, []);
 

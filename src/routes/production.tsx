@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+/* eslint-disable prettier/prettier */
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -19,7 +20,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createProduction, nextBatchNo, today, useErp, getState } from "@/lib/erp/store";
+
+import {
+  createProduction as createProductionApi,
+  getMaterials,
+  getProducts,
+  getProduction,
+  type MaterialData,
+  type ProductData,
+  type ProductionData,
+} from "@/lib/api";
+
 import { dmy, num } from "@/lib/erp/format";
 import { useAuth } from "@/lib/erp/auth";
 
@@ -50,7 +61,17 @@ interface Line {
 const SHIFTS = ["A", "B", "C"] as const;
 
 function ProductionPage() {
-  const state = useErp((s) => s);
+const [products, setProducts] = useState<ProductData[]>([]);
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+const productNames = new Map(
+  products.map((p) => [p.id, p.name]),
+);
+const [materials, setMaterials] = useState<MaterialData[]>([]);
+const [production, setProduction] = useState<ProductionData[]>([]);
+const [loading, setLoading] = useState(true);
   const { session } = useAuth();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -66,11 +87,36 @@ function ProductionPage() {
 
   const day = today();
   const month = day.slice(0, 7);
-  const todayQty = state.production.filter((p) => p.date === day).reduce((t, p) => t + p.quantity, 0);
-  const monthQty = state.production.filter((p) => p.date.startsWith(month)).reduce((t, p) => t + p.quantity, 0);
+  const todayQty = production
+  .filter((p) => p.entry_date === day)
+  .reduce((total, p) => total + p.quantity, 0);
 
-  const batchNo = useMemo(() => nextBatchNo(state), [state]);
+const monthQty = production
+  .filter((p) => p.entry_date.startsWith(month))
+  .reduce((total, p) => total + p.quantity, 0);
 
+  useEffect(() => {
+  Promise.all([
+    getProducts(),
+    getMaterials(),
+    getProduction(),
+  ])
+    .then(([productsData, materialsData, productionData]) => {
+      setProducts(productsData);
+      setMaterials(materialsData);
+      setProduction(productionData);
+    })
+    .catch((error) => {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to load production data",
+      );
+    })
+    .finally(() => {
+      setLoading(false);
+    });
+}, []);
   const reset = () => {
     setForm({
       date: today(),
@@ -84,50 +130,62 @@ function ProductionPage() {
     setLines([{ materialId: "", quantity: "" }]);
   };
 
-  const submit = () => {
-    if (!form.productId) {
-      toast.error("Select the product produced");
-      return;
-    }
-    const qty = Number(form.quantity);
-    if (!Number.isFinite(qty) || qty <= 0) {
-      toast.error("Enter a valid production quantity");
-      return;
-    }
-    const consumption = lines
-      .filter((l) => l.materialId && Number(l.quantity) > 0)
-      .map((l) => ({
-        materialId: l.materialId,
-        materialName: "",
-        unit: "",
-        quantity: Number(l.quantity),
-      }));
-    if (consumption.length === 0) {
-      toast.error("Add at least one raw material consumed");
-      return;
-    }
-    try {
-      createProduction(
-        {
-          date: form.date,
-          productId: form.productId,
-          quantity: qty,
-          machine: form.machine,
-          operator: form.operator,
-          shift: form.shift,
-          remarks: form.remarks,
-          consumption,
-          batchNo: nextBatchNo(getState()),
-        },
-        session?.username ?? "system",
-      );
-      toast.success("Production posted — stock updated");
-      setOpen(false);
-      reset();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not post production");
-    }
-  };
+
+  const submit = async () => {
+  if (!form.productId) {
+    toast.error("Select a product");
+    return;
+  }
+
+  const qty = Number(form.quantity);
+
+  if (!qty || qty <= 0) {
+    toast.error("Enter a valid production quantity");
+    return;
+  }
+
+  const consumption = lines
+    .filter((line) => line.materialId && Number(line.quantity) > 0)
+    .map((line) => ({
+      material_id: line.materialId,
+      quantity: Number(line.quantity),
+    }));
+
+  try {
+    await createProductionApi({
+      entry_date: form.date,
+      product_id: form.productId,
+      quantity: qty,
+      machine: form.machine,
+      operator: form.operator,
+      shift: form.shift,
+      remarks: form.remarks,
+      consumption,
+    });
+
+    toast.success("Production posted — stock updated");
+
+    const [productsData, materialsData, productionData] =
+      await Promise.all([
+        getProducts(),
+        getMaterials(),
+        getProduction(),
+      ]);
+
+    setProducts(productsData);
+    setMaterials(materialsData);
+    setProduction(productionData);
+
+    setOpen(false);
+    reset();
+  } catch (err) {
+    toast.error(
+      err instanceof Error
+        ? err.message
+        : "Could not post production",
+    );
+  }
+};
 
   return (
     <>
@@ -136,6 +194,7 @@ function ProductionPage() {
         subtitle="Each entry increases finished goods and consumes raw materials automatically."
         actions={
           <Button
+            disabled={loading}
             onClick={() => {
               reset();
               setOpen(true);
@@ -149,18 +208,20 @@ function ProductionPage() {
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <StatCard label="Produced today" value={`${num(todayQty)} pcs`} tone="primary" />
         <StatCard label="Produced this month" value={`${num(monthQty)} pcs`} />
-        <StatCard label="Batches recorded" value={num(state.production.length)} hint={`Next: ${batchNo}`} />
+        <StatCard label="Batches recorded" value={num(production.length)}/>
       </div>
 
       <DataTable
-        rows={state.production}
+        rows={production}
         rowKey={(p) => p.id}
         pageSize={12}
-        searchable={(p) => `${p.batchNo} ${p.productName} ${p.machine} ${p.operator}`}
+        searchable={(p) =>
+  `${p.batch_no} ${productNames.get(p.product_id) ?? ""} ${p.machine} ${p.operator}`
+}
         columns={[
-          { key: "batch", header: "Batch", value: (p) => p.batchNo, className: "num text-xs" },
-          { key: "date", header: "Date", value: (p) => p.date, render: (p) => dmy(p.date) },
-          { key: "product", header: "Product", value: (p) => p.productName },
+          { key: "batch", header: "Batch", value: (p) => p.batch_no, className: "num text-xs" },
+          { key: "date", header: "Date", value: (p) => p.entry_date, render: (p) => dmy(p.entry_date) },
+          { key: "product", header: "Product", value: (p) => p.product_id },
           {
             key: "qty",
             header: "Qty",
@@ -176,22 +237,22 @@ function ProductionPage() {
             value: (p) => p.shift,
             render: (p) => <Badge variant="secondary">{p.shift}</Badge>,
           },
-          {
-            key: "consumed",
-            header: "Materials consumed",
-            render: (p) => (
-              <span className="text-muted-foreground text-xs">
-                {p.consumption.map((c) => `${c.materialName} ${num(c.quantity, 1)}${c.unit}`).join(", ")}
-              </span>
-            ),
-          },
+          // {
+          //   key: "consumed",
+          //   header: "Materials consumed",
+          //   render: (p) => (
+          //     <span className="text-muted-foreground text-xs">
+          //       {p.consumption.map((c) => `${c.materialName} ${num(c.quantity, 1)}${c.unit}`).join(", ")}
+          //     </span>
+          //   ),
+          // },
         ]}
       />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>New production entry — {batchNo}</DialogTitle>
+            <DialogTitle>New production entry</DialogTitle>
             <DialogDescription>
               Posting will add finished goods to stock and issue the listed raw materials.
             </DialogDescription>
@@ -227,7 +288,7 @@ function ProductionPage() {
                   <SelectValue placeholder="Select product" />
                 </SelectTrigger>
                 <SelectContent>
-                  {state.products.map((p) => (
+                  {products.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.code} — {p.name}
                     </SelectItem>
@@ -278,7 +339,8 @@ function ProductionPage() {
             </div>
             <div className="space-y-2">
               {lines.map((line, i) => {
-                const mat = state.materials.find((m) => m.id === line.materialId);
+                 const mat = materials.find(
+  (m) => m.id === line.materialId,);
                 return (
                   <div key={i} className="flex items-center gap-2">
                     <Select
@@ -291,7 +353,7 @@ function ProductionPage() {
                         <SelectValue placeholder="Select material" />
                       </SelectTrigger>
                       <SelectContent>
-                        {state.materials.map((m) => (
+                        {materials.map((m) => (
                           <SelectItem key={m.id} value={m.id}>
                             {m.name} ({num(m.stock, 1)} {m.unit})
                           </SelectItem>
@@ -327,7 +389,7 @@ function ProductionPage() {
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={submit}>Post production</Button>
+            <Button disabled={loading} onClick={submit}>Post production</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

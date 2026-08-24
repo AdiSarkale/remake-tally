@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +30,7 @@ export function StatCard({
   tone = "default",
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   hint?: string;
   icon?: ReactNode;
   tone?: "default" | "primary" | "success" | "warning" | "destructive";

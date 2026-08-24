@@ -40,10 +40,12 @@ import { Route as MastersSuppliersRouteImport } from './routes/masters.suppliers
 import { Route as MastersWarehousesRouteImport } from './routes/masters.warehouses'
 import { Route as PortalCustomerRouteImport } from './routes/portal.customer'
 import { Route as ProcurementOrdersRouteImport } from './routes/procurement.orders'
+import { Route as ProcurementReceiptsRouteImport } from './routes/procurement.receipts'
 import { Route as ProcurementRequisitionsRouteImport } from './routes/procurement.requisitions'
 import { Route as SalesDeliveriesRouteImport } from './routes/sales.deliveries'
 import { Route as SalesOrdersRouteImport } from './routes/sales.orders'
 import { Route as SalesQuotationsRouteImport } from './routes/sales.quotations'
+import { Route as SalesOrdersReferenceRouteImport } from './routes/sales.orders.reference'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -200,6 +202,11 @@ const ProcurementOrdersRoute = ProcurementOrdersRouteImport.update({
   path: '/procurement/orders',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProcurementReceiptsRoute = ProcurementReceiptsRouteImport.update({
+  id: '/procurement/receipts',
+  path: '/procurement/receipts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProcurementRequisitionsRoute = ProcurementRequisitionsRouteImport.update({
   id: '/procurement/requisitions',
   path: '/procurement/requisitions',
@@ -219,6 +226,11 @@ const SalesQuotationsRoute = SalesQuotationsRouteImport.update({
   id: '/sales/quotations',
   path: '/sales/quotations',
   getParentRoute: () => rootRouteImport,
+} as any)
+const SalesOrdersReferenceRoute = SalesOrdersReferenceRouteImport.update({
+  id: '/reference',
+  path: '/reference',
+  getParentRoute: () => SalesOrdersRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -253,10 +265,12 @@ export interface FileRoutesByFullPath {
   '/masters/warehouses': typeof MastersWarehousesRoute
   '/portal/customer': typeof PortalCustomerRoute
   '/procurement/orders': typeof ProcurementOrdersRoute
+  '/procurement/receipts': typeof ProcurementReceiptsRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
   '/sales/deliveries': typeof SalesDeliveriesRoute
-  '/sales/orders': typeof SalesOrdersRoute
+  '/sales/orders': typeof SalesOrdersRouteWithChildren
   '/sales/quotations': typeof SalesQuotationsRoute
+  '/sales/orders/reference': typeof SalesOrdersReferenceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -290,10 +304,12 @@ export interface FileRoutesByTo {
   '/masters/warehouses': typeof MastersWarehousesRoute
   '/portal/customer': typeof PortalCustomerRoute
   '/procurement/orders': typeof ProcurementOrdersRoute
+  '/procurement/receipts': typeof ProcurementReceiptsRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
   '/sales/deliveries': typeof SalesDeliveriesRoute
-  '/sales/orders': typeof SalesOrdersRoute
+  '/sales/orders': typeof SalesOrdersRouteWithChildren
   '/sales/quotations': typeof SalesQuotationsRoute
+  '/sales/orders/reference': typeof SalesOrdersReferenceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -328,10 +344,12 @@ export interface FileRoutesById {
   '/masters/warehouses': typeof MastersWarehousesRoute
   '/portal/customer': typeof PortalCustomerRoute
   '/procurement/orders': typeof ProcurementOrdersRoute
+  '/procurement/receipts': typeof ProcurementReceiptsRoute
   '/procurement/requisitions': typeof ProcurementRequisitionsRoute
   '/sales/deliveries': typeof SalesDeliveriesRoute
-  '/sales/orders': typeof SalesOrdersRoute
+  '/sales/orders': typeof SalesOrdersRouteWithChildren
   '/sales/quotations': typeof SalesQuotationsRoute
+  '/sales/orders/reference': typeof SalesOrdersReferenceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -367,10 +385,12 @@ export interface FileRouteTypes {
     | '/masters/warehouses'
     | '/portal/customer'
     | '/procurement/orders'
+    | '/procurement/receipts'
     | '/procurement/requisitions'
     | '/sales/deliveries'
     | '/sales/orders'
     | '/sales/quotations'
+    | '/sales/orders/reference'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -404,10 +424,12 @@ export interface FileRouteTypes {
     | '/masters/warehouses'
     | '/portal/customer'
     | '/procurement/orders'
+    | '/procurement/receipts'
     | '/procurement/requisitions'
     | '/sales/deliveries'
     | '/sales/orders'
     | '/sales/quotations'
+    | '/sales/orders/reference'
   id:
     | '__root__'
     | '/'
@@ -441,10 +463,12 @@ export interface FileRouteTypes {
     | '/masters/warehouses'
     | '/portal/customer'
     | '/procurement/orders'
+    | '/procurement/receipts'
     | '/procurement/requisitions'
     | '/sales/deliveries'
     | '/sales/orders'
     | '/sales/quotations'
+    | '/sales/orders/reference'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -479,9 +503,10 @@ export interface RootRouteChildren {
   MastersWarehousesRoute: typeof MastersWarehousesRoute
   PortalCustomerRoute: typeof PortalCustomerRoute
   ProcurementOrdersRoute: typeof ProcurementOrdersRoute
+  ProcurementReceiptsRoute: typeof ProcurementReceiptsRoute
   ProcurementRequisitionsRoute: typeof ProcurementRequisitionsRoute
   SalesDeliveriesRoute: typeof SalesDeliveriesRoute
-  SalesOrdersRoute: typeof SalesOrdersRoute
+  SalesOrdersRoute: typeof SalesOrdersRouteWithChildren
   SalesQuotationsRoute: typeof SalesQuotationsRoute
 }
 
@@ -704,6 +729,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProcurementOrdersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/procurement/receipts': {
+      id: '/procurement/receipts'
+      path: '/procurement/receipts'
+      fullPath: '/procurement/receipts'
+      preLoaderRoute: typeof ProcurementReceiptsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/procurement/requisitions': {
       id: '/procurement/requisitions'
       path: '/procurement/requisitions'
@@ -732,8 +764,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SalesQuotationsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/sales/orders/reference': {
+      id: '/sales/orders/reference'
+      path: '/reference'
+      fullPath: '/sales/orders/reference'
+      preLoaderRoute: typeof SalesOrdersReferenceRouteImport
+      parentRoute: typeof SalesOrdersRoute
+    }
   }
 }
+
+interface SalesOrdersRouteChildren {
+  SalesOrdersReferenceRoute: typeof SalesOrdersReferenceRoute
+}
+
+const SalesOrdersRouteChildren: SalesOrdersRouteChildren = {
+  SalesOrdersReferenceRoute: SalesOrdersReferenceRoute,
+}
+
+const SalesOrdersRouteWithChildren = SalesOrdersRoute._addFileChildren(
+  SalesOrdersRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -767,9 +818,10 @@ const rootRouteChildren: RootRouteChildren = {
   MastersWarehousesRoute: MastersWarehousesRoute,
   PortalCustomerRoute: PortalCustomerRoute,
   ProcurementOrdersRoute: ProcurementOrdersRoute,
+  ProcurementReceiptsRoute: ProcurementReceiptsRoute,
   ProcurementRequisitionsRoute: ProcurementRequisitionsRoute,
   SalesDeliveriesRoute: SalesDeliveriesRoute,
-  SalesOrdersRoute: SalesOrdersRoute,
+  SalesOrdersRoute: SalesOrdersRouteWithChildren,
   SalesQuotationsRoute: SalesQuotationsRoute,
 }
 export const routeTree = rootRouteImport
