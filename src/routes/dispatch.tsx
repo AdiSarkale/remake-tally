@@ -34,7 +34,7 @@ import {
   type DeliveryData,
   type DispatchData,
   type DispatchStatus,
-} from "@/lib/erp/api";
+} from "@/lib/api";
 import { dmy, num } from "@/lib/erp/format";
 
 export const Route = createFileRoute("/dispatch")({

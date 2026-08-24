@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createGRN, getGRNs, getPurchaseOrders, getWarehouses, type GRNData, type PurchaseOrderData, type WarehouseData } from "@/lib/erp/api";
+import { createGRN, getGRNs, getPurchaseOrders, getWarehouses, type GRNData, type PurchaseOrderData, type WarehouseData } from "@/lib/api";
 import { dmy, num } from "@/lib/erp/format";
 
 export const Route = createFileRoute("/procurement/receipts")({

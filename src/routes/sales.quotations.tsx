@@ -39,7 +39,7 @@ import {
   type QuotationData,
   type QuotationStatus,
   type CustomerPOData,
-} from "@/lib/erp/api";
+} from "@/lib/api";
 import { dmy, inr, num } from "@/lib/erp/format";
 
 export const Route = createFileRoute("/sales/quotations")({

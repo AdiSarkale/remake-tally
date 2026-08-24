@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 8
 
-    cors_origins: list[str] = ["http://localhost:8080","http://localhost:8081","http://localhost:5173"]
+    cors_origins: list[str] = ["http://localhost:8080","http://localhost:8081","http://localhost:5173","http://localhost:8000"]
 
     class Config:
         env_file = ".env"

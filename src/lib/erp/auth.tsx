@@ -17,9 +17,9 @@ interface AuthValue {
   session: Session | null;
   ready: boolean;
   login: (
-  username: string,
-  password: string,
-) => Promise<{ ok: boolean; error?: string }>;
+    username: string,
+    password: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
   logout: () => void;
   changePassword: (current: string, next: string) => { ok: boolean; error?: string };
 }
@@ -42,43 +42,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setReady(true);
   }, []);
 
- const login = useCallback(async (username: string, password: string) => {
-  try {
-    const data = await apiFetch("/api/v1/auth/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        username: username.trim(),
-        password,
-      }),
-    });
+  const login = useCallback(async (username: string, password: string) => {
+    try {
+      const data = await apiFetch("/api/v1/auth/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: username.trim(),
+          password,
+        }),
+      });
 
-    localStorage.setItem("minitally-token", data.access_token);
+      localStorage.setItem("minitally-token", data.access_token);
 
-    const next: Session = {
-      token: data.access_token,
-      userId: data.sub ?? username,
-      username,
-      fullName: data.full_name,
-      role: data.role,
-    };
+      const next: Session = {
+        token: data.access_token,
+        userId: data.sub ?? username,
+        username,
+        fullName: data.full_name,
+        role: data.role,
+      };
 
-    localStorage.setItem(SESSION_KEY, JSON.stringify(next));
-    setSession(next);
+      localStorage.setItem(SESSION_KEY, JSON.stringify(next));
+      setSession(next);
 
-    return { ok: true };
-  } catch (error) {
-    return {
-      ok: false,
-      error:
-        error instanceof Error
-          ? error.message
-          : "Invalid username or password",
-    };
-  }
-}, []);
+      return { ok: true };
+    } catch (error) {
+      return {
+        ok: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Invalid username or password",
+      };
+    }
+  }, []);
 
   const logout = useCallback(() => {
     window.localStorage.removeItem(SESSION_KEY);
@@ -107,7 +107,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({ session, ready, login, logout, changePassword }),
     [session, ready, login, logout, changePassword],
   );
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value= { value } >
+    { children }
+    </AuthContext.Provider>
+);
 }
 
 export function useAuth() {

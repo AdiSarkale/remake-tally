@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createDelivery, getCustomers, getDeliveries, getSalesOrders, type DeliveryData, type PartyData, type SalesOrderData } from "@/lib/erp/api";
+import { createDelivery, getCustomers, getDeliveries, getSalesOrders, type DeliveryData, type PartyData, type SalesOrderData } from "@/lib/api";
 import { dmy, num } from "@/lib/erp/format";
 
 export const Route = createFileRoute("/sales/deliveries")({
@@ -66,8 +66,8 @@ function DeliveriesPage() {
   const selectedSo = salesOrders.find((o) => o.id === form.soId);
   const dispatchables = selectedSo
     ? selectedSo.lines
-        .map((l) => ({ productId: l.product_id, name: l.product_name, unit: l.unit, rate: l.rate, ordered: l.quantity, delivered: l.delivered_quantity, pending: Math.max(0, l.quantity - l.delivered_quantity) }))
-        .filter((x) => x.pending > 0)
+      .map((l) => ({ productId: l.product_id, name: l.product_name, unit: l.unit, rate: l.rate, ordered: l.quantity, delivered: l.delivered_quantity, pending: Math.max(0, l.quantity - l.delivered_quantity) }))
+      .filter((x) => x.pending > 0)
     : [];
 
   const previewValue = useMemo(() => dispatchables.reduce((t, l) => t + Number(qty[l.productId] ?? 0) * l.rate, 0), [dispatchables, qty]);
