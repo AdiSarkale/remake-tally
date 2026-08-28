@@ -1,7 +1,7 @@
 """reconcile live schema and procurement baseline
 
 Revision ID: b10b63f2a9fb
-Revises: 137bed0425f2
+Revises: ed5ebdbcf47d
 Create Date: 2026-08-25 11:23:30.895835
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision: str = "b10b63f2a9fb"
-down_revision: Union[str, Sequence[str], None] = "137bed0425f2"
+down_revision: Union[str, Sequence[str], None] = "ed5ebdbcf47d"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
