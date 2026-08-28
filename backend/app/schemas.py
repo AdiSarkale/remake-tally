@@ -1,15 +1,23 @@
 """Pydantic request/response schemas."""
+
 from __future__ import annotations
+
 from datetime import date, datetime
+
 from pydantic import BaseModel, ConfigDict, Field
-from app.models import InvoiceStatus, ItemKind, MovementType, Role, QuotationStatus, SalesOrderStatus, DispatchStatus, PurchaseOrderStatus
+
+from app.models import DispatchStatus, InvoiceStatus, ItemKind, MovementType, PurchaseOrderStatus, QuotationStatus, Role, SalesOrderStatus
+
 
 class ORMModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+
+# ---------- Auth ----------
 class LoginRequest(BaseModel):
     username: str
     password: str
+
 
 class TokenResponse(BaseModel):
     access_token: str
@@ -17,30 +25,44 @@ class TokenResponse(BaseModel):
     role: Role
     full_name: str
 
+
 class UserOut(ORMModel):
     id: str
+    username: str
+    full_name: str
+    role: Role
     email: str = ""
     active: bool = True
+
 
 class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     full_name: str = Field(min_length=1, max_length=120)
+    email: str = ""
     role: Role = Role.operator
     password: str = Field(min_length=6, max_length=128)
+    active: bool = True
+
 
 class UserUpdate(BaseModel):
-    full_name: str | None = None
-    role: Role | None = None
-    email: str | None = None
-    active: bool | None = None
+    full_name: str = Field(min_length=1, max_length=120)
+    email: str = ""
+    role: Role
+    active: bool = True
+
 
 class PasswordReset(BaseModel):
+    """Admin reset — the target user's current password is NOT required."""
+
     new_password: str = Field(min_length=6, max_length=128)
+
 
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str = Field(min_length=6, max_length=128)
 
+
+# ---------- Masters ----------
 class PartyIn(BaseModel):
     name: str = Field(min_length=1, max_length=160)
     gst_number: str = ""
@@ -48,9 +70,11 @@ class PartyIn(BaseModel):
     email: str = ""
     address: str = ""
 
+
 class PartyOut(PartyIn, ORMModel):
     id: str
     kind: str
+
 
 class ProductIn(BaseModel):
     code: str
@@ -62,20 +86,24 @@ class ProductIn(BaseModel):
     gst_rate: float = 18
     min_stock: float = 0
 
+
 class ProductOut(ProductIn, ORMModel):
     id: str
     stock: float
 
+
 class RawMaterialIn(BaseModel):
-    code: str
     name: str
+    code: str
     unit: str = "KG"
     cost: float = 0
     min_stock: float = 0
 
+
 class RawMaterialOut(RawMaterialIn, ORMModel):
     id: str
     stock: float
+
 
 class ScrapReasonOut(BaseModel):
     reason: str
@@ -88,9 +116,12 @@ class ScrapTypeIn(BaseModel):
     selling_rate: float = 0
     active: bool = True
 
+
 class ScrapTypeOut(ScrapTypeIn, ORMModel):
     id: str
 
+
+# ---------- Inventory ----------
 class MovementIn(BaseModel):
     item_kind: ItemKind
     item_id: str
@@ -100,46 +131,67 @@ class MovementIn(BaseModel):
     reason: str = ""
     entry_date: date | None = None
 
+
 class MovementOut(ORMModel):
-    id: int
+    id: str
     entry_date: date
+    item_kind: ItemKind
+    item_id: str
     item_name: str
+    movement_type: MovementType
+    quantity: float
     unit: str
     balance: float
     reference: str
     reason: str
-    movement_type: MovementType
-    quantity: float
 
+
+# ---------- Production ----------
 class ConsumptionIn(BaseModel):
     material_id: str
     quantity: float = Field(gt=0)
 
+
 class ProductionIn(BaseModel):
+    entry_date: date
     product_id: str
+    quantity: float = Field(gt=0)
     machine: str = ""
     operator: str = ""
     shift: str = "A"
     remarks: str = ""
-    consumption: list[ConsumptionIn] = []
+    consumption: list[ConsumptionIn]
+
 
 class ProductionOut(ORMModel):
     id: str
     batch_no: str
+    entry_date: date
     product_id: str
+    quantity: float
     machine: str
     operator: str
     shift: str
     remarks: str
 
+
+# ---------- Scrap ----------
 class ScrapIn(BaseModel):
+    entry_date: date
+    product_id: str
     batch_no: str = ""
     scrap_type_id: str
     quantity: float = Field(gt=0)
     reason: str = ""
+    remarks: str = ""
+
 
 class ScrapOut(ScrapIn, ORMModel):
     id: str
+
+
+
+# ---------- Dashboard ----------
 
 class ProductionSeriesOut(BaseModel):
     date: date
@@ -147,55 +199,104 @@ class ProductionSeriesOut(BaseModel):
     produced: float
     scrap: float
 
+
 class RecentProductionOut(BaseModel):
+    id: str
+    batch_no: str
+    entry_date: date
     product_name: str
+    quantity: float
+    machine: str
+    operator: str
+    shift: str
+
 
 class LowStockOut(BaseModel):
+    id: str
+    name: str
+    stock: float
     min_stock: float
+    unit: str
+    kind: str
+
 
 class DashboardOut(BaseModel):
+    # KPI cards
     produced_today: float
     produced_month: float
     scrap_month: float
     scrap_rate: float
     inventory_value: float
     low_stock_count: int
+
     finished_goods_quantity: float
     finished_goods_sku_count: int
     finished_goods_value: float
+
     scrap_stock_quantity: float
     scrap_stock_value: float
+
     raw_material_value: float
     raw_material_count: int
+
+    # Dashboard tables / charts
     production_series: list[ProductionSeriesOut]
     recent_production: list[RecentProductionOut]
     low_stock_items: list[LowStockOut]
     top_scrap_reasons: list[ScrapReasonOut]
 
+
 class AuditOut(ORMModel):
-    id: int
+    id: str
     at: datetime
     username: str
     action: str
     entity: str
     detail: str
 
+
 class SettingsIn(BaseModel):
+    name: str
+    gst_number: str | None = None
+    address: str | None = None
     invoice_prefix: str = "INV"
     financial_year: str = "2026-2027"
+
 
 class SettingsOut(SettingsIn, ORMModel):
     id: int
 
+
+# ---------- Sales invoices ----------
+# ---------- Sales invoices ----------
+
 class InvoiceLineIn(BaseModel):
     product_id: str
-    quantity: float = Field(gt=0)
-    rate: float = Field(ge=0)
-    discount_percent: float = Field(default=0, ge=0, le=100)
-    gst_rate: float | None = Field(default=None, ge=0, le=100)
+
+    quantity: float = Field(
+        gt=0,
+    )
+
+    rate: float = Field(
+        ge=0,
+    )
+
+    discount_percent: float = Field(
+        default=0,
+        ge=0,
+        le=100,
+    )
+
+    # None = use product master GST.
+    # A number = custom GST for this invoice line.
+    gst_rate: float | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+    )
+
 
 class InvoiceLineOut(ORMModel):
-    id: int
     product_id: str
     product_name: str
     hsn: str
@@ -210,47 +311,99 @@ class InvoiceLineOut(ORMModel):
     igst: float
     total: float
 
+
 class InvoiceIn(BaseModel):
     invoice_date: date
     customer_id: str
     po_reference: str = ""
     notes: str = ""
+
+    # Backend can derive this from paid_percent,
+    # but keeping it here makes the API explicit.
     status: InvoiceStatus = InvoiceStatus.unpaid
-    paid_percent: float = Field(default=0, ge=0, le=100)
-    lines: list[InvoiceLineIn] = Field(min_length=1)
+
+    paid_percent: float = Field(
+        default=0,
+        ge=0,
+        le=100,
+    )
+
+    lines: list[InvoiceLineIn] = Field(
+        min_length=1,
+    )
+
 
 class InvoiceOut(ORMModel):
     id: str
     invoice_no: str
     invoice_date: date
+
     customer_id: str
     customer_name: str
+
     po_reference: str
     notes: str
+
     inter_state: bool
+
     sub_total: float
     discount_total: float
     taxable_total: float
+
     cgst: float
     sgst: float
     igst: float
+
     round_off: float
     grand_total: float
+
     paid_amount: float
     balance_amount: float
+
     status: InvoiceStatus
+
     lines: list[InvoiceLineOut]
+
 
 class InvoiceStatusIn(BaseModel):
     status: InvoiceStatus
-    paid_percent: float | None = Field(default=None, ge=0, le=100)
+
+    # Required when changing to Partial.
+    # Optional for Paid/Unpaid; backend derives the amount.
+    paid_percent: float = Field(
+        default=0,
+        ge=0,
+        le=100,
+    )
+
+class QuotationIn(BaseModel):
+    quotation_date : date
+    valid_until : date | None = None
+    customer_id : str
+    po_reference: str = ''
+    notes: str = ''
+    status :QuotationStatus = QuotationStatus.draft
+    lines: list["QuotationLineIn"]
+
 
 class QuotationLineIn(BaseModel):
     product_id: str
     quantity: float = Field(gt=0)
     rate: float = Field(ge=0)
-    discount_percent: float = Field(default=0, ge=0, le=100)
-    gst_rate: float | None = Field(default=None, ge=0, le=100)
+    discount_percent: float = Field(
+        ge=0,
+        le=100,
+        default=0,
+    )
+
+    # None = use product's GST
+    # Number = custom GST for this quotation line
+    gst_rate: float | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+    )
+
 
 class QuotationLineOut(ORMModel):
     id: int
@@ -258,6 +411,59 @@ class QuotationLineOut(ORMModel):
     product_name: str
     hsn: str
     unit: str
+
+    quantity: float
+    rate: float
+    discount_percent: float
+    gst_rate: float
+
+    taxable: float
+    cgst: float
+    sgst: float
+    igst: float
+    total: float
+
+
+class QuotationOut(ORMModel):
+    id: str
+    quotation_no: str
+    quotation_date: date
+    valid_until: date | None
+
+    customer_id: str
+    customer_name: str
+
+    po_reference: str
+    notes: str
+
+    inter_state: bool
+
+    sub_total: float
+    discount_total: float
+    taxable_total: float
+
+    cgst: float
+    sgst: float
+    igst: float
+
+    round_off: float
+    grand_total: float
+
+    status: QuotationStatus
+    created_by: str
+
+    lines: list[QuotationLineOut]
+
+class QuotationStatusIn(BaseModel):
+    status: QuotationStatus
+
+
+class SalesOrderLineOut(ORMModel):
+    id: int
+    product_id: str
+    product_name: str
+    hsn: str
+    unit: str
     quantity: float
     rate: float
     discount_percent: float
@@ -267,54 +473,8 @@ class QuotationLineOut(ORMModel):
     sgst: float
     igst: float
     total: float
-
-class QuotationIn(BaseModel):
-    quotation_date: date
-    valid_until: date | None = None
-    customer_id: str
-    po_reference: str = ""
-    notes: str = ""
-    status: QuotationStatus = QuotationStatus.draft
-    lines: list[QuotationLineIn] = Field(min_length=1)
-
-class QuotationOut(ORMModel):
-    id: str
-    quotation_no: str
-    quotation_date: date
-    valid_until: date | None
-    customer_id: str
-    customer_name: str
-    po_reference: str
-    notes: str
-    inter_state: bool
-    sub_total: float
-    discount_total: float
-    taxable_total: float
-    cgst: float
-    sgst: float
-    igst: float
-    round_off: float
-    grand_total: float
-    status: QuotationStatus
-    created_by: str
-    lines: list[QuotationLineOut]
-
-class QuotationStatusIn(BaseModel):
-    status: QuotationStatus
-
-class SalesOrderLineOut(ORMModel):
-    id: int
-    product_id: str
-    product_name: str
-    quantity: float
     delivered_quantity: float
-    rate: float
-    gst_rate: float
-    taxable: float
-    cgst: float
-    sgst: float
-    igst: float
-    total: float
+
 
 class SalesOrderOut(ORMModel):
     id: str
@@ -332,42 +492,55 @@ class SalesOrderOut(ORMModel):
     sgst: float
     igst: float
     grand_total: float
+    created_by: str
     lines: list[SalesOrderLineOut]
+
 
 class SalesOrderStatusIn(BaseModel):
     status: SalesOrderStatus
 
+
 class DeliveryLineIn(BaseModel):
     product_id: str
-    quantity: float = Field(gt=0)
+    quantity: float
+
 
 class DeliveryCreate(BaseModel):
     delivery_date: date
-    sales_order_id: str | None = None
-    customer_id: str | None = None
+    sales_order_id: str
     vehicle_no: str = ""
     driver_name: str = ""
     lr_number: str = ""
-    lines: list[DeliveryLineIn] = Field(min_length=1)
+    remarks: str = ""
+    lines: list[DeliveryLineIn]
 
-class DeliveryLineOut(ORMModel):
+
+class DeliveryLineOut(BaseModel):
     id: int
     product_id: str
     product_name: str
+    unit: str
     quantity: float
 
-class DeliveryOut(ORMModel):
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DeliveryOut(BaseModel):
     id: str
     delivery_no: str
     delivery_date: date
     sales_order_id: str | None
+    so_no: str
     customer_id: str
     customer_name: str
     vehicle_no: str
     driver_name: str
     lr_number: str
     remarks: str
+    created_by: str
     lines: list[DeliveryLineOut]
+
+    model_config = ConfigDict(from_attributes=True)
 
 class DispatchIn(BaseModel):
     dispatch_date: date
@@ -381,18 +554,10 @@ class DispatchIn(BaseModel):
     delivered_on: date | None = None
     pod_ref: str = ""
 
-class DispatchUpdateIn(BaseModel):
-    transporter: str = ""
-    vehicle_no: str = ""
-    driver_name: str = ""
-    driver_phone: str = ""
-    lr_number: str = ""
-    status: DispatchStatus
-    delivered_on: date | None = None
-    pod_ref: str = ""
 
 class DispatchStatusIn(BaseModel):
     status: DispatchStatus
+
 
 class DispatchOut(ORMModel):
     id: str
@@ -412,22 +577,9 @@ class DispatchOut(ORMModel):
     pod_ref: str
     created_by: str
 
-class PlantOut(ORMModel):
-    id: str
-    code: str
-    name: str
-    location: str
-    active: bool
 
-class WarehouseOut(ORMModel):
-    id: str
-    code: str
-    name: str
-    plant_id: str
-    active: bool
-
-class SupplierProductOut(ORMModel):
-    id: str
+# ---------- Purchasing, locations, and customer POs ----------
+class SupplierProductIn(BaseModel):
     supplier_id: str
     product_id: str
     supplier_code: str
@@ -435,98 +587,114 @@ class SupplierProductOut(ORMModel):
     minimum_order_qty: float
     lead_time_days: int
 
+
+class SupplierProductOut(SupplierProductIn, ORMModel):
+    id: str
+
+
+class PlantIn(BaseModel):
+    code: str
+    name: str
+    location: str
+    active: bool
+
+
+class PlantOut(PlantIn, ORMModel):
+    id: str
+
+
+class WarehouseIn(BaseModel):
+    code: str
+    name: str
+    plant_id: str
+    active: bool
+
+
+class WarehouseOut(WarehouseIn, ORMModel):
+    id: str
+
+
 class PurchaseOrderLineIn(BaseModel):
     material_id: str | None = None
-    material_name: str
-    quantity: float = Field(gt=0)
-    rate: float = Field(ge=0)
-    gst_rate: float = Field(ge=0, le=100, default=18)
-
-class PurchaseOrderIn(BaseModel):
-    po_date: date
-    supplier_id: str
-    expected_date: date | None = None
-    warehouse_id: str | None = None
-    notes: str = ""
-    lines: list[PurchaseOrderLineIn] = Field(min_length=1)
-
-class PurchaseOrderStatusIn(BaseModel):
-    status: PurchaseOrderStatus
-
-class PurchaseOrderLineOut(ORMModel):
-    id: int
-    material_id: str | None
     material_name: str
     quantity: float
     rate: float
     gst_rate: float
-    received_quantity: float
+    received_quantity: float = 0
     tax: float
     total: float
 
-class PurchaseOrderOut(ORMModel):
-    id: str
+
+class PurchaseOrderLineOut(PurchaseOrderLineIn, ORMModel):
+    id: int
+
+
+class PurchaseOrderIn(BaseModel):
     po_no: str
     po_date: date
-    expected_date: date | None
+    expected_date: date | None = None
     supplier_id: str
     supplier_name: str
-    warehouse_id: str | None
+    warehouse_id: str | None = None
     notes: str
     status: PurchaseOrderStatus
     sub_total: float
     gst_total: float
     grand_total: float
+    lines: list[PurchaseOrderLineIn] = Field(default_factory=list)
+
+
+class PurchaseOrderOut(PurchaseOrderIn, ORMModel):
+    id: str
+    created_by: str
     lines: list[PurchaseOrderLineOut]
 
+
 class GRNLineIn(BaseModel):
-    material_id: str
-    quantity: float = Field(gt=0)
-    batch_no: str = ""
-
-class GRNIn(BaseModel):
-    grn_date: date
-    purchase_order_id: str
-    warehouse_id: str
-    lines: list[GRNLineIn] = Field(min_length=1)
-
-class GRNLineOut(ORMModel):
-    id: int
     material_id: str
     material_name: str
     quantity: float
     batch_no: str
 
-class GRNOut(ORMModel):
-    id: str
+
+class GRNLineOut(GRNLineIn, ORMModel):
+    id: int
+
+
+class GRNIn(BaseModel):
     grn_no: str
     grn_date: date
     purchase_order_id: str
     po_no: str
     warehouse_id: str
+    lines: list[GRNLineIn] = Field(default_factory=list)
+
+
+class GRNOut(GRNIn, ORMModel):
+    id: str
     lines: list[GRNLineOut]
 
-class CustomerPOLineOut(ORMModel):
-    id: int
-    product_id: str | None
+
+class CustomerPOLineIn(BaseModel):
+    product_id: str | None = None
     product_name: str
     quantity: float
-    rate: float | None
+    rate: float | None = None
 
-class CustomerPOOut(ORMModel):
-    id: str
+
+class CustomerPOLineOut(CustomerPOLineIn, ORMModel):
+    id: int
+
+
+class CustomerPOIn(BaseModel):
     po_no: str
     po_date: date
     customer_id: str
     customer_name: str
-    delivery_date: date | None
-    lines: list[CustomerPOLineOut]
+    delivery_date: date | None = None
+    lines: list[CustomerPOLineIn] = Field(default_factory=list)
 
-class DeliveryIn(BaseModel):
-    sales_order_id: str | None = None
-    customer_id: str | None = None
-    delivery_date: date
-    vehicle_no: str = ""
-    driver_name: str = ""
-    lr_number: str = ""
-    lines: list[DeliveryLineIn] = Field(min_length=1)
+
+class CustomerPOOut(CustomerPOIn, ORMModel):
+    id: str
+    lines: list[CustomerPOLineOut]

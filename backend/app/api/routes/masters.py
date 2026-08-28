@@ -358,6 +358,8 @@ def create_material(
     db: Session = Depends(get_db),
     user: models.User = guard,
 ):
+    if db.query(models.RawMaterial).filter(models.RawMaterial.code == payload.code).first():
+        raise HTTPException(status_code=409, detail="Material code already exists")
     material = models.RawMaterial(
         **payload.model_dump()
     )
@@ -406,6 +408,8 @@ def create_scrap_type(
     db: Session = Depends(get_db),
     user: models.User = guard,
 ):
+    if db.query(models.ScrapType).filter(models.ScrapType.code == payload.code).first():
+        raise HTTPException(status_code=409, detail="Scrap type code already exists")
     scrap_type = models.ScrapType(
         **payload.model_dump()
     )
@@ -424,3 +428,309 @@ def create_scrap_type(
     db.refresh(scrap_type)
 
     return scrap_type
+
+
+# ---------- Plants & Warehouses ----------
+
+@router.get("/plants", response_model=list[schemas.PlantOut])
+def list_plants(
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
+    return (
+        db.query(models.Plant)
+        .order_by(models.Plant.code)
+        .all()
+    )
+
+
+@router.post("/plants", response_model=schemas.PlantOut, status_code=201)
+def create_plant(
+    payload: schemas.PlantIn,
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
+    if db.query(models.Plant).filter(
+        models.Plant.code == payload.code
+    ).first():
+        raise HTTPException(
+            status_code=409,
+            detail="Plant code already exists",
+        )
+
+    if db.query(models.Plant).filter(
+        models.Plant.name == payload.name
+    ).first():
+        raise HTTPException(
+            status_code=409,
+            detail="Plant name already exists",
+        )
+
+    plant = models.Plant(**payload.model_dump())
+    db.add(plant)
+
+    log_audit(
+        db,
+        user.username,
+        "CREATE",
+        "plant",
+        plant.code,
+    )
+
+    db.commit()
+    db.refresh(plant)
+
+    return plant
+
+
+@router.put("/plants/{plant_id}", response_model=schemas.PlantOut)
+def update_plant(
+    plant_id: str,
+    payload: schemas.PlantIn,
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
+    plant = db.get(models.Plant, plant_id)
+
+    if plant is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Plant not found",
+        )
+
+    duplicate_code = (
+        db.query(models.Plant)
+        .filter(
+            models.Plant.code == payload.code,
+            models.Plant.id != plant_id,
+        )
+        .first()
+    )
+
+    if duplicate_code:
+        raise HTTPException(
+            status_code=409,
+            detail="Plant code already exists",
+        )
+
+    duplicate_name = (
+        db.query(models.Plant)
+        .filter(
+            models.Plant.name == payload.name,
+            models.Plant.id != plant_id,
+        )
+        .first()
+    )
+
+    if duplicate_name:
+        raise HTTPException(
+            status_code=409,
+            detail="Plant name already exists",
+        )
+
+    for key, value in payload.model_dump().items():
+        setattr(plant, key, value)
+
+    log_audit(
+        db,
+        user.username,
+        "UPDATE",
+        "plant",
+        plant.code,
+    )
+
+    db.commit()
+    db.refresh(plant)
+
+    return plant
+
+
+@router.delete("/plants/{plant_id}", status_code=204)
+def delete_plant(
+    plant_id: str,
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
+    plant = db.get(models.Plant, plant_id)
+
+    if plant is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Plant not found",
+        )
+
+    if db.query(models.Warehouse).filter(
+        models.Warehouse.plant_id == plant_id
+    ).first():
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete plant while warehouses exist",
+        )
+
+    db.delete(plant)
+
+    log_audit(
+        db,
+        user.username,
+        "DELETE",
+        "plant",
+        plant.code,
+    )
+
+    db.commit()
+
+
+@router.get("/warehouses", response_model=list[schemas.WarehouseOut])
+def list_warehouses(
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
+    return (
+        db.query(models.Warehouse)
+        .order_by(models.Warehouse.code)
+        .all()
+    )
+
+
+@router.post(
+    "/warehouses",
+    response_model=schemas.WarehouseOut,
+    status_code=201,
+)
+def create_warehouse(
+    payload: schemas.WarehouseIn,
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
+    plant = db.get(models.Plant, payload.plant_id)
+
+    if plant is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Plant not found",
+        )
+
+    if db.query(models.Warehouse).filter(
+        models.Warehouse.code == payload.code
+    ).first():
+        raise HTTPException(
+            status_code=409,
+            detail="Warehouse code already exists",
+        )
+
+    warehouse = models.Warehouse(**payload.model_dump())
+    db.add(warehouse)
+
+    log_audit(
+        db,
+        user.username,
+        "CREATE",
+        "warehouse",
+        warehouse.code,
+    )
+
+    db.commit()
+    db.refresh(warehouse)
+
+    return warehouse
+
+
+@router.put(
+    "/warehouses/{warehouse_id}",
+    response_model=schemas.WarehouseOut,
+)
+def update_warehouse(
+    warehouse_id: str,
+    payload: schemas.WarehouseIn,
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
+    warehouse = db.get(models.Warehouse, warehouse_id)
+
+    if warehouse is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Warehouse not found",
+        )
+
+    plant = db.get(models.Plant, payload.plant_id)
+
+    if plant is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Plant not found",
+        )
+
+    duplicate_code = (
+        db.query(models.Warehouse)
+        .filter(
+            models.Warehouse.code == payload.code,
+            models.Warehouse.id != warehouse_id,
+        )
+        .first()
+    )
+
+    if duplicate_code:
+        raise HTTPException(
+            status_code=409,
+            detail="Warehouse code already exists",
+        )
+
+    for key, value in payload.model_dump().items():
+        setattr(warehouse, key, value)
+
+    log_audit(
+        db,
+        user.username,
+        "UPDATE",
+        "warehouse",
+        warehouse.code,
+    )
+
+    db.commit()
+    db.refresh(warehouse)
+
+    return warehouse
+
+
+@router.delete("/warehouses/{warehouse_id}", status_code=204)
+def delete_warehouse(
+    warehouse_id: str,
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
+    warehouse = db.get(models.Warehouse, warehouse_id)
+
+    if warehouse is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Warehouse not found",
+        )
+
+    if db.query(models.PurchaseOrder).filter(
+        models.PurchaseOrder.warehouse_id == warehouse_id
+    ).first():
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete warehouse while purchase orders exist",
+        )
+
+    if db.query(models.GRN).filter(
+        models.GRN.warehouse_id == warehouse_id
+    ).first():
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete warehouse while GRNs exist",
+        )
+
+    db.delete(warehouse)
+
+    log_audit(
+        db,
+        user.username,
+        "DELETE",
+        "warehouse",
+        warehouse.code,
+    )
+
+    db.commit()

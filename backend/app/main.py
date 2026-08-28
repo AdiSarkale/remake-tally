@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import auth, dashboard, inventory, masters, production, sales, scrap, users, quotations, sales_orders, delivery, dispatches
+from app.api.routes import auth, customer_pos, dashboard, delivery, dispatches, inventory, masters, production, purchasing, quotations, sales, sales_orders, scrap, users
 from app.core.config import get_settings
 from app.db.session import Base, engine
 from app import models
@@ -22,7 +22,7 @@ app.add_middleware(
 )
 
 for router in (auth.router, masters.router, inventory.router, production.router, scrap.router, sales.router, dashboard.router, users.router, quotations.router, sales_orders.router,
-               delivery.router, dispatches.router):
+               delivery.router, dispatches.router, purchasing.router, customer_pos.router):
     app.include_router(router, prefix=settings.api_v1_prefix)
 
 
