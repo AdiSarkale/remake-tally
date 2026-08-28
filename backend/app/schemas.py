@@ -554,6 +554,15 @@ class DispatchIn(BaseModel):
     delivered_on: date | None = None
     pod_ref: str = ""
 
+class DispatchUpdateIn(BaseModel):
+    transporter: str = ""
+    vehicle_no: str = ""
+    driver_name: str = ""
+    driver_phone: str = ""
+    lr_number: str = ""
+    status: DispatchStatus = DispatchStatus.planned
+    delivered_on: date | None = None
+    pod_ref: str = ""
 
 class DispatchStatusIn(BaseModel):
     status: DispatchStatus
