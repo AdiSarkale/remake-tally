@@ -114,12 +114,58 @@ class ScrapTypeIn(BaseModel):
     name: str
     unit: str = "KG"
     selling_rate: float = 0
+    min_stock: float = 0
     active: bool = True
 
 
 class ScrapTypeOut(ScrapTypeIn, ORMModel):
     id: str
+    code: str
+    name: str
+    unit: str
+    stock: float
+    min_stock: float
+    selling_rate: float
+    active: bool
 
+
+class BomLineIn(BaseModel):
+    material_id: str
+    quantity: float = Field(gt=0)
+
+class BomLineOut(BaseModel):
+    id: int
+    material_id: str
+    quantity: float
+
+class BomIn(BaseModel):
+    product_id: str
+
+    version: int = Field(default=1, ge=1)
+
+    active: bool = True
+
+    expected_scrap_percent: float = Field(
+        default=0,
+        ge=0,
+        le=100
+    )
+
+    scrap_type_id: str | None = None
+
+    lines: list[BomLineIn]
+
+class BOMOut(ORMModel):
+    id: str
+    product_id: str
+    version: int
+    active: bool
+
+    expected_scrap_percent: float
+
+    scrap_type_id: str | None
+
+    lines: list[BomLineOut]
 
 # ---------- Inventory ----------
 class MovementIn(BaseModel):
@@ -151,16 +197,19 @@ class ConsumptionIn(BaseModel):
     material_id: str
     quantity: float = Field(gt=0)
 
-
 class ProductionIn(BaseModel):
     entry_date: date
     product_id: str
     quantity: float = Field(gt=0)
+
     machine: str = ""
     operator: str = ""
     shift: str = "A"
     remarks: str = ""
+
     consumption: list[ConsumptionIn]
+
+    scrap_type_id: str | None = None
 
 
 class ProductionOut(ORMModel):
@@ -173,6 +222,8 @@ class ProductionOut(ORMModel):
     operator: str
     shift: str
     remarks: str
+
+    actual_scrap: float | None = None
 
 
 # ---------- Scrap ----------

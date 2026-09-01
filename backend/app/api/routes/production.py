@@ -1,7 +1,8 @@
 """Production routes: create batches (FG in, RM out) and list history."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app import models, schemas
 from app.api.deps import require_area
@@ -14,13 +15,143 @@ guard = Depends(require_area("production"))
 
 
 @router.get("", response_model=list[schemas.ProductionOut])
-def list_production(db: Session = Depends(get_db), user: models.User = guard):
-    return db.query(models.ProductionEntry).order_by(models.ProductionEntry.entry_date.desc()).all()
+def list_production(
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
+    productions = (
+        db.query(models.ProductionEntry)
+        .order_by(models.ProductionEntry.entry_date.desc())
+        .all()
+    )
 
+    result = []
+
+    for production in productions:
+
+        actual_scrap = (
+            db.query(func.coalesce(func.sum(models.ScrapEntry.quantity), 0))
+            .filter(models.ScrapEntry.batch_no == production.batch_no)
+            .scalar()
+        )
+
+        result.append({
+            "id": production.id,
+            "batch_no": production.batch_no,
+            "entry_date": production.entry_date,
+            "product_id": production.product_id,
+            "quantity": production.quantity,
+            "machine": production.machine,
+            "operator": production.operator,
+            "shift": production.shift,
+            "remarks": production.remarks,
+            "actual_scrap": actual_scrap,
+        })
+
+    return result
 
 @router.post("", response_model=schemas.ProductionOut, status_code=201)
-def create_production(payload: schemas.ProductionIn, db: Session = Depends(get_db), user: models.User = guard):
+def create_production(
+    payload: schemas.ProductionIn,
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
     batch_no = next_batch_no(db)
+
+    # -------------------------------------------------
+    # Find active BOM
+    # -------------------------------------------------
+
+    bom = (
+        db.query(models.BillOfMaterials)
+        .filter(
+            models.BillOfMaterials.product_id == payload.product_id,
+            models.BillOfMaterials.active.is_(True),
+        )
+        .order_by(models.BillOfMaterials.version.desc())
+        .first()
+    )
+
+    if bom is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No active BOM found for this product",
+        )
+
+    if not bom.lines:
+        raise HTTPException(
+            status_code=400,
+            detail="Active BOM has no material lines",
+        )
+
+    # -------------------------------------------------
+    # Calculate BOM consumption
+    # -------------------------------------------------
+
+    consumption = []
+
+
+    for bom_line in bom.lines:
+        required_quantity = round(
+            bom_line.quantity * payload.quantity,
+            3,
+        )
+
+        material = db.get(
+            models.RawMaterial,
+            bom_line.material_id,
+        )
+
+        if material is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Material {bom_line.material_id} not found",
+            )
+
+        if material.stock < required_quantity:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Insufficient stock for {material.name} "
+                    f"(required {required_quantity}, "
+                    f"available {material.stock})"
+                ),
+            )
+
+        consumption.append(
+            models.ProductionConsumption(
+                material_id=bom_line.material_id,
+                quantity=required_quantity
+            )
+        )
+    # -------------------------------------------------
+    # Calculate scrap
+    # -------------------------------------------------
+
+    calculated_scrap = 0.0
+
+    if bom.expected_scrap_percent > 0:
+        calculated_scrap = round(
+            (payload.quantity * bom.expected_scrap_percent) / 100,
+            3,
+        )
+
+    # Manual actual scrap overrides BOM calculated scrap
+    actual_scrap = (calculated_scrap)
+
+    actual_scrap = round(actual_scrap, 3)
+
+    # Production payload overrides BOM scrap type
+    scrap_type_id = (
+        payload.scrap_type_id
+        or bom.scrap_type_id
+    )
+
+
+    # -------------------------------------------------
+    # Create production entry
+    # -------------------------------------------------
+
     entry = models.ProductionEntry(
         batch_no=batch_no,
         entry_date=payload.entry_date,
@@ -30,25 +161,32 @@ def create_production(payload: schemas.ProductionIn, db: Session = Depends(get_d
         operator=payload.operator,
         shift=payload.shift,
         remarks=payload.remarks,
-        consumption=[
-            models.ProductionConsumption(material_id=c.material_id, quantity=c.quantity) for c in payload.consumption
-        ],
+        actual_scrap = actual_scrap,
+        consumption=consumption,
     )
+
     db.add(entry)
 
-    # Raw materials out first so a shortage aborts the whole batch.
-    for line in payload.consumption:
+    # -------------------------------------------------
+    # Raw materials OUT
+    # -------------------------------------------------
+
+    for consumption_line in consumption:
         apply_movement(
             db,
             kind=ItemKind.material,
-            item_id=line.material_id,
+            item_id=consumption_line.material_id,
             movement_type=MovementType.OUT,
-            quantity=line.quantity,
+            quantity=consumption_line.quantity,
             reference=batch_no,
             reason="Production consumption",
             entry_date=payload.entry_date,
             user_id=user.id,
         )
+
+       # -------------------------------------------------
+    # Finished product IN
+    # -------------------------------------------------
 
     apply_movement(
         db,
@@ -62,7 +200,44 @@ def create_production(payload: schemas.ProductionIn, db: Session = Depends(get_d
         user_id=user.id,
     )
 
-    log_audit(db, user.username, "CREATE", "production", f"{batch_no}: {payload.quantity} units")
+
+    # -------------------------------------------------
+    # Scrap IN
+    # -------------------------------------------------
+
+    if actual_scrap > 0:
+
+        if not scrap_type_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Scrap type is required when scrap quantity is greater than zero",
+            )
+
+        apply_movement(
+            db,
+            kind=ItemKind.scrap,
+            item_id=scrap_type_id,
+            movement_type=MovementType.IN,
+            quantity=actual_scrap,
+            reference=batch_no,
+            reason="Production scrap",
+            entry_date=payload.entry_date,
+            user_id=user.id,
+        )
+
+    # -------------------------------------------------
+    # Save production
+    # -------------------------------------------------
+
+    log_audit(
+        db,
+        user.username,
+        "CREATE",
+        "production",
+        f"{batch_no}: {payload.quantity} units, scrap: {actual_scrap}",
+    )
+
     db.commit()
     db.refresh(entry)
+
     return entry

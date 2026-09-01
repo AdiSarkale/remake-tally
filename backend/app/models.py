@@ -87,6 +87,33 @@ class RawMaterial(Base):
     stock: Mapped[float] = mapped_column(Float, default=0)
     min_stock: Mapped[float] = mapped_column(Float, default=0)
 
+class BillOfMaterials(Base):
+    __tablename__= 'bill_of_materials'
+
+    id: Mapped[str] = mapped_column(String(36),primary_key=True,default=_uuid)
+    product_id : Mapped[str] = mapped_column(ForeignKey('products.id'),index=True,unique=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    active: Mapped[bool] = mapped_column(Boolean,default=True)
+    expected_scrap_percent: Mapped[float] = mapped_column(Float, default=0)
+    scrap_type_id: Mapped[str | None] = mapped_column(
+        ForeignKey("scrap_types.id"),
+        nullable=True
+    )
+
+    lines : Mapped[list['BomLine']] = relationship(
+        back_populates='bom',
+        cascade='all, delete-orphan')
+
+class BomLine(Base):
+    __tablename__ = 'bom_lines'
+    id: Mapped[int] = mapped_column(Integer,primary_key=True,autoincrement=True)
+
+    bom_id : Mapped[str] = mapped_column(ForeignKey('bill_of_materials.id', ondelete='CASCADE'),index=True)
+
+    material_id: Mapped[str] = mapped_column(ForeignKey('raw_materials.id'), index=True)
+    quantity: Mapped[float] = mapped_column(Float)
+
+    bom: Mapped[BillOfMaterials] = relationship(back_populates='lines')
 
 class ScrapType(Base):
     __tablename__ = "scrap_types"
@@ -97,6 +124,9 @@ class ScrapType(Base):
     unit: Mapped[str] = mapped_column(String(16), default="KG")
     selling_rate: Mapped[float] = mapped_column(Float, default=0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    stock: Mapped[float] = mapped_column(Float, default=0, nullable=True)
+    min_stock: Mapped[float] = mapped_column(Float, default=0, nullable=True)
 
 
 class InventoryMovement(Base):
@@ -128,6 +158,15 @@ class ProductionEntry(Base):
     operator: Mapped[str] = mapped_column(String(120), default="")
     shift: Mapped[str] = mapped_column(String(4), default="A")
     remarks: Mapped[str] = mapped_column(Text, default="")
+    actual_scrap: Mapped[float] = mapped_column(
+    Float,
+    default=0
+    )
+
+    scrap_type_id: Mapped[str | None] = mapped_column(
+        ForeignKey("scrap_types.id"),
+        nullable=True
+    )
 
     consumption: Mapped[list["ProductionConsumption"]] = relationship(
         back_populates="entry", cascade="all, delete-orphan"
@@ -1026,3 +1065,5 @@ class CustomerPOLine(Base):
     product_name: Mapped[str] = mapped_column(String(160))
     quantity: Mapped[float] = mapped_column(Float)
     rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
