@@ -25,6 +25,8 @@ import {
   createProduction as createProductionApi,
   getProducts,
   getProduction,
+  getWorkcenters,
+  type WorkcenterData,
   type ProductData,
   type ProductionData,
 } from "@/lib/api";
@@ -55,6 +57,7 @@ const SHIFTS = ["A", "B", "C"] as const;
 
 function ProductionPage() {
 const [products, setProducts] = useState<ProductData[]>([]);
+const [workcenters, setWorkcenters] = useState<WorkcenterData[]>([]);
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -71,6 +74,7 @@ const [loading, setLoading] = useState(true);
     productId: "",
     quantity: "",
     machine: "",
+    workcenterId: "",
     operator: session?.fullName ?? "",
     shift: "A" as (typeof SHIFTS)[number],
     remarks: "",
@@ -90,10 +94,12 @@ const monthQty = production
   Promise.all([
     getProducts(),
     getProduction(),
+    getWorkcenters(),
   ])
-.then(([productsData, productionData]) => {
+.then(([productsData, productionData, workcentersData]) => {
       setProducts(productsData);
       setProduction(productionData);
+      setWorkcenters(workcentersData);
     })
     .catch((error) => {
       toast.error(
@@ -112,6 +118,7 @@ const monthQty = production
       productId: "",
       quantity: "",
       machine: "",
+      workcenterId: "",
       operator: session?.fullName ?? "",
       shift: "A",
       remarks: "",
@@ -138,6 +145,7 @@ const monthQty = production
       product_id: form.productId,
       quantity: qty,
       machine: form.machine,
+      workcenter_id: form.workcenterId || null,
       operator: form.operator,
       shift: form.shift,
       remarks: form.remarks,
@@ -145,16 +153,12 @@ const monthQty = production
 
     toast.success("Production posted — stock updated");
 
-    const [productsData, materialsData, productionData] =
-      await Promise.all([
-        getProducts(),
-        getMaterials(),
-        getProduction(),
-      ]);
-
+      const [productsData, productionData, workcentersData] = await Promise.all([
+      getProducts(), getProduction(), getWorkcenters(),
+    ]);
     setProducts(productsData);
-    setMaterials(materialsData);
     setProduction(productionData);
+    setWorkcenters(workcentersData);
 
     setOpen(false);
     reset();
@@ -293,6 +297,13 @@ const monthQty = production
               />
             </div>
             <div>
+              <Label className="mb-1.5 block text-xs">Workcenter</Label>
+              <Select value={form.workcenterId} onValueChange={(v) => setForm({ ...form, workcenterId: v })}>
+                <SelectTrigger><SelectValue placeholder="Select workcenter" /></SelectTrigger>
+                <SelectContent>{workcenters.filter((w) => w.active).map((w) => <SelectItem key={w.id} value={w.id}>{w.code} — {w.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label className="mb-1.5 block text-xs">Operator</Label>
               <Input value={form.operator} onChange={(e) => setForm({ ...form, operator: e.target.value })} />
             </div>
@@ -308,7 +319,7 @@ const monthQty = production
 
           <div className="mt-2 rounded-md border p-3 text-sm text-muted-foreground">
             Raw material consumption is calculated automatically from the active BOM.
-            Manual actual-consumption variance will be enabled in Phase 1.
+            Actual consumption can now differ from BOM plan; the API records planned, actual and variance quantities.
           </div>
 
           <DialogFooter>
