@@ -56,6 +56,10 @@ def create_production(
     db: Session = Depends(get_db),
     user: models.User = guard,
 ):
+    product = db.get(models.Product, payload.product_id)
+    if product is None:
+        raise HTTPException(status_code=400, detail="Product not found")
+
     batch_no = next_batch_no(db)
 
     # -------------------------------------------------
@@ -125,6 +129,30 @@ def create_production(
             )
         )
     # -------------------------------------------------
+    # Validate legacy/manual consumption input
+    # -------------------------------------------------
+    if payload.consumption:
+        supplied = {}
+        for line in payload.consumption:
+            if line.material_id in supplied:
+                raise HTTPException(
+                    status_code=400,
+                    detail="A material cannot appear twice in production consumption",
+                )
+            supplied[line.material_id] = round(line.quantity, 3)
+
+        planned = {
+            line.material_id: round(line.quantity * payload.quantity, 3)
+            for line in bom.lines
+        }
+
+        if supplied != planned:
+            raise HTTPException(
+                status_code=400,
+                detail="Manual consumption must match the active BOM. Actual variance is a Phase 1 feature.",
+            )
+
+    # -------------------------------------------------
     # Calculate scrap
     # -------------------------------------------------
 
@@ -142,10 +170,15 @@ def create_production(
     actual_scrap = round(actual_scrap, 3)
 
     # Production payload overrides BOM scrap type
-    scrap_type_id = (
-        payload.scrap_type_id
-        or bom.scrap_type_id
-    )
+    scrap_type_id = payload.scrap_type_id or bom.scrap_type_id
+
+    if actual_scrap > 0:
+        scrap_type = db.get(models.ScrapType, scrap_type_id) if scrap_type_id else None
+        if scrap_type is None or not scrap_type.active:
+            raise HTTPException(
+                status_code=400,
+                detail="Scrap type is required and must be active when scrap quantity is greater than zero",
+            )
 
 
     # -------------------------------------------------
