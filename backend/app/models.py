@@ -88,10 +88,13 @@ class RawMaterial(Base):
     min_stock: Mapped[float] = mapped_column(Float, default=0)
 
 class BillOfMaterials(Base):
-    __tablename__= 'bill_of_materials'
+    __tablename__ = "bill_of_materials"
+    __table_args__ = (
+        UniqueConstraint("product_id", "version", name="uq_bom_product_version"),
+    )
 
-    id: Mapped[str] = mapped_column(String(36),primary_key=True,default=_uuid)
-    product_id : Mapped[str] = mapped_column(ForeignKey('products.id'),index=True,unique=True)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    product_id: Mapped[str] = mapped_column(ForeignKey("products.id"), index=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
     active: Mapped[bool] = mapped_column(Boolean,default=True)
     expected_scrap_percent: Mapped[float] = mapped_column(Float, default=0)
