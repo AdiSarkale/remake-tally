@@ -216,19 +216,21 @@ export interface ProductionInput {
   operator: string;
   shift: string;
   remarks: string;
+  workcenter_id?: string | null;
+  routing_id?: string | null;
+  operation_id?: string | null;
+  production_order_id?: string | null;
+  employee_id?: string | null;
   consumption?: ProductionConsumptionInput[];
 }
 
 export interface ProductionData {
-  id: string;
-  batch_no: string;
-  entry_date: string;
-  product_id: string;
-  quantity: number;
-  machine: string;
-  operator: string;
-  shift: string;
-  remarks: string;
+  id: string; batch_no: string; entry_date: string; product_id: string; quantity: number;
+  machine: string; operator: string; shift: string; remarks: string;
+  workcenter_id?: string | null; routing_id?: string | null; operation_id?: string | null;
+  production_order_id?: string | null; employee_id?: string | null;
+  actual_scrap?: number | null;
+  consumption: { material_id: string; planned_quantity: number; quantity: number; variance: number }[];
 }
 
 /* =========================================================
@@ -893,3 +895,32 @@ export async function apiFetch(
 
   return response.json();
 }
+
+
+/* =========================================================
+   Manufacturing
+   ========================================================= */
+
+export interface WorkcenterMaterialData { id:string; workcenter_id:string; item_kind:"RM"|"SF"|"FG"; item_id:string; operation_id:string|null; }
+export interface WorkcenterData { id:string; code:string; name:string; department:string; capacity_per_hour:number; status:string; active:boolean; location:string; materials:WorkcenterMaterialData[]; }
+export interface WorkcenterInput { code:string; name:string; department:string; capacity_per_hour:number; status:string; active:boolean; location:string; materials:{item_kind:"RM"|"SF"|"FG";item_id:string;operation_id?:string|null}[]; }
+export interface RoutingOperationData { id:string; sequence:number; code:string; name:string; workcenter_id:string; required_skill:string; setup_minutes:number; run_minutes_per_unit:number; active:boolean; }
+export interface RoutingData { id:string; product_id:string; version:number; name:string; active:boolean; operations:RoutingOperationData[]; }
+export interface RoutingInput { product_id:string; version:number; name:string; active:boolean; operations:Omit<RoutingOperationData,"id">[]; }
+export interface EmployeeData { id:string; emp_code:string; name:string; department:string; designation:string; active:boolean; }
+export interface EmployeeSkillData { id:string; employee_id:string; skill:string; level:number; certified:boolean; active:boolean; }
+export interface ProductionOrderOperationData { id:string; operation_id:string; sequence:number; workcenter_id:string; assigned_employee_id:string|null; status:string; planned_qty:number; completed_qty:number; }
+export interface ProductionOrderData { id:string; order_no:string; order_date:string; product_id:string; quantity:number; due_date:string|null; routing_id:string|null; status:string; remarks:string; operations:ProductionOrderOperationData[]; }
+export interface ProductionOrderInput { order_date:string; product_id:string; quantity:number; due_date?:string|null; routing_id?:string|null; remarks?:string; }
+
+export async function getWorkcenters():Promise<WorkcenterData[]> { return apiFetch("/api/v1/manufacturing/workcenters"); }
+export async function createWorkcenter(payload:WorkcenterInput):Promise<WorkcenterData> { return apiFetch("/api/v1/manufacturing/workcenters",{method:"POST",body:JSON.stringify(payload)}); }
+export async function getRoutings(productId?:string):Promise<RoutingData[]> { return apiFetch("/api/v1/manufacturing/routings"+(productId?"?product_id="+encodeURIComponent(productId):"")); }
+export async function createRouting(payload:RoutingInput):Promise<RoutingData> { return apiFetch("/api/v1/manufacturing/routings",{method:"POST",body:JSON.stringify(payload)}); }
+export async function getEmployees():Promise<EmployeeData[]> { return apiFetch("/api/v1/manufacturing/employees"); }
+export async function createEmployee(payload:Omit<EmployeeData,"id">):Promise<EmployeeData> { return apiFetch("/api/v1/manufacturing/employees",{method:"POST",body:JSON.stringify(payload)}); }
+export async function getEmployeeSkills(employeeId:string):Promise<EmployeeSkillData[]> { return apiFetch("/api/v1/manufacturing/employees/"+employeeId+"/skills"); }
+export async function addEmployeeSkill(employeeId:string,payload:Omit<EmployeeSkillData,"id"|"employee_id">):Promise<EmployeeSkillData> { return apiFetch("/api/v1/manufacturing/employees/"+employeeId+"/skills",{method:"POST",body:JSON.stringify(payload)}); }
+export async function getProductionOrders():Promise<ProductionOrderData[]> { return apiFetch("/api/v1/manufacturing/production-orders"); }
+export async function createProductionOrder(payload:ProductionOrderInput):Promise<ProductionOrderData> { return apiFetch("/api/v1/manufacturing/production-orders",{method:"POST",body:JSON.stringify(payload)}); }
+export async function assignProductionOperation(orderId:string,operationRowId:string,employeeId?:string|null) { return apiFetch("/api/v1/manufacturing/production-orders/"+orderId+"/operations/"+operationRowId+"/assignment",{method:"PATCH",body:JSON.stringify({employee_id:employeeId??null})}); }
