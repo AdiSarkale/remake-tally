@@ -22,7 +22,7 @@ app.add_middleware(
 )
 
 for router in (auth.router, masters.router, inventory.router, production.router, scrap.router, sales.router, dashboard.router, users.router, quotations.router, sales_orders.router,
-               delivery.router, dispatches.router, purchasing.router, customer_pos.router, bom.router):
+               delivery.router, dispatches.router, purchasing.router, customer_pos.router, bom.router, manufacturing.router):
     app.include_router(router, prefix=settings.api_v1_prefix)
 
 
