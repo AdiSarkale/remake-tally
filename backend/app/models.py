@@ -166,10 +166,11 @@ class ProductionEntry(Base):
     operator: Mapped[str] = mapped_column(String(120), default="")
     shift: Mapped[str] = mapped_column(String(4), default="A")
     remarks: Mapped[str] = mapped_column(Text, default="")
-    actual_scrap: Mapped[float] = mapped_column(
-    Float,
-    default=0
-    )
+    actual_scrap: Mapped[float] = mapped_column(Float, default=0)
+    quality_status: Mapped[str] = mapped_column(String(32), default="Pending")
+    accepted_qty: Mapped[float] = mapped_column(Float, default=0)
+    rejected_qty: Mapped[float] = mapped_column(Float, default=0)
+    quality_remarks: Mapped[str] = mapped_column(Text, default="")
 
     scrap_type_id: Mapped[str | None] = mapped_column(
         ForeignKey("scrap_types.id"),
