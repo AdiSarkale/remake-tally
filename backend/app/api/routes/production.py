@@ -93,6 +93,9 @@ def create_production(
             ).order_by(models.ProductionOrderOperation.sequence).first()
         if not order_op:
             raise HTTPException(400, "No assigned production operation available")
+        remaining = round(order_op.planned_qty - order_op.completed_qty, 3)
+        if payload.quantity > remaining:
+            raise HTTPException(400, f"Production quantity exceeds operation remaining quantity ({remaining})")
         payload.workcenter_id = payload.workcenter_id or order_op.workcenter_id
         payload.employee_id = payload.employee_id or order_op.assigned_employee_id
         payload.routing_id = payload.routing_id or order.routing_id
@@ -107,6 +110,12 @@ def create_production(
         employee = db.get(models.Employee, payload.employee_id)
         if not employee or not employee.active:
             raise HTTPException(400, "Employee not found or inactive")
+        if order_op and order_op.operation_id:
+            operation = db.get(models.RoutingOperation, order_op.operation_id)
+            if operation and operation.required_skill:
+                skilled = db.query(models.EmployeeSkill).filter_by(employee_id=employee.id, skill=operation.required_skill, active=True).first()
+                if not skilled:
+                    raise HTTPException(400, "Employee does not have the required routing skill")
 
     # -------------------------------------------------
     # Find active BOM
