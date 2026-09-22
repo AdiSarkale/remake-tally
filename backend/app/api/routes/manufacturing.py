@@ -205,3 +205,44 @@ def assign_operation_employee(order_id: str, operation_row_id: str, payload: sch
     log_audit(db, user.username, "ASSIGN", "production_order_operation", f"{order_id}: {employee.emp_code}")
     db.commit()
     return {"operation_id": operation.id, "workcenter_id": row.workcenter_id, "employee_id": employee.id, "assignment_mode": "manual" if payload.employee_id else "automatic"}
+
+
+@router.patch("/production/{production_id}/quality", response_model=schemas.ProductionOut)
+def update_production_quality(production_id: str, payload: schemas.ProductionQualityIn, db: Session = Depends(get_db), user: models.User = guard):
+    production = db.get(models.ProductionEntry, production_id)
+    if not production:
+        raise HTTPException(404, "Production entry not found")
+    if round(payload.accepted_qty + payload.rejected_qty, 3) > round(production.quantity, 3):
+        raise HTTPException(400, "Accepted plus rejected quantity cannot exceed produced quantity")
+    production.quality_status = payload.status
+    production.accepted_qty = payload.accepted_qty
+    production.rejected_qty = payload.rejected_qty
+    production.quality_remarks = payload.remarks
+    log_audit(db, user.username, "QUALITY", "production", production.batch_no + ": " + payload.status)
+    db.commit()
+    db.refresh(production)
+    return production
+
+
+@router.get("/reports/production", response_model=schemas.ManufacturingReportOut)
+def manufacturing_report(db: Session = Depends(get_db), user: models.User = guard):
+    rows = db.query(models.ProductionEntry).all()
+    production_qty = sum(x.quantity for x in rows)
+    scrap_qty = sum(x.actual_scrap or 0 for x in rows)
+    planned = sum(c.planned_quantity for x in rows for c in x.consumption)
+    actual = sum(c.quantity for x in rows for c in x.consumption)
+    by = {}
+    for x in rows:
+        key = x.workcenter_id or "Unassigned"
+        item = by.setdefault(key, {"workcenter_id": key, "production_qty": 0, "scrap_qty": 0, "material_variance": 0})
+        item["production_qty"] += x.quantity
+        item["scrap_qty"] += x.actual_scrap or 0
+        item["material_variance"] += sum(c.quantity - c.planned_quantity for c in x.consumption)
+    return {
+        "production_qty": production_qty,
+        "scrap_qty": scrap_qty,
+        "planned_material_qty": planned,
+        "actual_material_qty": actual,
+        "material_variance": actual - planned,
+        "by_workcenter": list(by.values()),
+    }
