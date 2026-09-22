@@ -42,6 +42,11 @@ def list_production(
             "product_id": production.product_id,
             "quantity": production.quantity,
             "machine": production.machine,
+            "workcenter_id": production.workcenter_id,
+            "routing_id": production.routing_id,
+            "operation_id": production.operation_id,
+            "production_order_id": production.production_order_id,
+            "employee_id": production.employee_id,
             "operator": production.operator,
             "shift": production.shift,
             "remarks": production.remarks,
@@ -61,6 +66,37 @@ def create_production(
         raise HTTPException(status_code=400, detail="Product not found")
 
     batch_no = next_batch_no(db)
+
+    # Resolve routing/workcenter/employee from the production order when supplied.
+    order_op = None
+    if payload.production_order_id:
+        order = db.get(models.ProductionOrder, payload.production_order_id)
+        if not order:
+            raise HTTPException(400, "Production order not found")
+        if order.product_id != payload.product_id:
+            raise HTTPException(400, "Production order does not belong to product")
+        if payload.operation_id:
+            order_op = db.get(models.ProductionOrderOperation, payload.operation_id)
+            if not order_op or order_op.production_order_id != order.id:
+                raise HTTPException(400, "Production order operation not found")
+        else:
+            order_op = db.query(models.ProductionOrderOperation).filter_by(
+                production_order_id=order.id, status="Assigned"
+            ).order_by(models.ProductionOrderOperation.sequence).first()
+        if not order_op:
+            raise HTTPException(400, "No assigned production operation available")
+        payload.workcenter_id = payload.workcenter_id or order_op.workcenter_id
+        payload.employee_id = payload.employee_id or order_op.assigned_employee_id
+        payload.routing_id = payload.routing_id or order.routing_id
+
+    if payload.workcenter_id:
+        wc = db.get(models.Workcenter, payload.workcenter_id)
+        if not wc or not wc.active:
+            raise HTTPException(400, "Workcenter not found or inactive")
+    if payload.employee_id:
+        employee = db.get(models.Employee, payload.employee_id)
+        if not employee or not employee.active:
+            raise HTTPException(400, "Employee not found or inactive")
 
     # -------------------------------------------------
     # Find active BOM
@@ -191,6 +227,11 @@ def create_production(
         product_id=payload.product_id,
         quantity=payload.quantity,
         machine=payload.machine,
+        workcenter_id=payload.workcenter_id,
+        routing_id=payload.routing_id,
+        operation_id=payload.operation_id or (order_op.operation_id if order_op else None),
+        production_order_id=payload.production_order_id,
+        employee_id=payload.employee_id,
         operator=payload.operator,
         shift=payload.shift,
         remarks=payload.remarks,
