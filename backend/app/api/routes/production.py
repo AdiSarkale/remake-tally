@@ -152,16 +152,6 @@ def create_production(
                 detail=f"Material {bom_line.material_id} not found",
             )
 
-        if material.stock < required_quantity:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Insufficient stock for {material.name} "
-                    f"(required {required_quantity}, "
-                    f"available {material.stock})"
-                ),
-            )
-
         consumption.append(
             models.ProductionConsumption(
                 material_id=bom_line.material_id,
