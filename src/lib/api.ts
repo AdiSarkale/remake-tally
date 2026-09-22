@@ -216,7 +216,7 @@ export interface ProductionInput {
   operator: string;
   shift: string;
   remarks: string;
-  consumption: ProductionConsumptionInput[];
+  consumption?: ProductionConsumptionInput[];
 }
 
 export interface ProductionData {
