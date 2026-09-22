@@ -51,6 +51,10 @@ def list_production(
             "shift": production.shift,
             "remarks": production.remarks,
             "actual_scrap": actual_scrap,
+            "consumption": [
+                {"material_id": line.material_id, "planned_quantity": line.planned_quantity, "quantity": line.quantity, "variance": round(line.quantity - line.planned_quantity, 3)}
+                for line in production.consumption
+            ],
         })
 
     return result
@@ -161,6 +165,7 @@ def create_production(
         consumption.append(
             models.ProductionConsumption(
                 material_id=bom_line.material_id,
+                planned_quantity=required_quantity,
                 quantity=required_quantity
             )
         )
@@ -171,22 +176,25 @@ def create_production(
         supplied = {}
         for line in payload.consumption:
             if line.material_id in supplied:
-                raise HTTPException(
-                    status_code=400,
-                    detail="A material cannot appear twice in production consumption",
-                )
+                raise HTTPException(400, "A material cannot appear twice in production consumption")
             supplied[line.material_id] = round(line.quantity, 3)
 
-        planned = {
-            line.material_id: round(line.quantity * payload.quantity, 3)
-            for line in bom.lines
-        }
+        planned = {line.material_id: round(line.quantity * payload.quantity, 3) for line in bom.lines}
+        unknown = set(supplied) - set(planned)
+        missing = set(planned) - set(supplied)
+        if unknown:
+            raise HTTPException(400, "Actual consumption may only contain materials from the active BOM")
+        if missing:
+            raise HTTPException(400, "Actual consumption must include every active BOM material line")
 
-        if supplied != planned:
-            raise HTTPException(
-                status_code=400,
-                detail="Manual consumption must match the active BOM. Actual variance is a Phase 1 feature.",
-            )
+        for consumption_line in consumption:
+            consumption_line.quantity = supplied[consumption_line.material_id]
+        for consumption_line in consumption:
+            if consumption_line.quantity < 0:
+                raise HTTPException(400, "Actual consumption cannot be negative")
+            material = db.get(models.RawMaterial, consumption_line.material_id)
+            if material and material.stock < consumption_line.quantity:
+                raise HTTPException(400, f"Insufficient stock for {material.name} (required {consumption_line.quantity}, available {material.stock})")
 
     # -------------------------------------------------
     # Calculate scrap
