@@ -187,6 +187,7 @@ class ProductionConsumption(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     production_id: Mapped[str] = mapped_column(ForeignKey("production_entries.id", ondelete="CASCADE"))
     material_id: Mapped[str] = mapped_column(ForeignKey("raw_materials.id"))
+    planned_quantity: Mapped[float] = mapped_column(Float, default=0)
     quantity: Mapped[float] = mapped_column(Float)
 
     entry: Mapped[ProductionEntry] = relationship(back_populates="consumption")
