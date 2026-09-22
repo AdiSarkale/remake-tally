@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+/* eslint-disable prettier/prettier */
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/erp/AppShell";
 import { PageHeader, StatCard } from "@/components/erp/PageHeader";
@@ -19,7 +20,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createProduction, nextBatchNo, today, useErp, getState } from "@/lib/erp/store";
+
+import {
+  createProduction as createProductionApi,
+  getProducts,
+  getProduction,
+  getWorkcenters,
+  type WorkcenterData,
+  type ProductData,
+  type ProductionData,
+} from "@/lib/api";
+
 import { dmy, num } from "@/lib/erp/format";
 import { useAuth } from "@/lib/erp/auth";
 
@@ -42,15 +53,20 @@ export const Route = createFileRoute("/production")({
   ),
 });
 
-interface Line {
-  materialId: string;
-  quantity: string;
-}
-
 const SHIFTS = ["A", "B", "C"] as const;
 
 function ProductionPage() {
-  const state = useErp((s) => s);
+const [products, setProducts] = useState<ProductData[]>([]);
+const [workcenters, setWorkcenters] = useState<WorkcenterData[]>([]);
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+const productNames = new Map(
+  products.map((p) => [p.id, p.name]),
+);
+const [production, setProduction] = useState<ProductionData[]>([]);
+const [loading, setLoading] = useState(true);
   const { session } = useAuth();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -58,84 +74,111 @@ function ProductionPage() {
     productId: "",
     quantity: "",
     machine: "",
+    workcenterId: "",
     operator: session?.fullName ?? "",
     shift: "A" as (typeof SHIFTS)[number],
     remarks: "",
   });
-  const [lines, setLines] = useState<Line[]>([{ materialId: "", quantity: "" }]);
 
   const day = today();
   const month = day.slice(0, 7);
-  const todayQty = state.production.filter((p) => p.date === day).reduce((t, p) => t + p.quantity, 0);
-  const monthQty = state.production.filter((p) => p.date.startsWith(month)).reduce((t, p) => t + p.quantity, 0);
+  const todayQty = production
+  .filter((p) => p.entry_date === day)
+  .reduce((total, p) => total + p.quantity, 0);
 
-  const batchNo = useMemo(() => nextBatchNo(state), [state]);
+const monthQty = production
+  .filter((p) => p.entry_date.startsWith(month))
+  .reduce((total, p) => total + p.quantity, 0);
 
+  useEffect(() => {
+  Promise.all([
+    getProducts(),
+    getProduction(),
+    getWorkcenters(),
+  ])
+.then(([productsData, productionData, workcentersData]) => {
+      setProducts(productsData);
+      setProduction(productionData);
+      setWorkcenters(workcentersData);
+    })
+    .catch((error) => {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to load production data",
+      );
+    })
+    .finally(() => {
+      setLoading(false);
+    });
+}, []);
   const reset = () => {
     setForm({
       date: today(),
       productId: "",
       quantity: "",
       machine: "",
+      workcenterId: "",
       operator: session?.fullName ?? "",
       shift: "A",
       remarks: "",
     });
-    setLines([{ materialId: "", quantity: "" }]);
   };
 
-  const submit = () => {
-    if (!form.productId) {
-      toast.error("Select the product produced");
-      return;
-    }
-    const qty = Number(form.quantity);
-    if (!Number.isFinite(qty) || qty <= 0) {
-      toast.error("Enter a valid production quantity");
-      return;
-    }
-    const consumption = lines
-      .filter((l) => l.materialId && Number(l.quantity) > 0)
-      .map((l) => ({
-        materialId: l.materialId,
-        materialName: "",
-        unit: "",
-        quantity: Number(l.quantity),
-      }));
-    if (consumption.length === 0) {
-      toast.error("Add at least one raw material consumed");
-      return;
-    }
-    try {
-      createProduction(
-        {
-          date: form.date,
-          productId: form.productId,
-          quantity: qty,
-          machine: form.machine,
-          operator: form.operator,
-          shift: form.shift,
-          remarks: form.remarks,
-          consumption,
-          batchNo: nextBatchNo(getState()),
-        },
-        session?.username ?? "system",
-      );
-      toast.success("Production posted — stock updated");
-      setOpen(false);
-      reset();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not post production");
-    }
-  };
+
+  const submit = async () => {
+  if (!form.productId) {
+    toast.error("Select a product");
+    return;
+  }
+
+  const qty = Number(form.quantity);
+
+  if (!qty || qty <= 0) {
+    toast.error("Enter a valid production quantity");
+    return;
+  }
+
+  try {
+    await createProductionApi({
+      entry_date: form.date,
+      product_id: form.productId,
+      quantity: qty,
+      machine: form.machine,
+      workcenter_id: form.workcenterId || null,
+      operator: form.operator,
+      shift: form.shift,
+      remarks: form.remarks,
+    });
+
+    toast.success("Production posted — stock updated");
+
+      const [productsData, productionData, workcentersData] = await Promise.all([
+      getProducts(), getProduction(), getWorkcenters(),
+    ]);
+    setProducts(productsData);
+    setProduction(productionData);
+    setWorkcenters(workcentersData);
+
+    setOpen(false);
+    reset();
+  } catch (err) {
+    toast.error(
+      err instanceof Error
+        ? err.message
+        : "Could not post production",
+    );
+  }
+};
 
   return (
     <>
       <PageHeader
         title="Production"
-        subtitle="Each entry increases finished goods and consumes raw materials automatically."
+        subtitle="Each entry increases finished goods and consumes raw materials from the active BOM."
         actions={
           <Button
+            disabled={loading}
             onClick={() => {
               reset();
               setOpen(true);
@@ -149,18 +192,20 @@ function ProductionPage() {
       <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <StatCard label="Produced today" value={`${num(todayQty)} pcs`} tone="primary" />
         <StatCard label="Produced this month" value={`${num(monthQty)} pcs`} />
-        <StatCard label="Batches recorded" value={num(state.production.length)} hint={`Next: ${batchNo}`} />
+        <StatCard label="Batches recorded" value={num(production.length)}/>
       </div>
 
       <DataTable
-        rows={state.production}
+        rows={production}
         rowKey={(p) => p.id}
         pageSize={12}
-        searchable={(p) => `${p.batchNo} ${p.productName} ${p.machine} ${p.operator}`}
+        searchable={(p) =>
+  `${p.batch_no} ${productNames.get(p.product_id) ?? ""} ${p.machine} ${p.operator}`
+}
         columns={[
-          { key: "batch", header: "Batch", value: (p) => p.batchNo, className: "num text-xs" },
-          { key: "date", header: "Date", value: (p) => p.date, render: (p) => dmy(p.date) },
-          { key: "product", header: "Product", value: (p) => p.productName },
+          { key: "batch", header: "Batch", value: (p) => p.batch_no, className: "num text-xs" },
+          { key: "date", header: "Date", value: (p) => p.entry_date, render: (p) => dmy(p.entry_date) },
+          { key: "product", header: "Product", value: (p) => p.product_id },
           {
             key: "qty",
             header: "Qty",
@@ -176,24 +221,24 @@ function ProductionPage() {
             value: (p) => p.shift,
             render: (p) => <Badge variant="secondary">{p.shift}</Badge>,
           },
-          {
-            key: "consumed",
-            header: "Materials consumed",
-            render: (p) => (
-              <span className="text-muted-foreground text-xs">
-                {p.consumption.map((c) => `${c.materialName} ${num(c.quantity, 1)}${c.unit}`).join(", ")}
-              </span>
-            ),
-          },
+          // {
+          //   key: "consumed",
+          //   header: "Materials consumed",
+          //   render: (p) => (
+          //     <span className="text-muted-foreground text-xs">
+          //       {p.consumption.map((c) => `${c.materialName} ${num(c.quantity, 1)}${c.unit}`).join(", ")}
+          //     </span>
+          //   ),
+          // },
         ]}
       />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>New production entry — {batchNo}</DialogTitle>
+            <DialogTitle>New production entry</DialogTitle>
             <DialogDescription>
-              Posting will add finished goods to stock and issue the listed raw materials.
+              Posting will add finished goods to stock and issue raw materials from the active BOM.
             </DialogDescription>
           </DialogHeader>
 
@@ -227,7 +272,7 @@ function ProductionPage() {
                   <SelectValue placeholder="Select product" />
                 </SelectTrigger>
                 <SelectContent>
-                  {state.products.map((p) => (
+                  {products.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.code} — {p.name}
                     </SelectItem>
@@ -252,6 +297,13 @@ function ProductionPage() {
               />
             </div>
             <div>
+              <Label className="mb-1.5 block text-xs">Workcenter</Label>
+              <Select value={form.workcenterId} onValueChange={(v) => setForm({ ...form, workcenterId: v })}>
+                <SelectTrigger><SelectValue placeholder="Select workcenter" /></SelectTrigger>
+                <SelectContent>{workcenters.filter((w) => w.active).map((w) => <SelectItem key={w.id} value={w.id}>{w.code} — {w.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label className="mb-1.5 block text-xs">Operator</Label>
               <Input value={form.operator} onChange={(e) => setForm({ ...form, operator: e.target.value })} />
             </div>
@@ -265,69 +317,16 @@ function ProductionPage() {
             </div>
           </div>
 
-          <div className="mt-2">
-            <div className="mb-2 flex items-center justify-between">
-              <Label className="text-xs">Raw material consumption</Label>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setLines([...lines, { materialId: "", quantity: "" }])}
-              >
-                <Plus className="mr-1 h-3 w-3" /> Add line
-              </Button>
-            </div>
-            <div className="space-y-2">
-              {lines.map((line, i) => {
-                const mat = state.materials.find((m) => m.id === line.materialId);
-                return (
-                  <div key={i} className="flex items-center gap-2">
-                    <Select
-                      value={line.materialId}
-                      onValueChange={(v) =>
-                        setLines(lines.map((l, li) => (li === i ? { ...l, materialId: v } : l)))
-                      }
-                    >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Select material" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {state.materials.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.name} ({num(m.stock, 1)} {m.unit})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      className="w-32"
-                      placeholder="Qty"
-                      value={line.quantity}
-                      onChange={(e) =>
-                        setLines(lines.map((l, li) => (li === i ? { ...l, quantity: e.target.value } : l)))
-                      }
-                    />
-                    <span className="text-muted-foreground w-10 text-xs">{mat?.unit ?? ""}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setLines(lines.filter((_, li) => li !== i))}
-                      aria-label="Remove line"
-                    >
-                      <Trash2 className="text-destructive h-4 w-4" />
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
+          <div className="mt-2 rounded-md border p-3 text-sm text-muted-foreground">
+            Raw material consumption is calculated automatically from the active BOM.
+            Actual consumption can now differ from BOM plan; the API records planned, actual and variance quantities.
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={submit}>Post production</Button>
+            <Button disabled={loading} onClick={submit}>Post production</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

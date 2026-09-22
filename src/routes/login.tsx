@@ -19,35 +19,37 @@ export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
-const DEMO = [
-  { role: "Admin", username: "admin", password: "admin123" },
-  { role: "Accountant", username: "accounts", password: "accounts123" },
-  { role: "Operator", username: "operator", password: "operator123" },
-];
 
 function LoginPage() {
   const { login, session, ready } = useAuth();
   const navigate = useNavigate();
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin123");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (ready && session) void navigate({ to: "/" });
   }, [ready, session, navigate]);
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    const res = login(username, password);
-    setBusy(false);
+const submit = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  setBusy(true);
+
+  try {
+    const res = await login(username, password);
+
     if (!res.ok) {
       toast.error(res.error ?? "Login failed");
       return;
     }
+
     toast.success("Welcome back");
-    void navigate({ to: "/" });
-  };
+    await navigate({ to: "/" });
+  } finally {
+    setBusy(false);
+  }
+};
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
@@ -105,29 +107,6 @@ function LoginPage() {
               Sign in
             </Button>
           </form>
-
-          <div className="panel mt-6 p-3">
-            <p className="text-muted-foreground mb-2 text-[11px] font-semibold tracking-wider uppercase">
-              Demo accounts
-            </p>
-            <div className="space-y-1">
-              {DEMO.map((d) => (
-                <button
-                  key={d.username}
-                  onClick={() => {
-                    setUsername(d.username);
-                    setPassword(d.password);
-                  }}
-                  className="hover:bg-accent flex w-full items-center justify-between rounded px-2 py-1.5 text-xs"
-                >
-                  <span className="font-medium">{d.role}</span>
-                  <span className="num text-muted-foreground">
-                    {d.username} / {d.password}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -1,3 +1,4 @@
+/* eslint-disable prettier/prettier */
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
@@ -20,6 +21,18 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+
+import { useEffect, useState } from "react";
+
+
+import {
+  getDashboard,
+  getSettings,
+  type DashboardData,
+  type SettingsData,
+} from "@/lib/api";
+
+
 import { AppShell } from "@/components/erp/AppShell";
 import { PageHeader, StatCard } from "@/components/erp/PageHeader";
 import { docStats } from "@/lib/erp/docs";
@@ -56,24 +69,48 @@ function DashboardPage() {
 
 function Dashboard() {
   const state = useErp((s) => s);
-  const value = inventoryValue(state);
-  const low = lowStockItems(state);
-  const scrap = scrapStats(state);
-  const series = seriesLastDays(state, 14);
-  const day = today();
 
-  const todaysProduction = state.production.filter((p) => p.date === day).reduce((t, p) => t + p.quantity, 0);
-  const totalFg = state.products.reduce((t, p) => t + p.stock, 0);
-  const totalScrapStock = state.scrapTypes.reduce((t, s) => t + s.stock, 0);
-  const scrapValue = state.scrapTypes.reduce((t, s) => t + s.stock * s.sellingRate, 0);
-  const recentBatches = state.production.slice(0, 6);
+
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [settings, setSettings] = useState<SettingsData | null>(null);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+
+  const series = dashboard?.production_series ?? [];
+  const low = dashboard?.low_stock_items ?? [];
+  const day = today();
+  const topScrapReasons = dashboard?.top_scrap_reasons ?? [];
+  const recentBatches = dashboard?.recent_production ?? [];
   const docs = docStats(state);
+
+  useEffect(() => {
+    Promise.all([getDashboard(), getSettings()])
+      .then(([dashboardData, settingsData]) => {
+        setDashboard(dashboardData);
+        setSettings(settingsData);
+      })
+      .catch((error) => {
+        setDashboardError(
+          error instanceof Error ? error.message : "Failed to load dashboard",
+        );
+      });
+  }, []);
+
 
   return (
     <>
+
+    {dashboardError && (
+    <div className="rounded-md border border-destructive p-3 text-sm text-destructive">
+      {dashboardError}
+    </div>
+  )}
       <PageHeader
         title="Dashboard"
-        subtitle={`${state.settings.name} · FY ${state.settings.financialYear}`}
+        subtitle={
+            settings
+              ? `${settings.name} · FY ${settings.financial_year}`
+              : "MiniTally ERP"
+          }
         actions={
           <Button asChild>
             <Link to="/production">New production entry</Link>
@@ -82,47 +119,52 @@ function Dashboard() {
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard
-          label="Today's production"
-          value={`${num(todaysProduction)} pcs`}
-          hint={`${state.production.filter((p) => p.date === day).length} batches today`}
-          icon={<Factory className="h-4 w-4" />}
-          tone="primary"
-        />
-        <StatCard
-          label="Finished goods"
-          value={`${num(totalFg)} pcs`}
-          hint={`${state.products.length} SKUs · ${inr(value.fg)} at cost`}
-          icon={<Package className="h-4 w-4" />}
-        />
-        <StatCard
-          label="Scrap in stock"
-          value={`${num(totalScrapStock, 1)} units`}
-          hint={`${inr(scrapValue)} realisable`}
-          icon={<Recycle className="h-4 w-4" />}
-          tone="warning"
-        />
-        <StatCard
-          label="Raw material value"
-          value={inr(value.rm)}
-          hint={`${state.materials.length} materials tracked`}
-          icon={<Boxes className="h-4 w-4" />}
-        />
-        <StatCard
-          label="Scrap percentage (MTD)"
-          value={`${scrap.percent.toFixed(2)}%`}
-          hint={`${num(scrap.monthly, 1)} units scrapped this month`}
-          icon={<TrendingUp className="h-4 w-4" />}
-          tone={scrap.percent > 4 ? "destructive" : "success"}
-        />
-        <StatCard
-          label="Total inventory value"
-          value={inr(value.total)}
-          hint="Finished goods + raw material + scrap"
-          icon={<IndianRupee className="h-4 w-4" />}
-          tone="primary"
-        />
-      </div>
+  <StatCard
+    label="Today's production"
+    value={dashboard?.produced_today ?? 0}
+    hint="Production recorded today"
+    icon={<Factory className="h-4 w-4" />}
+    tone="primary"
+  />
+
+  <StatCard
+    label="Finished goods"
+    value={`${num(dashboard?.finished_goods_quantity ?? 0)} pcs`}
+    hint={`${dashboard?.finished_goods_sku_count ?? 0} SKUs · ${inr(dashboard?.finished_goods_value ?? 0)} at cost`}
+    icon={<Package className="h-4 w-4" />}
+  />
+
+  <StatCard
+    label="Scrap in stock"
+    value={`${num(dashboard?.scrap_stock_quantity ?? 0, 1)} units`}
+    hint={`${inr(dashboard?.scrap_stock_value ?? 0)} realisable`}
+    icon={<Recycle className="h-4 w-4" />}
+    tone="warning"
+  />
+
+  <StatCard
+    label="Raw material value"
+    value={inr(dashboard?.raw_material_value ?? 0)}
+    hint={`${dashboard?.raw_material_count ?? 0} materials tracked`}
+    icon={<Boxes className="h-4 w-4" />}
+  />
+
+  <StatCard
+    label="Scrap percentage (MTD)"
+    value={`${(dashboard?.scrap_rate ?? 0).toFixed(2)}%`}
+    hint={`${num(dashboard?.scrap_month ?? 0, 1)} units scrapped this month`}
+    icon={<TrendingUp className="h-4 w-4" />}
+    tone={(dashboard?.scrap_rate ?? 0) > 4 ? "destructive" : "success"}
+  />
+
+  <StatCard
+    label="Total inventory value"
+    value={inr(dashboard?.inventory_value ?? 0)}
+    hint="Finished goods + raw material + scrap"
+    icon={<IndianRupee className="h-4 w-4" />}
+    tone="primary"
+  />
+</div>
 
       <div className="mt-3 grid gap-3 grid-cols-2 lg:grid-cols-6">
         {[
@@ -222,9 +264,9 @@ function Dashboard() {
             <tbody>
               {recentBatches.map((b) => (
                 <tr key={b.id} className="border-b last:border-0">
-                  <td className="num px-4 py-2">{b.batchNo}</td>
-                  <td className="px-4 py-2">{dmy(b.date)}</td>
-                  <td className="px-4 py-2">{b.productName}</td>
+                  <td className="num px-4 py-2">{b.batch_no}</td>
+                  <td className="px-4 py-2">{dmy(b.entry_date)}</td>
+                  <td className="px-4 py-2">{b.product_name}</td>
                   <td className="num px-4 py-2 text-right">{num(b.quantity)}</td>
                   <td className="px-4 py-2">
                     <Badge variant="secondary">{b.shift}</Badge>
@@ -242,15 +284,12 @@ function Dashboard() {
             </h2>
             {low.length === 0 && <p className="text-muted-foreground text-sm">All items above minimum level.</p>}
             <div className="space-y-2">
-              {low.slice(0, 6).map((i) => (
-                <div key={`${i.kind}-${i.id}`} className="flex items-center justify-between gap-2 text-sm">
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{i.name}</p>
-                    <p className="text-muted-foreground text-xs">{i.kind}</p>
-                  </div>
-                  <span className="num text-destructive shrink-0 text-xs">
-                    {num(i.stock, 1)} / {num(i.min)} {i.unit}
-                  </span>
+              {low.map((item) => (
+                <div key={item.id}>
+                  <span>{item.name}</span>
+                  <span>{item.stock}</span>
+                  <span>{item.min_stock}</span>
+                  <span>{item.unit}</span>
                 </div>
               ))}
             </div>
@@ -261,12 +300,21 @@ function Dashboard() {
               <Wallet className="h-4 w-4" /> Top scrap reasons
             </h2>
             <div className="space-y-2">
-              {scrap.topReasons.map((r) => (
-                <div key={r.reason} className="flex items-center justify-between text-sm">
-                  <span className="truncate">{r.reason}</span>
-                  <span className="num text-muted-foreground text-xs">{num(r.qty, 1)}</span>
-                </div>
-              ))}
+              {topScrapReasons.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    No scrap recorded yet.
+                  </p>
+                ) : (
+                  topScrapReasons.map((item) => (
+                    <div
+                      key={item.reason}
+                      className="flex items-center justify-between"
+                    >
+                      <span>{item.reason}</span>
+                      <span>{num(item.quantity, 1)}</span>
+                    </div>
+                  ))
+                )}
             </div>
           </div>
         </div>

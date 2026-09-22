@@ -1,37 +1,60 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { ClipboardCheck, Plus, Trash2 } from "lucide-react";
-import { toast } from "sonner";
-import { AppShell } from "@/components/erp/AppShell";
-import { PageHeader, StatCard } from "@/components/erp/PageHeader";
-import { DataTable } from "@/components/erp/DataTable";
-import { DocTrail, Field, StatusBadge } from "@/components/erp/DocBits";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { today, useErp } from "@/lib/erp/store";
-import { createSalesOrder, docStats, nextDocNo, setSoStatus, type SalesLineDraft } from "@/lib/erp/docs";
+  ClipboardCheck,
+} from "lucide-react";
+import { toast } from "sonner";
+
+import { AppShell } from "@/components/erp/AppShell";
+import {
+  PageHeader,
+  StatCard,
+} from "@/components/erp/PageHeader";
+import { DataTable } from "@/components/erp/DataTable";
+import {
+  DocTrail,
+  StatusBadge,
+} from "@/components/erp/DocBits";
+
+import { Button } from "@/components/ui/button";
+
+import {
+  getSalesOrders,
+  updateSalesOrderStatus,
+  type SalesOrderData,
+  type SalesOrderStatus,
+} from "@/lib/api";
+
 import { dmy, inr, num } from "@/lib/erp/format";
 import { useAuth } from "@/lib/erp/auth";
 
-export const Route = createFileRoute("/sales/orders")({
+
+export const Route = createFileRoute(
+  "/sales/orders",
+)({
   head: () => ({
     meta: [
-      { title: "Sales Orders — MiniTally ERP" },
-      { name: "description", content: "Track confirmed customer orders, delivery progress and invoicing status." },
-      { property: "og:title", content: "Sales Orders — MiniTally ERP" },
-      { property: "og:description", content: "Sales order to delivery to invoice tracking." },
+      {
+        title: "Sales Orders — MiniTally ERP",
+      },
+      {
+        name: "description",
+        content:
+          "Track confirmed customer orders, delivery progress and invoicing status.",
+      },
+      {
+        property: "og:title",
+        content:
+          "Sales Orders — MiniTally ERP",
+      },
+      {
+        property: "og:description",
+        content:
+          "Sales order to delivery to invoice tracking.",
+      },
     ],
   }),
+
   component: () => (
     <AppShell>
       <SalesOrdersPage />
@@ -39,87 +62,397 @@ export const Route = createFileRoute("/sales/orders")({
   ),
 });
 
-const blank = (): SalesLineDraft => ({ productId: "", quantity: 0, rate: 0 });
 
 function SalesOrdersPage() {
-  const state = useErp((s) => s);
   const { session } = useAuth();
-  const user = session?.username ?? "system";
-  const [open, setOpen] = useState(false);
-  const [lines, setLines] = useState<SalesLineDraft[]>([blank()]);
-  const [form, setForm] = useState({ date: today(), deliveryDate: today(), customerId: "", notes: "" });
 
-  const stats = docStats(state);
-  const total = useMemo(
-    () =>
-      lines.reduce((t, l) => {
-        const p = state.products.find((x) => x.id === l.productId);
-        const taxable = l.quantity * l.rate;
-        return t + taxable + (taxable * (p?.gstPercent ?? 18)) / 100;
-      }, 0),
-    [lines, state.products],
-  );
+  const user =
+    session?.username ?? "system";
 
-  const submit = () => {
+  const [salesOrders, setSalesOrders] =
+    useState<SalesOrderData[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+
+  /* =========================================================
+     Load Sales Orders
+     ========================================================= */
+
+  async function loadSalesOrders() {
     try {
-      const no = createSalesOrder({ ...form, lines }, user);
-      toast.success(`${no} created`);
-      setOpen(false);
-      setLines([blank()]);
-    } catch (e) {
-      toast.error((e as Error).message);
+      setLoading(true);
+
+      const data =
+        await getSalesOrders();
+
+      setSalesOrders(data);
+    } catch (error) {
+      toast.error(
+        (error as Error).message ||
+          "Failed to load sales orders",
+      );
+    } finally {
+      setLoading(false);
     }
-  };
+  }
+
+
+  useEffect(() => {
+    void loadSalesOrders();
+  }, []);
+
+
+  /* =========================================================
+     Statistics
+     ========================================================= */
+
+  const openOrders =
+    salesOrders.filter(
+      (order) =>
+        order.status === "Open" ||
+        order.status ===
+          "Partially Delivered",
+    ).length;
+
+
+  const orderBookValue =
+    salesOrders
+      .filter(
+        (order) =>
+          order.status === "Open" ||
+          order.status ===
+            "Partially Delivered",
+      )
+      .reduce(
+        (total, order) =>
+          total +
+          order.grand_total,
+        0,
+      );
+
+
+  const deliveredOrders =
+    salesOrders.filter(
+      (order) =>
+        order.status ===
+          "Delivered" ||
+        order.status ===
+          "Invoiced",
+    ).length;
+
+
+  /* =========================================================
+     Cancel Sales Order
+     ========================================================= */
+
+  async function cancelSalesOrder(
+    order: SalesOrderData,
+  ) {
+    if (
+      order.status !== "Open" &&
+      order.status !==
+        "Partially Delivered"
+    ) {
+      return;
+    }
+
+    try {
+      await updateSalesOrderStatus(
+        order.id,
+        "Cancelled",
+      );
+
+      toast.success(
+        `${order.so_no} cancelled`,
+      );
+
+      await loadSalesOrders();
+    } catch (error) {
+      toast.error(
+        (error as Error).message ||
+          "Failed to cancel sales order",
+      );
+    }
+  }
+
+
+  /* =========================================================
+     Delivery Progress
+     ========================================================= */
+
+  function deliveredQuantity(
+    order: SalesOrderData,
+  ) {
+    return order.lines.reduce(
+      (total, line) =>
+        total +
+        line.delivered_quantity,
+      0,
+    );
+  }
+
+
+  function orderedQuantity(
+    order: SalesOrderData,
+  ) {
+    return order.lines.reduce(
+      (total, line) =>
+        total +
+        line.quantity,
+      0,
+    );
+  }
+
+
+  /* =========================================================
+     Render
+     ========================================================= */
 
   return (
     <>
       <PageHeader
         title="Sales Orders"
         subtitle="Confirmed customer orders — deliveries draw against the ordered quantity."
-        actions={
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="mr-1 h-4 w-4" /> New sales order
-          </Button>
-        }
       />
 
+
+      {/* =====================================================
+          Statistics
+          ===================================================== */}
+
       <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Open orders" value={num(stats.openSos)} tone="primary" icon={<ClipboardCheck className="h-4 w-4" />} />
-        <StatCard label="Order book value" value={inr(stats.soValue)} />
-        <StatCard label="Delivered" value={num(state.salesOrders.filter((o) => o.status === "Delivered" || o.status === "Invoiced").length)} tone="success" />
-        <StatCard label="Total orders" value={num(state.salesOrders.length)} />
+
+        <StatCard
+          label="Open orders"
+          value={num(openOrders)}
+          tone="primary"
+          icon={
+            <ClipboardCheck className="h-4 w-4" />
+          }
+        />
+
+        <StatCard
+          label="Order book value"
+          value={inr(orderBookValue)}
+        />
+
+        <StatCard
+          label="Delivered"
+          value={num(
+            deliveredOrders,
+          )}
+          tone="success"
+        />
+
+        <StatCard
+          label="Total orders"
+          value={num(
+            salesOrders.length,
+          )}
+        />
+
       </div>
 
+
+      {/* =====================================================
+          Sales Order Table
+          ===================================================== */}
+
       <DataTable
-        rows={state.salesOrders}
-        rowKey={(r) => r.id}
-        searchable={(r) => `${r.soNo} ${r.customerName} ${r.status} ${r.quoteNo ?? ""} ${r.lines.map((l) => l.productName).join(" ")}`}
+        rows={salesOrders}
+        rowKey={(row) =>
+          row.id
+        }
+
+        searchable={(row) =>
+          `${row.so_no}
+           ${row.customer_name}
+           ${row.status}
+           ${row.quote_no ?? ""}
+           ${row.lines
+             .map(
+               (
+                 line,
+               ) =>
+                 line.product_name,
+             )
+             .join(" ")}`
+        }
+
         columns={[
-          { key: "no", header: "SO No", value: (r) => r.soNo, render: (r) => <span className="num font-medium">{r.soNo}</span> },
-          { key: "date", header: "Date", value: (r) => r.date, render: (r) => <span className="num">{dmy(r.date)}</span> },
-          { key: "customer", header: "Customer", value: (r) => r.customerName },
-          { key: "delivery", header: "Delivery by", value: (r) => r.deliveryDate, render: (r) => <span className="num">{dmy(r.deliveryDate)}</span> },
+          {
+            key: "no",
+            header: "SO No",
+            value: (row) =>
+              row.so_no,
+
+            render: (row) => (
+              <span className="num font-medium">
+                {row.so_no}
+              </span>
+            ),
+          },
+
+
+          {
+            key: "date",
+            header: "Date",
+            value: (row) =>
+              row.order_date,
+
+            render: (row) => (
+              <span className="num">
+                {dmy(
+                  row.order_date,
+                )}
+              </span>
+            ),
+          },
+
+
+          {
+            key: "customer",
+            header: "Customer",
+            value: (row) =>
+              row.customer_name,
+          },
+
+
+          {
+            key: "delivery",
+            header: "Delivery by",
+            value: (row) =>
+              row.delivery_date ??
+              "",
+
+            render: (row) => (
+              <span className="num">
+                {row.delivery_date
+                  ? dmy(
+                      row.delivery_date,
+                    )
+                  : "-"}
+              </span>
+            ),
+          },
+
+
           {
             key: "progress",
             header: "Delivered",
             align: "right",
-            value: (r) => r.lines.reduce((t, l) => t + l.deliveredQty, 0),
-            render: (r) => (
+
+            value: (row) =>
+              deliveredQuantity(
+                row,
+              ),
+
+            render: (row) => (
               <span className="num text-xs">
-                {num(r.lines.reduce((t, l) => t + l.deliveredQty, 0))} / {num(r.lines.reduce((t, l) => t + l.quantity, 0))}
+                {num(
+                  deliveredQuantity(
+                    row,
+                  ),
+                )}{" "}
+                /{" "}
+                {num(
+                  orderedQuantity(
+                    row,
+                  ),
+                )}
               </span>
             ),
           },
-          { key: "value", header: "Value", align: "right", value: (r) => r.grandTotal, render: (r) => <span className="num">{inr(r.grandTotal)}</span> },
-          { key: "status", header: "Status", value: (r) => r.status, render: (r) => <StatusBadge status={r.status} /> },
-          { key: "trail", header: "Trail", render: (r) => <DocTrail steps={[r.quoteNo, r.soNo, r.deliveryNos[0], r.invoiceNo]} /> },
+
+
+          {
+            key: "value",
+            header: "Value",
+            align: "right",
+
+            value: (row) =>
+              row.grand_total,
+
+            render: (row) => (
+              <span className="num">
+                {inr(
+                  row.grand_total,
+                )}
+              </span>
+            ),
+          },
+
+
+          {
+            key: "status",
+            header: "Status",
+
+            value: (row) =>
+              row.status,
+
+            render: (row) => (
+              <StatusBadge
+                status={
+                  row.status
+                }
+              />
+            ),
+          },
+
+
+          {
+            key: "quote",
+            header: "Quotation",
+
+            value: (row) =>
+              row.quote_no,
+
+            render: (row) => (
+              <span className="num text-xs">
+                {row.quote_no ||
+                  "-"}
+              </span>
+            ),
+          },
+
+
+          {
+            key: "trail",
+            header: "Trail",
+
+            render: (row) => (
+              <DocTrail
+                steps={[
+                  row.quote_no ||
+                    "",
+                  row.so_no,
+                ]}
+              />
+            ),
+          },
+
+
           {
             key: "actions",
             header: "",
             align: "right",
-            render: (r) =>
-              r.status === "Open" || r.status === "Partially Delivered" ? (
-                <Button size="sm" variant="ghost" onClick={() => setSoStatus(r.id, "Cancelled", user)}>
+
+            render: (row) =>
+              row.status ===
+                "Open" ||
+              row.status ===
+                "Partially Delivered" ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    void cancelSalesOrder(
+                      row,
+                    )
+                  }
+                >
                   Cancel
                 </Button>
               ) : null,
@@ -127,80 +460,11 @@ function SalesOrdersPage() {
         ]}
       />
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[88vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>New sales order</DialogTitle>
-            <DialogDescription>Numbered {nextDocNo(state, "SO", form.date)} on save.</DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Customer" full>
-              <Select value={form.customerId} onValueChange={(v) => setForm({ ...form, customerId: v })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select customer" />
-                </SelectTrigger>
-                <SelectContent>
-                  {state.customers.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Order date">
-              <Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
-            </Field>
-            <Field label="Delivery date">
-              <Input type="date" value={form.deliveryDate} onChange={(e) => setForm({ ...form, deliveryDate: e.target.value })} />
-            </Field>
-          </div>
-
-          <div className="mt-3 space-y-2">
-            {lines.map((l, i) => (
-              <div key={i} className="grid grid-cols-12 items-end gap-2">
-                <div className="col-span-12 sm:col-span-6">
-                  <Select
-                    value={l.productId}
-                    onValueChange={(v) =>
-                      setLines(lines.map((x, xi) => (xi === i ? { ...x, productId: v, rate: state.products.find((p) => p.id === v)?.sellingPrice ?? 0 } : x)))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Product" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {state.products.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name} · stock {num(p.stock)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Input className="col-span-5 sm:col-span-2" type="number" placeholder="Qty" value={l.quantity || ""} onChange={(e) => setLines(lines.map((x, xi) => (xi === i ? { ...x, quantity: Number(e.target.value) } : x)))} />
-                <Input className="col-span-5 sm:col-span-3" type="number" placeholder="Rate" value={l.rate || ""} onChange={(e) => setLines(lines.map((x, xi) => (xi === i ? { ...x, rate: Number(e.target.value) } : x)))} />
-                <Button variant="ghost" size="icon" className="col-span-2 sm:col-span-1" onClick={() => setLines(lines.length > 1 ? lines.filter((_, xi) => xi !== i) : lines)}>
-                  <Trash2 className="text-destructive h-4 w-4" />
-                </Button>
-              </div>
-            ))}
-            <Button variant="outline" size="sm" onClick={() => setLines([...lines, blank()])}>
-              <Plus className="mr-1 h-3.5 w-3.5" /> Add line
-            </Button>
-          </div>
-
-          <Textarea className="mt-3" rows={2} placeholder="Notes" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
-          <p className="num mt-2 text-right text-sm font-semibold">Order value: {inr(total)}</p>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={submit}>Save order</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {loading && (
+        <div className="py-8 text-center text-sm text-muted-foreground">
+          Loading sales orders...
+        </div>
+      )}
     </>
   );
 }

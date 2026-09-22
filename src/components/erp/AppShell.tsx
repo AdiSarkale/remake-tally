@@ -71,6 +71,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     items: [
       { to: "/inventory", label: "Inventory", icon: Boxes, area: "inventory" },
       { to: "/production", label: "Production", icon: Factory, area: "production" },
+      { to: "/manufacturing", label: "Manufacturing", icon: Factory, area: "production" },
       { to: "/scrap", label: "Scrap", icon: Recycle, area: "scrap" },
       { to: "/transfers", label: "Interplant Transfers", icon: ArrowLeftRight, area: "logistics" },
       { to: "/jobwork", label: "Job Work", icon: Hammer, area: "logistics" },

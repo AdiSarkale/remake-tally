@@ -6,7 +6,7 @@ import enum
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
@@ -81,20 +81,55 @@ class RawMaterial(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     name: Mapped[str] = mapped_column(String(160), index=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     unit: Mapped[str] = mapped_column(String(16), default="KG")
     cost: Mapped[float] = mapped_column(Float, default=0)
     stock: Mapped[float] = mapped_column(Float, default=0)
     min_stock: Mapped[float] = mapped_column(Float, default=0)
 
+class BillOfMaterials(Base):
+    __tablename__ = "bill_of_materials"
+    __table_args__ = (
+        UniqueConstraint("product_id", "version", name="uq_bom_product_version"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    product_id: Mapped[str] = mapped_column(ForeignKey("products.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    active: Mapped[bool] = mapped_column(Boolean,default=True)
+    expected_scrap_percent: Mapped[float] = mapped_column(Float, default=0)
+    scrap_type_id: Mapped[str | None] = mapped_column(
+        ForeignKey("scrap_types.id"),
+        nullable=True
+    )
+
+    lines : Mapped[list['BomLine']] = relationship(
+        back_populates='bom',
+        cascade='all, delete-orphan')
+
+class BomLine(Base):
+    __tablename__ = 'bom_lines'
+    id: Mapped[int] = mapped_column(Integer,primary_key=True,autoincrement=True)
+
+    bom_id : Mapped[str] = mapped_column(ForeignKey('bill_of_materials.id', ondelete='CASCADE'),index=True)
+
+    material_id: Mapped[str] = mapped_column(ForeignKey('raw_materials.id'), index=True)
+    quantity: Mapped[float] = mapped_column(Float)
+
+    bom: Mapped[BillOfMaterials] = relationship(back_populates='lines')
 
 class ScrapType(Base):
     __tablename__ = "scrap_types"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(160), index=True)
     unit: Mapped[str] = mapped_column(String(16), default="KG")
     selling_rate: Mapped[float] = mapped_column(Float, default=0)
-    stock: Mapped[float] = mapped_column(Float, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    stock: Mapped[float] = mapped_column(Float, default=0, nullable=True)
+    min_stock: Mapped[float] = mapped_column(Float, default=0, nullable=True)
 
 
 class InventoryMovement(Base):
@@ -123,9 +158,24 @@ class ProductionEntry(Base):
     product_id: Mapped[str] = mapped_column(ForeignKey("products.id"))
     quantity: Mapped[float] = mapped_column(Float)
     machine: Mapped[str] = mapped_column(String(64), default="")
+    workcenter_id: Mapped[str | None] = mapped_column(ForeignKey("workcenters.id"), nullable=True, index=True)
+    routing_id: Mapped[str | None] = mapped_column(ForeignKey("routings.id"), nullable=True, index=True)
+    operation_id: Mapped[str | None] = mapped_column(ForeignKey("routing_operations.id"), nullable=True, index=True)
+    production_order_id: Mapped[str | None] = mapped_column(ForeignKey("production_orders.id"), nullable=True, index=True)
+    employee_id: Mapped[str | None] = mapped_column(ForeignKey("employees.id"), nullable=True, index=True)
     operator: Mapped[str] = mapped_column(String(120), default="")
     shift: Mapped[str] = mapped_column(String(4), default="A")
     remarks: Mapped[str] = mapped_column(Text, default="")
+    actual_scrap: Mapped[float] = mapped_column(Float, default=0)
+    quality_status: Mapped[str] = mapped_column(String(32), default="Pending")
+    accepted_qty: Mapped[float] = mapped_column(Float, default=0)
+    rejected_qty: Mapped[float] = mapped_column(Float, default=0)
+    quality_remarks: Mapped[str] = mapped_column(Text, default="")
+
+    scrap_type_id: Mapped[str | None] = mapped_column(
+        ForeignKey("scrap_types.id"),
+        nullable=True
+    )
 
     consumption: Mapped[list["ProductionConsumption"]] = relationship(
         back_populates="entry", cascade="all, delete-orphan"
@@ -138,6 +188,7 @@ class ProductionConsumption(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     production_id: Mapped[str] = mapped_column(ForeignKey("production_entries.id", ondelete="CASCADE"))
     material_id: Mapped[str] = mapped_column(ForeignKey("raw_materials.id"))
+    planned_quantity: Mapped[float] = mapped_column(Float, default=0)
     quantity: Mapped[float] = mapped_column(Float)
 
     entry: Mapped[ProductionEntry] = relationship(back_populates="consumption")
@@ -172,8 +223,8 @@ class CompanySettings(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     name: Mapped[str] = mapped_column(String(160), default="MiniTally Manufacturing")
-    gst_number: Mapped[str] = mapped_column(String(32), default="")
-    address: Mapped[str] = mapped_column(Text, default="")
+    gst_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)
     invoice_prefix: Mapped[str] = mapped_column(String(16), default="INV")
     financial_year: Mapped[str] = mapped_column(String(16), default="2026-2027")
 
@@ -182,32 +233,122 @@ class InvoiceStatus(str, enum.Enum):
     unpaid = "Unpaid"
     paid = "Paid"
     cancelled = "Cancelled"
+    partial = 'Partial'
 
 
 class Invoice(Base):
     __tablename__ = "invoices"
 
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    invoice_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
-    invoice_date: Mapped[date] = mapped_column(Date, index=True)
-    customer_id: Mapped[str] = mapped_column(ForeignKey("parties.id"))
-    customer_name: Mapped[str] = mapped_column(String(160))
-    po_reference: Mapped[str] = mapped_column(String(64), default="")
-    notes: Mapped[str] = mapped_column(Text, default="")
-    inter_state: Mapped[bool] = mapped_column(Integer, default=0)
-    sub_total: Mapped[float] = mapped_column(Float, default=0)
-    discount_total: Mapped[float] = mapped_column(Float, default=0)
-    taxable_total: Mapped[float] = mapped_column(Float, default=0)
-    cgst: Mapped[float] = mapped_column(Float, default=0)
-    sgst: Mapped[float] = mapped_column(Float, default=0)
-    igst: Mapped[float] = mapped_column(Float, default=0)
-    round_off: Mapped[float] = mapped_column(Float, default=0)
-    grand_total: Mapped[float] = mapped_column(Float, default=0)
-    status: Mapped[InvoiceStatus] = mapped_column(Enum(InvoiceStatus), default=InvoiceStatus.unpaid)
-    signature: Mapped[str] = mapped_column(String(64), index=True, default="")
-    created_by: Mapped[str] = mapped_column(String(64), default="")
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=_uuid,
+    )
 
-    lines: Mapped[list["InvoiceLine"]] = relationship(back_populates="invoice", cascade="all, delete-orphan")
+    invoice_no: Mapped[str] = mapped_column(
+        String(32),
+        unique=True,
+        index=True,
+    )
+
+    invoice_date: Mapped[date] = mapped_column(
+        Date,
+        index=True,
+    )
+
+    customer_id: Mapped[str] = mapped_column(
+        ForeignKey("parties.id")
+    )
+
+    customer_name: Mapped[str] = mapped_column(
+        String(160)
+    )
+
+    po_reference: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    notes: Mapped[str] = mapped_column(
+        Text,
+        default="",
+    )
+
+    inter_state: Mapped[bool] = mapped_column(
+        Integer,
+        default=0,
+    )
+
+    sub_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    discount_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    taxable_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    cgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    sgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    igst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    round_off: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    grand_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    paid_amount: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    balance_amount: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    status: Mapped[InvoiceStatus] = mapped_column(
+        Enum(InvoiceStatus),
+        default=InvoiceStatus.unpaid,
+    )
+
+    signature: Mapped[str] = mapped_column(
+        String(64),
+        index=True,
+        default="",
+    )
+
+    created_by: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    lines: Mapped[list["InvoiceLine"]] = relationship(
+        back_populates="invoice",
+        cascade="all, delete-orphan",
+    )
 
 
 class InvoiceLine(Base):
@@ -230,3 +371,809 @@ class InvoiceLine(Base):
     total: Mapped[float] = mapped_column(Float, default=0)
 
     invoice: Mapped[Invoice] = relationship(back_populates="lines")
+
+class QuotationStatus(str, enum.Enum):
+    draft = 'Draft'
+    sent = 'Sent'
+    accepted = 'Accepted'
+    rejected = 'Rejected'
+    expired = 'Expired'
+    converted = 'Converted'
+
+
+class Quotation(Base):
+    __tablename__ = "quotations"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=_uuid,
+    )
+
+    quotation_no: Mapped[str] = mapped_column(
+        String(32),
+        unique=True,
+        index=True,
+    )
+
+    quotation_date: Mapped[date] = mapped_column(
+        Date,
+        index=True,
+    )
+
+    valid_until: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
+    customer_id: Mapped[str] = mapped_column(
+        ForeignKey("parties.id"),
+    )
+
+    customer_name: Mapped[str] = mapped_column(
+        String(160),
+    )
+
+    po_reference: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    notes: Mapped[str] = mapped_column(
+        Text,
+        default="",
+    )
+
+    inter_state: Mapped[bool] = mapped_column(
+        Integer,
+        default=0,
+    )
+
+    sub_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    discount_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    taxable_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    cgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    sgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    igst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    round_off: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    grand_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    status: Mapped[QuotationStatus] = mapped_column(
+        Enum(QuotationStatus),
+        default=QuotationStatus.draft,
+    )
+
+    created_by: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    lines: Mapped[list["QuotationLine"]] = relationship(
+        back_populates="quotation",
+        cascade="all, delete-orphan",
+    )
+
+
+class QuotationLine(Base):
+    __tablename__ = "quotation_lines"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    quotation_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "quotations.id",
+            ondelete="CASCADE",
+        )
+    )
+
+    product_id: Mapped[str] = mapped_column(
+        ForeignKey("products.id"),
+    )
+
+    product_name: Mapped[str] = mapped_column(
+        String(160),
+    )
+
+    hsn: Mapped[str] = mapped_column(
+        String(16),
+        default="",
+    )
+
+    unit: Mapped[str] = mapped_column(
+        String(16),
+        default="PCS",
+    )
+
+    quantity: Mapped[float] = mapped_column(
+        Float,
+    )
+
+    rate: Mapped[float] = mapped_column(
+        Float,
+    )
+
+    discount_percent: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    gst_rate: Mapped[float] = mapped_column(
+        Float,
+        default=18,
+    )
+
+    taxable: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    cgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    sgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    igst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    quotation: Mapped[Quotation] = relationship(
+        back_populates="lines",
+    )
+
+
+
+
+class SalesOrderStatus(str, enum.Enum):
+    open = "Open"
+    partially_delivered = "Partially Delivered"
+    delivered = "Delivered"
+    invoiced = "Invoiced"
+    cancelled = "Cancelled"
+
+
+class SalesOrder(Base):
+    __tablename__ = "sales_orders"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=_uuid,
+    )
+
+    so_no: Mapped[str] = mapped_column(
+        String(32),
+        unique=True,
+        index=True,
+    )
+
+    order_date: Mapped[date] = mapped_column(
+        Date,
+        index=True,
+    )
+
+    delivery_date: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
+    customer_id: Mapped[str] = mapped_column(
+        ForeignKey("parties.id"),
+    )
+
+    customer_name: Mapped[str] = mapped_column(
+        String(160),
+    )
+
+    notes: Mapped[str] = mapped_column(
+        Text,
+        default="",
+    )
+
+    status: Mapped[SalesOrderStatus] = mapped_column(
+        Enum(SalesOrderStatus),
+        default=SalesOrderStatus.open,
+    )
+
+    quote_id: Mapped[str | None] = mapped_column(
+        ForeignKey("quotations.id"),
+        nullable=True,
+        index=True,
+    )
+
+    quote_no: Mapped[str] = mapped_column(
+        String(32),
+        default="",
+    )
+
+    taxable_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    cgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    sgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    igst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    grand_total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    created_by: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    lines: Mapped[list["SalesOrderLine"]] = relationship(
+        back_populates="sales_order",
+        cascade="all, delete-orphan",
+    )
+
+
+class SalesOrderLine(Base):
+    __tablename__ = "sales_order_lines"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    sales_order_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "sales_orders.id",
+            ondelete="CASCADE",
+        ),
+    )
+
+    product_id: Mapped[str] = mapped_column(
+        ForeignKey("products.id"),
+    )
+
+    product_name: Mapped[str] = mapped_column(
+        String(160),
+    )
+
+    hsn: Mapped[str] = mapped_column(
+        String(16),
+        default="",
+    )
+
+    unit: Mapped[str] = mapped_column(
+        String(16),
+        default="PCS",
+    )
+
+    quantity: Mapped[float] = mapped_column(
+        Float,
+    )
+
+    rate: Mapped[float] = mapped_column(
+        Float,
+    )
+
+    discount_percent: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    gst_rate: Mapped[float] = mapped_column(
+        Float,
+        default=18,
+    )
+
+    taxable: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    cgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    sgst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    igst: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    total: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    delivered_quantity: Mapped[float] = mapped_column(
+        Float,
+        default=0,
+    )
+
+    sales_order: Mapped[SalesOrder] = relationship(
+        back_populates="lines",
+    )
+
+class DeliveryNote(Base):
+    __tablename__ = "delivery_notes"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=_uuid,
+    )
+
+    delivery_no: Mapped[str] = mapped_column(
+        String(32),
+        unique=True,
+        index=True,
+    )
+
+    delivery_date: Mapped[date] = mapped_column(
+        Date,
+        index=True,
+    )
+
+    sales_order_id: Mapped[str | None] = mapped_column(
+        ForeignKey("sales_orders.id"),
+        nullable=True,
+        index=True,
+    )
+
+    so_no: Mapped[str] = mapped_column(
+        String(32),
+        default="",
+    )
+
+    customer_id: Mapped[str] = mapped_column(
+        ForeignKey("parties.id"),
+    )
+
+    customer_name: Mapped[str] = mapped_column(
+        String(160),
+    )
+
+    vehicle_no: Mapped[str] = mapped_column(
+        String(32),
+        default="",
+    )
+
+    driver_name: Mapped[str] = mapped_column(
+        String(120),
+        default="",
+    )
+
+    lr_number: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    remarks: Mapped[str] = mapped_column(
+        Text,
+        default="",
+    )
+
+    created_by: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    lines: Mapped[list["DeliveryLine"]] = relationship(
+        back_populates="delivery",
+        cascade="all, delete-orphan",
+    )
+
+
+class DeliveryLine(Base):
+    __tablename__ = "delivery_lines"
+
+    id: Mapped[int] = mapped_column(
+        Integer,
+        primary_key=True,
+        autoincrement=True,
+    )
+
+    delivery_id: Mapped[str] = mapped_column(
+        ForeignKey(
+            "delivery_notes.id",
+            ondelete="CASCADE",
+        ),
+    )
+
+    product_id: Mapped[str] = mapped_column(
+        ForeignKey("products.id"),
+    )
+
+    product_name: Mapped[str] = mapped_column(
+        String(160),
+    )
+
+    unit: Mapped[str] = mapped_column(
+        String(16),
+        default="PCS",
+    )
+
+    quantity: Mapped[float] = mapped_column(
+        Float,
+    )
+
+    delivery: Mapped[DeliveryNote] = relationship(
+        back_populates="lines",
+    )
+
+class DispatchStatus(str, enum.Enum):
+    planned = "Planned"
+    loading = "Loading"
+    in_transit = "In Transit"
+    delivered = "Delivered"
+    delayed = "Delayed"
+
+
+class Dispatch(Base):
+    __table_args__ = (
+    UniqueConstraint(
+        "delivery_id",
+        name="uq_dispatch_delivery",
+    ),
+)
+    __tablename__ = "dispatches"
+
+    id: Mapped[str] = mapped_column(
+        String(36),
+        primary_key=True,
+        default=_uuid,
+    )
+
+    dispatch_no: Mapped[str] = mapped_column(
+        String(32),
+        unique=True,
+        index=True,
+    )
+
+    dispatch_date: Mapped[date] = mapped_column(
+        Date,
+        index=True,
+    )
+
+    delivery_id: Mapped[str | None] = mapped_column(
+        ForeignKey("delivery_notes.id"),
+        nullable=True,
+    )
+
+    delivery_no: Mapped[str] = mapped_column(
+        String(32),
+        default="",
+    )
+
+    customer_id: Mapped[str] = mapped_column(
+        ForeignKey("parties.id"),
+    )
+
+    customer_name: Mapped[str] = mapped_column(
+        String(160),
+    )
+
+    transporter: Mapped[str] = mapped_column(
+        String(160),
+        default="",
+    )
+
+    vehicle_no: Mapped[str] = mapped_column(
+        String(32),
+        default="",
+    )
+
+    driver_name: Mapped[str] = mapped_column(
+        String(120),
+        default="",
+    )
+
+    driver_phone: Mapped[str] = mapped_column(
+        String(32),
+        default="",
+    )
+
+    lr_number: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+    status: Mapped[DispatchStatus] = mapped_column(
+        Enum(DispatchStatus),
+        default=DispatchStatus.planned,
+    )
+
+    delivered_on: Mapped[date | None] = mapped_column(
+        Date,
+        nullable=True,
+    )
+
+    pod_ref: Mapped[str] = mapped_column(
+        String(160),
+        default="",
+    )
+
+    created_by: Mapped[str] = mapped_column(
+        String(64),
+        default="",
+    )
+
+
+class PurchaseOrderStatus(str, enum.Enum):
+    draft = "draft"
+    sent = "sent"
+    partially_received = "partially_received"
+    received = "received"
+
+
+class SupplierProduct(Base):
+    __tablename__ = "supplier_products"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    supplier_id: Mapped[str] = mapped_column(ForeignKey("parties.id"))
+    product_id: Mapped[str] = mapped_column(ForeignKey("raw_materials.id"))
+    supplier_code: Mapped[str] = mapped_column(String(64))
+    purchase_rate: Mapped[float] = mapped_column(Float)
+    minimum_order_qty: Mapped[float] = mapped_column(Float)
+    lead_time_days: Mapped[int] = mapped_column(Integer)
+
+
+class Plant(Base):
+    __tablename__ = "plants"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(160), unique=True)
+    location: Mapped[str] = mapped_column(String(160))
+    active: Mapped[bool] = mapped_column(Boolean)
+
+
+class Warehouse(Base):
+    __tablename__ = "warehouses"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    plant_id: Mapped[str] = mapped_column(ForeignKey("plants.id"), index=True)
+    active: Mapped[bool] = mapped_column(Boolean)
+
+
+class PurchaseOrder(Base):
+    __tablename__ = "purchase_orders"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    po_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    po_date: Mapped[date] = mapped_column(Date, index=True)
+    expected_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    supplier_id: Mapped[str] = mapped_column(ForeignKey("parties.id"))
+    supplier_name: Mapped[str] = mapped_column(String(160))
+    warehouse_id: Mapped[str | None] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
+    notes: Mapped[str] = mapped_column(Text)
+    status: Mapped[PurchaseOrderStatus] = mapped_column(Enum(PurchaseOrderStatus))
+    sub_total: Mapped[float] = mapped_column(Float)
+    gst_total: Mapped[float] = mapped_column(Float)
+    grand_total: Mapped[float] = mapped_column(Float)
+    created_by: Mapped[str] = mapped_column(String(64))
+    lines: Mapped[list["PurchaseOrderLine"]] = relationship(cascade="all, delete-orphan")
+
+
+class PurchaseOrderLine(Base):
+    __tablename__ = "purchase_order_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    purchase_order_id: Mapped[str] = mapped_column(ForeignKey("purchase_orders.id", ondelete="CASCADE"))
+    material_id: Mapped[str | None] = mapped_column(ForeignKey("raw_materials.id"), nullable=True)
+    material_name: Mapped[str] = mapped_column(String(160))
+    quantity: Mapped[float] = mapped_column(Float)
+    rate: Mapped[float] = mapped_column(Float)
+    gst_rate: Mapped[float] = mapped_column(Float)
+    received_quantity: Mapped[float] = mapped_column(Float)
+    tax: Mapped[float] = mapped_column(Float)
+    total: Mapped[float] = mapped_column(Float)
+
+
+class GRN(Base):
+    __tablename__ = "grns"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    grn_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    grn_date: Mapped[date] = mapped_column(Date, index=True)
+    purchase_order_id: Mapped[str] = mapped_column(ForeignKey("purchase_orders.id"))
+    po_no: Mapped[str] = mapped_column(String(32))
+    warehouse_id: Mapped[str] = mapped_column(ForeignKey("warehouses.id"))
+    lines: Mapped[list["GRNLine"]] = relationship(cascade="all, delete-orphan")
+
+
+class GRNLine(Base):
+    __tablename__ = "grn_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    grn_id: Mapped[str] = mapped_column(ForeignKey("grns.id", ondelete="CASCADE"))
+    material_id: Mapped[str] = mapped_column(ForeignKey("raw_materials.id"))
+    material_name: Mapped[str] = mapped_column(String(160))
+    quantity: Mapped[float] = mapped_column(Float)
+    batch_no: Mapped[str] = mapped_column(String(64))
+
+
+class CustomerPO(Base):
+    __tablename__ = "customer_pos"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    po_no: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    po_date: Mapped[date] = mapped_column(Date)
+    customer_id: Mapped[str] = mapped_column(ForeignKey("parties.id"), index=True)
+    customer_name: Mapped[str] = mapped_column(String(160))
+    delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    lines: Mapped[list["CustomerPOLine"]] = relationship(cascade="all, delete-orphan")
+
+
+class CustomerPOLine(Base):
+    __tablename__ = "customer_po_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    customer_po_id: Mapped[str] = mapped_column(ForeignKey("customer_pos.id", ondelete="CASCADE"))
+    product_id: Mapped[str | None] = mapped_column(ForeignKey("products.id"), nullable=True)
+    product_name: Mapped[str] = mapped_column(String(160))
+    quantity: Mapped[float] = mapped_column(Float)
+    rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+
+
+class Workcenter(Base):
+    __tablename__ = "workcenters"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    department: Mapped[str] = mapped_column(String(120), default="")
+    capacity_per_hour: Mapped[float] = mapped_column(Float, default=0)
+    status: Mapped[str] = mapped_column(String(32), default="Available")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    location: Mapped[str] = mapped_column(String(160), default="")
+
+class WorkcenterMaterial(Base):
+    __tablename__ = "workcenter_materials"
+    __table_args__ = (UniqueConstraint("workcenter_id", "item_kind", "item_id", name="uq_workcenter_item"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workcenter_id: Mapped[str] = mapped_column(ForeignKey("workcenters.id", ondelete="CASCADE"), index=True)
+    item_kind: Mapped[str] = mapped_column(String(8))
+    item_id: Mapped[str] = mapped_column(String(36), index=True)
+    operation_id: Mapped[str | None] = mapped_column(ForeignKey("routing_operations.id"), nullable=True, index=True)
+
+class Routing(Base):
+    __tablename__ = "routings"
+    __table_args__ = (UniqueConstraint("product_id", "version", name="uq_routing_product_version"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    product_id: Mapped[str] = mapped_column(ForeignKey("products.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    name: Mapped[str] = mapped_column(String(120), default="")
+    operations: Mapped[list["RoutingOperation"]] = relationship(
+        back_populates="routing", cascade="all, delete-orphan", order_by="RoutingOperation.sequence"
+    )
+
+class RoutingOperation(Base):
+    __tablename__ = "routing_operations"
+    __table_args__ = (UniqueConstraint("routing_id", "sequence", name="uq_routing_operation_sequence"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    routing_id: Mapped[str] = mapped_column(ForeignKey("routings.id", ondelete="CASCADE"), index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    code: Mapped[str] = mapped_column(String(32), default="")
+    name: Mapped[str] = mapped_column(String(120))
+    workcenter_id: Mapped[str] = mapped_column(ForeignKey("workcenters.id"), index=True)
+    required_skill: Mapped[str] = mapped_column(String(120), default="")
+    setup_minutes: Mapped[float] = mapped_column(Float, default=0)
+    run_minutes_per_unit: Mapped[float] = mapped_column(Float, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    routing: Mapped[Routing] = relationship(back_populates="operations")
+
+class Employee(Base):
+    __tablename__ = "employees"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    emp_code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    department: Mapped[str] = mapped_column(String(120), default="")
+    designation: Mapped[str] = mapped_column(String(120), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+class EmployeeSkill(Base):
+    __tablename__ = "employee_skills"
+    __table_args__ = (UniqueConstraint("employee_id", "skill", name="uq_employee_skill"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    employee_id: Mapped[str] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), index=True)
+    skill: Mapped[str] = mapped_column(String(120), index=True)
+    level: Mapped[int] = mapped_column(Integer, default=1)
+    certified: Mapped[bool] = mapped_column(Boolean, default=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+class ProductionOrder(Base):
+    __tablename__ = "production_orders"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    order_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    order_date: Mapped[date] = mapped_column(Date, index=True)
+    product_id: Mapped[str] = mapped_column(ForeignKey("products.id"), index=True)
+    quantity: Mapped[float] = mapped_column(Float)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    routing_id: Mapped[str | None] = mapped_column(ForeignKey("routings.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="Planned")
+    remarks: Mapped[str] = mapped_column(Text, default="")
+
+class ProductionOrderOperation(Base):
+    __tablename__ = "production_order_operations"
+    __table_args__ = (UniqueConstraint("production_order_id", "sequence", name="uq_order_operation_sequence"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    production_order_id: Mapped[str] = mapped_column(ForeignKey("production_orders.id", ondelete="CASCADE"), index=True)
+    operation_id: Mapped[str] = mapped_column(ForeignKey("routing_operations.id"), index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    workcenter_id: Mapped[str] = mapped_column(ForeignKey("workcenters.id"), index=True)
+    assigned_employee_id: Mapped[str | None] = mapped_column(ForeignKey("employees.id"), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), default="Pending")
+    planned_qty: Mapped[float] = mapped_column(Float)
+    completed_qty: Mapped[float] = mapped_column(Float, default=0)
