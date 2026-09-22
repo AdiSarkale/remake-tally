@@ -195,7 +195,13 @@ class MovementOut(ORMModel):
 # ---------- Production ----------
 class ConsumptionIn(BaseModel):
     material_id: str
-    quantity: float = Field(gt=0)
+    quantity: float = Field(ge=0)
+
+class ConsumptionOut(ORMModel):
+    material_id: str
+    planned_quantity: float
+    quantity: float
+    variance: float
 
 class ProductionIn(BaseModel):
     entry_date: date
@@ -236,6 +242,7 @@ class ProductionOut(ORMModel):
     remarks: str
 
     actual_scrap: float | None = None
+    consumption: list[ConsumptionOut] = Field(default_factory=list)
 
 
 # ---------- Scrap ----------
