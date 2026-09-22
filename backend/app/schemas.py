@@ -207,7 +207,9 @@ class ProductionIn(BaseModel):
     shift: str = "A"
     remarks: str = ""
 
-    consumption: list[ConsumptionIn]
+    # Phase 0: the active BOM is the source of planned consumption.
+    # Actual-consumption variance is introduced in Phase 1.
+    consumption: list[ConsumptionIn] = Field(default_factory=list)
 
     scrap_type_id: str | None = None
 
