@@ -1,7 +1,7 @@
 /* eslint-disable prettier/prettier */
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/erp/AppShell";
 import { PageHeader, StatCard } from "@/components/erp/PageHeader";
@@ -23,10 +23,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 import {
   createProduction as createProductionApi,
-  getMaterials,
   getProducts,
   getProduction,
-  type MaterialData,
   type ProductData,
   type ProductionData,
 } from "@/lib/api";
@@ -53,11 +51,6 @@ export const Route = createFileRoute("/production")({
   ),
 });
 
-interface Line {
-  materialId: string;
-  quantity: string;
-}
-
 const SHIFTS = ["A", "B", "C"] as const;
 
 function ProductionPage() {
@@ -69,7 +62,6 @@ function today() {
 const productNames = new Map(
   products.map((p) => [p.id, p.name]),
 );
-const [materials, setMaterials] = useState<MaterialData[]>([]);
 const [production, setProduction] = useState<ProductionData[]>([]);
 const [loading, setLoading] = useState(true);
   const { session } = useAuth();
@@ -83,7 +75,6 @@ const [loading, setLoading] = useState(true);
     shift: "A" as (typeof SHIFTS)[number],
     remarks: "",
   });
-  const [lines, setLines] = useState<Line[]>([{ materialId: "", quantity: "" }]);
 
   const day = today();
   const month = day.slice(0, 7);
@@ -98,12 +89,10 @@ const monthQty = production
   useEffect(() => {
   Promise.all([
     getProducts(),
-    getMaterials(),
     getProduction(),
   ])
-    .then(([productsData, materialsData, productionData]) => {
+.then(([productsData, productionData]) => {
       setProducts(productsData);
-      setMaterials(materialsData);
       setProduction(productionData);
     })
     .catch((error) => {
@@ -127,7 +116,6 @@ const monthQty = production
       shift: "A",
       remarks: "",
     });
-    setLines([{ materialId: "", quantity: "" }]);
   };
 
 
@@ -144,13 +132,6 @@ const monthQty = production
     return;
   }
 
-  const consumption = lines
-    .filter((line) => line.materialId && Number(line.quantity) > 0)
-    .map((line) => ({
-      material_id: line.materialId,
-      quantity: Number(line.quantity),
-    }));
-
   try {
     await createProductionApi({
       entry_date: form.date,
@@ -160,7 +141,6 @@ const monthQty = production
       operator: form.operator,
       shift: form.shift,
       remarks: form.remarks,
-      consumption,
     });
 
     toast.success("Production posted — stock updated");
@@ -191,7 +171,7 @@ const monthQty = production
     <>
       <PageHeader
         title="Production"
-        subtitle="Each entry increases finished goods and consumes raw materials automatically."
+        subtitle="Each entry increases finished goods and consumes raw materials from the active BOM."
         actions={
           <Button
             disabled={loading}
@@ -254,7 +234,7 @@ const monthQty = production
           <DialogHeader>
             <DialogTitle>New production entry</DialogTitle>
             <DialogDescription>
-              Posting will add finished goods to stock and issue the listed raw materials.
+              Posting will add finished goods to stock and issue raw materials from the active BOM.
             </DialogDescription>
           </DialogHeader>
 
@@ -326,63 +306,9 @@ const monthQty = production
             </div>
           </div>
 
-          <div className="mt-2">
-            <div className="mb-2 flex items-center justify-between">
-              <Label className="text-xs">Raw material consumption</Label>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setLines([...lines, { materialId: "", quantity: "" }])}
-              >
-                <Plus className="mr-1 h-3 w-3" /> Add line
-              </Button>
-            </div>
-            <div className="space-y-2">
-              {lines.map((line, i) => {
-                 const mat = materials.find(
-  (m) => m.id === line.materialId,);
-                return (
-                  <div key={i} className="flex items-center gap-2">
-                    <Select
-                      value={line.materialId}
-                      onValueChange={(v) =>
-                        setLines(lines.map((l, li) => (li === i ? { ...l, materialId: v } : l)))
-                      }
-                    >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder="Select material" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {materials.map((m) => (
-                          <SelectItem key={m.id} value={m.id}>
-                            {m.name} ({num(m.stock, 1)} {m.unit})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      className="w-32"
-                      placeholder="Qty"
-                      value={line.quantity}
-                      onChange={(e) =>
-                        setLines(lines.map((l, li) => (li === i ? { ...l, quantity: e.target.value } : l)))
-                      }
-                    />
-                    <span className="text-muted-foreground w-10 text-xs">{mat?.unit ?? ""}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setLines(lines.filter((_, li) => li !== i))}
-                      aria-label="Remove line"
-                    >
-                      <Trash2 className="text-destructive h-4 w-4" />
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
+          <div className="mt-2 rounded-md border p-3 text-sm text-muted-foreground">
+            Raw material consumption is calculated automatically from the active BOM.
+            Manual actual-consumption variance will be enabled in Phase 1.
           </div>
 
           <DialogFooter>
