@@ -760,3 +760,142 @@ class CustomerPOIn(BaseModel):
 class CustomerPOOut(CustomerPOIn, ORMModel):
     id: str
     lines: list[CustomerPOLineOut]
+
+
+# ---------- Manufacturing execution ----------
+class WorkcenterMaterialIn(BaseModel):
+    item_kind: str = Field(pattern="^(RM|SF|FG)$")
+    item_id: str
+    operation_id: str | None = None
+
+class WorkcenterMaterialOut(ORMModel):
+    id: str
+    workcenter_id: str
+    item_kind: str
+    item_id: str
+    operation_id: str | None
+
+class WorkcenterIn(BaseModel):
+    code: str
+    name: str
+    department: str = ""
+    capacity_per_hour: float = Field(default=0, ge=0)
+    status: str = "Available"
+    active: bool = True
+    location: str = ""
+    materials: list[WorkcenterMaterialIn] = Field(default_factory=list)
+
+class WorkcenterOut(ORMModel):
+    id: str
+    code: str
+    name: str
+    department: str
+    capacity_per_hour: float
+    status: str
+    active: bool
+    location: str
+    materials: list[WorkcenterMaterialOut] = Field(default_factory=list)
+
+class RoutingOperationIn(BaseModel):
+    sequence: int = Field(ge=1)
+    code: str = ""
+    name: str
+    workcenter_id: str
+    required_skill: str = ""
+    setup_minutes: float = Field(default=0, ge=0)
+    run_minutes_per_unit: float = Field(default=0, ge=0)
+    active: bool = True
+
+class RoutingIn(BaseModel):
+    product_id: str
+    version: int = Field(default=1, ge=1)
+    name: str = ""
+    active: bool = True
+    operations: list[RoutingOperationIn] = Field(min_length=1)
+
+class RoutingOperationOut(ORMModel):
+    id: str
+    sequence: int
+    code: str
+    name: str
+    workcenter_id: str
+    required_skill: str
+    setup_minutes: float
+    run_minutes_per_unit: float
+    active: bool
+
+class RoutingOut(ORMModel):
+    id: str
+    product_id: str
+    version: int
+    name: str
+    active: bool
+    operations: list[RoutingOperationOut]
+
+class EmployeeIn(BaseModel):
+    emp_code: str
+    name: str
+    department: str = ""
+    designation: str = ""
+    active: bool = True
+
+class EmployeeSkillIn(BaseModel):
+    skill: str
+    level: int = Field(default=1, ge=1, le=5)
+    certified: bool = False
+    active: bool = True
+
+class EmployeeOut(ORMModel):
+    id: str
+    emp_code: str
+    name: str
+    department: str
+    designation: str
+    active: bool
+
+class EmployeeSkillOut(ORMModel):
+    id: str
+    employee_id: str
+    skill: str
+    level: int
+    certified: bool
+    active: bool
+
+class ProductionOrderIn(BaseModel):
+    order_date: date
+    product_id: str
+    quantity: float = Field(gt=0)
+    due_date: date | None = None
+    routing_id: str | None = None
+    remarks: str = ""
+
+class ProductionOrderOperationOut(ORMModel):
+    id: str
+    operation_id: str
+    sequence: int
+    workcenter_id: str
+    assigned_employee_id: str | None
+    status: str
+    planned_qty: float
+    completed_qty: float
+
+class ProductionOrderOut(ORMModel):
+    id: str
+    order_no: str
+    order_date: date
+    product_id: str
+    quantity: float
+    due_date: date | None
+    routing_id: str | None
+    status: str
+    remarks: str
+    operations: list[ProductionOrderOperationOut] = Field(default_factory=list)
+
+class AssignEmployeeIn(BaseModel):
+    employee_id: str | None = None
+
+class ManufacturingAssignmentOut(BaseModel):
+    operation_id: str
+    workcenter_id: str
+    employee_id: str | None
+    assignment_mode: str
