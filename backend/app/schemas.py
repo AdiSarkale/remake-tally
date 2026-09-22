@@ -203,6 +203,11 @@ class ProductionIn(BaseModel):
     quantity: float = Field(gt=0)
 
     machine: str = ""
+    workcenter_id: str | None = None
+    routing_id: str | None = None
+    operation_id: str | None = None
+    production_order_id: str | None = None
+    employee_id: str | None = None
     operator: str = ""
     shift: str = "A"
     remarks: str = ""
@@ -221,6 +226,11 @@ class ProductionOut(ORMModel):
     product_id: str
     quantity: float
     machine: str
+    workcenter_id: str | None = None
+    routing_id: str | None = None
+    operation_id: str | None = None
+    production_order_id: str | None = None
+    employee_id: str | None = None
     operator: str
     shift: str
     remarks: str
