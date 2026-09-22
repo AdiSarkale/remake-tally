@@ -924,3 +924,6 @@ export async function addEmployeeSkill(employeeId:string,payload:Omit<EmployeeSk
 export async function getProductionOrders():Promise<ProductionOrderData[]> { return apiFetch("/api/v1/manufacturing/production-orders"); }
 export async function createProductionOrder(payload:ProductionOrderInput):Promise<ProductionOrderData> { return apiFetch("/api/v1/manufacturing/production-orders",{method:"POST",body:JSON.stringify(payload)}); }
 export async function assignProductionOperation(orderId:string,operationRowId:string,employeeId?:string|null) { return apiFetch("/api/v1/manufacturing/production-orders/"+orderId+"/operations/"+operationRowId+"/assignment",{method:"PATCH",body:JSON.stringify({employee_id:employeeId??null})}); }
+
+export async function updateProductionQuality(productionId:string,payload:{status:string;accepted_qty:number;rejected_qty:number;remarks:string}) { return apiFetch("/api/v1/manufacturing/production/"+productionId+"/quality",{method:"PATCH",body:JSON.stringify(payload)}); }
+export async function getManufacturingReport():Promise<{production_qty:number;scrap_qty:number;planned_material_qty:number;actual_material_qty:number;material_variance:number;by_workcenter:Record<string,unknown>[]}> { return apiFetch("/api/v1/manufacturing/reports/production"); }
