@@ -30,11 +30,15 @@ def upgrade() -> None:
         unique=False,
     )
 
-    op.create_unique_constraint(
-        "uq_bom_product_version",
-        "bill_of_materials",
-        ["product_id", "version"],
-    )
+    bind = op.get_bind()
+
+    # Existing databases created before versioning had at most one BOM per product,
+    # so normalize any legacy duplicate active rows before the partial unique index.
+    if bind.dialect.name == "sqlite":
+        with op.batch_alter_table("bill_of_materials") as batch:
+            batch.create_unique_constraint("uq_bom_product_version", ["product_id", "version"])
+    else:
+        op.create_unique_constraint("uq_bom_product_version", "bill_of_materials", ["product_id", "version"])
 
     bind = op.get_bind()
     if bind.dialect.name == "sqlite":
@@ -63,11 +67,12 @@ def downgrade() -> None:
             table_name="bill_of_materials",
         )
 
-    op.drop_constraint(
-        "uq_bom_product_version",
-        "bill_of_materials",
-        type_="unique",
-    )
+    bind = op.get_bind()
+    if bind.dialect.name == "sqlite":
+        with op.batch_alter_table("bill_of_materials") as batch:
+            batch.drop_constraint("uq_bom_product_version", type_="unique")
+    else:
+        op.drop_constraint("uq_bom_product_version", "bill_of_materials", type_="unique")
 
     op.drop_index(
         "ix_bill_of_materials_product_id",
