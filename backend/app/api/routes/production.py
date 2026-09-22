@@ -51,6 +51,10 @@ def list_production(
             "shift": production.shift,
             "remarks": production.remarks,
             "actual_scrap": actual_scrap,
+            "quality_status": production.quality_status,
+            "accepted_qty": production.accepted_qty,
+            "rejected_qty": production.rejected_qty,
+            "quality_remarks": production.quality_remarks,
             "consumption": [
                 {"material_id": line.material_id, "planned_quantity": line.planned_quantity, "quantity": line.quantity, "variance": round(line.quantity - line.planned_quantity, 3)}
                 for line in production.consumption
@@ -97,6 +101,8 @@ def create_production(
         wc = db.get(models.Workcenter, payload.workcenter_id)
         if not wc or not wc.active:
             raise HTTPException(400, "Workcenter not found or inactive")
+        if wc.status in ("Under Maintenance", "Breakdown"):
+            raise HTTPException(400, f"Workcenter {wc.code} is {wc.status}")
     if payload.employee_id:
         employee = db.get(models.Employee, payload.employee_id)
         if not employee or not employee.active:
@@ -300,6 +306,17 @@ def create_production(
     # -------------------------------------------------
     # Save production
     # -------------------------------------------------
+
+    if order_op:
+        order_op.completed_qty += payload.quantity
+        order_op.status = "Completed" if order_op.completed_qty >= order_op.planned_qty else "In Progress"
+        order = db.get(models.ProductionOrder, payload.production_order_id)
+        if order:
+            ops = db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).all()
+            if ops and all(x.completed_qty >= x.planned_qty for x in ops):
+                order.status = "Completed"
+            elif any(x.completed_qty > 0 for x in ops):
+                order.status = "In Progress"
 
     log_audit(
         db,
