@@ -73,7 +73,12 @@ def post_bom(payload: schemas.BomIn,
             status_code=409,
             detail='BOM Version already exist from this product')
 
-    material_ids = [line.material_id  for line in payload.lines]
+    if payload.scrap_type_id:
+        scrap_type = db.get(models.ScrapType, payload.scrap_type_id)
+        if scrap_type is None or not scrap_type.active:
+            raise HTTPException(status_code=400, detail="Scrap type not found or inactive")
+
+    material_ids = [line.material_id for line in payload.lines]
 
     if len(material_ids) != len(set(material_ids)):
         raise HTTPException(status_code=400, detail='Same material cannot appear in twice in a BOM')
@@ -97,6 +102,16 @@ def post_bom(payload: schemas.BomIn,
                 material_id = material.id,
                 quantity = line.quantity
                 ))
+
+    if bom.active:
+        db.query(models.BillOfMaterials).filter(
+            models.BillOfMaterials.product_id == payload.product_id,
+            models.BillOfMaterials.active.is_(True),
+        ).update(
+            {models.BillOfMaterials.active: False},
+            synchronize_session=False,
+        )
+        db.flush()
 
     db.add(bom)
 
@@ -132,6 +147,11 @@ def update_bom(
     if not payload.lines:
         raise HTTPException(status_code=400,detail='BOM must contain at least one material')
 
+    if payload.scrap_type_id:
+        scrap_type = db.get(models.ScrapType, payload.scrap_type_id)
+        if scrap_type is None or not scrap_type.active:
+            raise HTTPException(status_code=400, detail="Scrap type not found or inactive")
+
     material_ids = [line.material_id for line in payload.lines]
     if len(material_ids) != len(set(material_ids)):
         raise HTTPException(
@@ -151,6 +171,17 @@ def update_bom(
         raise HTTPException(
             status_code=400,
             detail='BOM version already exists for this product')
+
+    if payload.active:
+        db.query(models.BillOfMaterials).filter(
+            models.BillOfMaterials.product_id == payload.product_id,
+            models.BillOfMaterials.active.is_(True),
+            models.BillOfMaterials.id != bom_id,
+        ).update(
+            {models.BillOfMaterials.active: False},
+            synchronize_session=False,
+        )
+        db.flush()
 
     bom.product_id = payload.product_id
     bom.version = payload.version
