@@ -242,6 +242,10 @@ class ProductionOut(ORMModel):
     remarks: str
 
     actual_scrap: float | None = None
+    quality_status: str = "Pending"
+    accepted_qty: float = 0
+    rejected_qty: float = 0
+    quality_remarks: str = ""
     consumption: list[ConsumptionOut] = Field(default_factory=list)
 
 
@@ -916,3 +920,18 @@ class ManufacturingAssignmentOut(BaseModel):
     workcenter_id: str
     employee_id: str | None
     assignment_mode: str
+
+
+class ProductionQualityIn(BaseModel):
+    status: str = Field(pattern="^(Pending|Accepted|Rejected|Accepted with Deviation)$")
+    accepted_qty: float = Field(ge=0)
+    rejected_qty: float = Field(ge=0)
+    remarks: str = ""
+
+class ManufacturingReportOut(BaseModel):
+    production_qty: float
+    scrap_qty: float
+    planned_material_qty: float
+    actual_material_qty: float
+    material_variance: float
+    by_workcenter: list[dict]
