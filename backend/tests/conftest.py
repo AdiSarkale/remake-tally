@@ -1,6 +1,13 @@
 import os
+import sys
+from pathlib import Path
 from datetime import date
 from uuid import uuid4
+
+# Allow pytest to run from either the repository root or backend/.
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 import pytest
 from fastapi.testclient import TestClient
