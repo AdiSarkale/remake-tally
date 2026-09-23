@@ -2,7 +2,7 @@ name: MiniTally CI
 
 on:
   push:
-    branches: ["production", "phase-*"]
+    branches: ["production", "phase-*", "test/*"]
   pull_request:
     branches: ["production"]
 
@@ -14,6 +14,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install backend test dependencies
+        working-directory: backend
+        run: pip install -r requirements-dev.txt
+      - name: Run backend tests
+        working-directory: backend
+        env:
+          DATABASE_URL: sqlite://
+        run: pytest -q
       - name: Compile backend
         run: python -m compileall -q backend/app
 
