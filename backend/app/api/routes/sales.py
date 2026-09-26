@@ -11,16 +11,12 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.api.deps import require_area
 from app.db.session import get_db
-from app.models import ItemKind, MovementType
 from app.services.gst import (
     compute_line,
     is_inter_state,
     round_off,
 )
-from app.services.inventory import (
-    apply_movement,
-    log_audit,
-)
+from app.services.inventory import log_audit
 
 
 router = APIRouter(
@@ -452,26 +448,9 @@ def create_invoice(
 
     db.add(invoice)
 
-    # -------------------------------------------------
-    # Finished goods leave stock.
-    # -------------------------------------------------
-
-    for line in invoice.lines:
-
-        apply_movement(
-            db,
-            kind=ItemKind.product,
-            item_id=line.product_id,
-            movement_type=MovementType.OUT,
-            quantity=line.quantity,
-            reference=invoice.invoice_no,
-            reason=(
-                f"Sales invoice — "
-                f"{customer.name}"
-            ),
-            entry_date=payload.invoice_date,
-            user_id=user.id,
-        )
+    # Inventory is reduced by the Delivery Note, not by the invoice.
+    # This prevents double-decrementing finished goods when the commercial
+    # document chain is Customer PO -> SO -> Delivery -> Invoice.
 
     log_audit(
         db,
