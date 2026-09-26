@@ -654,9 +654,9 @@ def _invoice(db, customer, product, today):
         igst=tax.igst,
         round_off=round_value,
         grand_total=grand_total,
-        paid_amount=1000,
-        balance_amount=round(grand_total - 1000, 2),
-        status=models.InvoiceStatus.partial,
+        paid_amount=0,
+        balance_amount=grand_total,
+        status=models.InvoiceStatus.unpaid,
         created_by="accounts",
     )
     row.lines = [
@@ -679,6 +679,64 @@ def _invoice(db, customer, product, today):
     db.add(row)
     db.flush()
     return row
+
+
+def _payment_flow(db, customer, supplier, invoice, purchase_order, today):
+    customer_payment = _first(
+        db, models.CustomerPayment, payment_no="CPAY-DEMO-0001"
+    )
+    if customer_payment is None:
+        customer_payment = models.CustomerPayment(
+            payment_no="CPAY-DEMO-0001",
+            payment_date=today,
+            customer_id=customer.id,
+            customer_name=customer.name,
+            invoice_id=invoice.id,
+            invoice_no=invoice.invoice_no,
+            amount=1000,
+            mode="NEFT",
+            reference="UTR-DEMO-1000",
+            remarks="Demo customer part payment",
+            created_by="accounts",
+        )
+        db.add(customer_payment)
+        db.flush()
+
+    supplier_payment = _first(
+        db, models.SupplierPayment, payment_no="SPAY-DEMO-0001"
+    )
+    if supplier_payment is None:
+        supplier_payment = models.SupplierPayment(
+            payment_no="SPAY-DEMO-0001",
+            payment_date=today,
+            supplier_id=supplier.id,
+            supplier_name=supplier.name,
+            purchase_order_id=purchase_order.id,
+            po_no=purchase_order.po_no,
+            amount=20000,
+            mode="NEFT",
+            reference="UTR-DEMO-20000",
+            remarks="Demo supplier advance/part payment",
+            created_by="accounts",
+        )
+        db.add(supplier_payment)
+
+    customer_paid = round(sum(
+        p.amount for p in db.query(models.CustomerPayment).filter(
+            models.CustomerPayment.invoice_id == invoice.id
+        ).all()
+    ), 2)
+    invoice.paid_amount = min(customer_paid, invoice.grand_total)
+    invoice.balance_amount = round(
+        max(invoice.grand_total - invoice.paid_amount, 0), 2
+    )
+    invoice.status = (
+        models.InvoiceStatus.paid
+        if invoice.balance_amount <= 0.01
+        else models.InvoiceStatus.partial
+        if invoice.paid_amount > 0
+        else models.InvoiceStatus.unpaid
+    )
 
 
 def _production_flow(db, product, rm1, rm2, bom, routing, operation, workcenter, employee, scrap, today):
@@ -795,6 +853,16 @@ def _production_flow(db, product, rm1, rm2, bom, routing, operation, workcenter,
 
 def _delete_demo_transactions(db):
     # Reset only the known demo-owned transactions and balances.
+    for payment in db.query(models.CustomerPayment).filter(
+        models.CustomerPayment.payment_no == "CPAY-DEMO-0001"
+    ).all():
+        db.delete(payment)
+
+    for payment in db.query(models.SupplierPayment).filter(
+        models.SupplierPayment.payment_no == "SPAY-DEMO-0001"
+    ).all():
+        db.delete(payment)
+
     invoice = _first(db, models.Invoice, invoice_no="SPW-DEMO-001")
     if invoice is not None:
         db.delete(invoice)
@@ -1060,7 +1128,7 @@ def run(reset_demo: bool = False) -> None:
         _opening_stock(db, kind=ItemKind.product, item=fg1, quantity=120, entry_date=opening)
         _opening_stock(db, kind=ItemKind.product, item=fg2, quantity=75, entry_date=opening)
 
-        _purchase_flow(db, supplier, warehouse, rm1, today)
+        purchase_order, _ = _purchase_flow(db, supplier, warehouse, rm1, today)
         _production_flow(
             db,
             fg1,
@@ -1080,7 +1148,8 @@ def run(reset_demo: bool = False) -> None:
         sales_order = _sales_order(db, quotation, fg1, today)
         delivery = _delivery(db, sales_order, fg1, today)
         _dispatch(db, delivery, today)
-        _invoice(db, customer, fg1, today)
+        invoice = _invoice(db, customer, fg1, today)
+        _payment_flow(db, customer, supplier, invoice, purchase_order, today)
 
         quotation.status = models.QuotationStatus.converted
         sales_order.status = models.SalesOrderStatus.partially_delivered
@@ -1095,7 +1164,8 @@ def run(reset_demo: bool = False) -> None:
         print("  PO-DEMO-001 -> GRN-DEMO-001")
         print("  BOM + routing -> WC-CNC -> EMP-001 -> BATCH-DEMO-001")
         print("  CPO-DEMO-001 -> QT-DEMO-001 -> SO-DEMO-001 -> DN-DEMO-001 -> DSP-DEMO-001")
-        print("  SPW-DEMO-001 -> partial payment state")
+        print("  SPW-DEMO-001 -> CPAY-DEMO-0001")
+        print("  PO-DEMO-001 -> SPAY-DEMO-0001")
     finally:
         db.close()
 
