@@ -82,15 +82,15 @@ def create_customer_payment(
         remarks=payload.remarks,
         created_by=user.username,
     )
-    db.add(payment)
-
     if invoice:
-        invoice.paid_amount = round(
-            sum(p.amount for p in db.query(models.CustomerPayment).filter(
+        existing_paid = round(sum(
+            p.amount for p in db.query(models.CustomerPayment).filter(
                 models.CustomerPayment.invoice_id == invoice.id
-            ).all()) + payload.amount,
-            2,
-        )
+            ).all()
+        ), 2)
+        invoice.paid_amount = round(existing_paid + payload.amount, 2)
+
+    db.add(payment)
         invoice.balance_amount = round(invoice.grand_total - invoice.paid_amount, 2)
         if invoice.balance_amount <= 0.01:
             invoice.paid_amount = invoice.grand_total
