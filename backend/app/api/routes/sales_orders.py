@@ -177,6 +177,8 @@ def create_sales_order_from_quotation(
                 f"to {existing.so_no}"
             ),
         )
+
+    if quotation.status is not models.QuotationStatus.accepted:
         raise HTTPException(
             status_code=400,
             detail=(
