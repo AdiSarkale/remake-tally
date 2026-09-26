@@ -360,7 +360,7 @@ def _purchase_flow(db, supplier, warehouse, material, today):
             supplier_name=supplier.name,
             warehouse_id=warehouse.id,
             notes="Demo purchase order",
-            status=models.PurchaseOrderStatus.received,
+            status=models.PurchaseOrderStatus.partially_received,
             sub_total=qty * rate,
             gst_total=tax,
             grand_total=qty * rate + tax,
@@ -373,7 +373,7 @@ def _purchase_flow(db, supplier, warehouse, material, today):
                 quantity=qty,
                 rate=rate,
                 gst_rate=18,
-                received_quantity=qty,
+                received_quantity=150,
                 tax=tax,
                 total=qty * rate + tax,
             )
@@ -794,6 +794,7 @@ def _production_flow(db, product, rm1, rm2, bom, routing, operation, workcenter,
 
 
 def _delete_demo_transactions(db):
+    # Reset only the known demo-owned transactions and balances.
     invoice = _first(db, models.Invoice, invoice_no="SPW-DEMO-001")
     if invoice is not None:
         db.delete(invoice)
@@ -842,6 +843,21 @@ def _delete_demo_transactions(db):
             ("DEMO-OPENING", "GRN-DEMO-001", "BATCH-DEMO-001", "DN-DEMO-001")
         )
     ).delete(synchronize_session=False)
+
+    for code in (DEMO["product_1"], DEMO["product_2"]):
+        row = _first(db, models.Product, code=code)
+        if row is not None:
+            row.stock = 0
+
+    for code in (DEMO["material_1"], DEMO["material_2"]):
+        row = _first(db, models.RawMaterial, code=code)
+        if row is not None:
+            row.stock = 0
+
+    for code in (DEMO["scrap_1"], DEMO["scrap_2"]):
+        row = _first(db, models.ScrapType, code=code)
+        if row is not None:
+            row.stock = 0
 
     db.commit()
 
