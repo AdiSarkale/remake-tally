@@ -89,8 +89,6 @@ def create_customer_payment(
             ).all()
         ), 2)
         invoice.paid_amount = round(existing_paid + payload.amount, 2)
-
-    db.add(payment)
         invoice.balance_amount = round(invoice.grand_total - invoice.paid_amount, 2)
         if invoice.balance_amount <= 0.01:
             invoice.paid_amount = invoice.grand_total
@@ -98,6 +96,8 @@ def create_customer_payment(
             invoice.status = models.InvoiceStatus.paid
         elif invoice.paid_amount > 0:
             invoice.status = models.InvoiceStatus.partial
+
+    db.add(payment)
 
     log_audit(
         db, user.username, "CREATE", "customer_payment",
