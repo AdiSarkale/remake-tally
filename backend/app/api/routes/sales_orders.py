@@ -154,7 +154,11 @@ def create_sales_order_from_quotation(
         quotation_id,
     )
 
-
+    if quotation is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Quotation not found",
+        )
 
     existing = (
         db.query(models.SalesOrder)
@@ -173,13 +177,6 @@ def create_sales_order_from_quotation(
                 f"to {existing.so_no}"
             ),
         )
-    if quotation is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Quotation not found",
-        )
-
-    if quotation.status is not models.QuotationStatus.accepted:
         raise HTTPException(
             status_code=400,
             detail=(
