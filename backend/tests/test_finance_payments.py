@@ -70,7 +70,7 @@ def client(db_session):
         sub_total=2000,
         gst_total=360,
         grand_total=2360,
-        status=models.PurchaseOrderStatus.approved,
+        status=models.PurchaseOrderStatus.partially_received,
         created_by="tester",
     )
     db_session.add_all([invoice, po])
