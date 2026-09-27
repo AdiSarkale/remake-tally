@@ -8,8 +8,6 @@ from sqlalchemy import text
 from alembic import command
 from alembic.config import Config
 
-from app import models
-from app.db.control_models import TenantCompany
 from app.core.config import get_settings
 from app.db.control import get_control_engine
 
