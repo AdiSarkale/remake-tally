@@ -213,6 +213,21 @@ def update_purchase_requisition_status(
         )
 
     row.status = payload.status
+    if row.status == models.PurchaseRequisitionStatus.submitted:
+        from app.api.routes.approvals import ApprovalRequest, Department
+        dept = db.query(Department).filter(Department.code == row.department, Department.active.is_(True)).first()
+        if dept is not None and not db.query(ApprovalRequest).filter(ApprovalRequest.reference_id == row.id).first():
+            db.add(ApprovalRequest(
+                department_id=dept.id,
+                request_type="Purchase Requisition",
+                reference_id=row.id,
+                reference_no=row.pr_no,
+                title=f"Purchase requisition {row.pr_no}",
+                amount=0,
+                requested_by=row.created_by or user.username,
+                status="Pending",
+                remarks=row.notes,
+            ))
     log_audit(
         db,
         user.username,
