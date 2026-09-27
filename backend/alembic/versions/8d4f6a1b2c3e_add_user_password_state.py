@@ -1,13 +1,13 @@
 """Add forced first-login password state to users.
 
 Revision ID: 8d4f6a1b2c3e
-Revises: f5c8d3e0a2b7
+Revises: 7c2d9e4f1a6
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "8d4f6a1b2c3e"
-down_revision = "f5c8d3e0a2b7"
+down_revision = "7c2d9e4f1a6"
 branch_labels = None
 depends_on = None
 
