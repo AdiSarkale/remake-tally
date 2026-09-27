@@ -7,6 +7,7 @@ import uuid
 from sqlalchemy import create_engine, text
 
 from app import models
+from app.db.control_models import TenantCompany
 from app.core.config import get_settings
 from app.db.control import get_control_engine
 
