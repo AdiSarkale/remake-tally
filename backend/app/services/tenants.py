@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
+from alembic import command
+from alembic.config import Config
 
 from app import models
 from app.db.control_models import TenantCompany
@@ -30,10 +32,9 @@ def register_company(code: str, name: str, database_url: str, initialize_schema:
         )
 
     if initialize_schema:
-        engine = create_engine(database_url, pool_pre_ping=True)
-        tables = [table for table in models.Base.metadata.tables.values() if table.name != "tenant_companies"]
-        models.Base.metadata.create_all(bind=engine, tables=tables)
-        engine.dispose()
+        alembic_cfg = Config("backend/alembic.ini")
+        alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+        command.upgrade(alembic_cfg, "head")
 
     return company_id
 
