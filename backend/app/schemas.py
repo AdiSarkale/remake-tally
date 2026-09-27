@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import DispatchStatus, InvoiceStatus, ItemKind, MovementType, PurchaseOrderStatus, QuotationStatus, Role, SalesOrderStatus
+from app.models import (DispatchStatus, InvoiceStatus, ItemKind, MovementType, PurchaseOrderStatus, PurchaseRequisitionSource, PurchaseRequisitionStatus, QuotationStatus, Role, SalesOrderStatus)
 
 
 class ORMModel(BaseModel):
