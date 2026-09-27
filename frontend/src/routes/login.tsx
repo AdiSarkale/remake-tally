@@ -24,6 +24,7 @@ export const Route = createFileRoute("/login")({
 });
 
 const schema = z.object({
+  company_code: z.string().min(2, "Company code is required"),
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
 });
@@ -50,6 +51,9 @@ function LoginPage() {
           full_name: res.full_name,
           role: res.role,
           username: values.username,
+          company_id: res.company_id,
+          company_code: res.company_code,
+          company_name: res.company_name,
         });
         toast.success(`Welcome back, ${res.full_name}`);
         if (res.must_change_password) setForcePasswordChange(true); else window.location.assign("/");
@@ -87,6 +91,11 @@ function LoginPage() {
           onSubmit={handleSubmit(onSubmit)}
           className="space-y-4 rounded-lg border bg-card p-6 shadow-sm"
         >
+          <div className="space-y-1.5">
+            <Label htmlFor="company_code">Company code</Label>
+            <Input id="company_code" autoComplete="organization" autoFocus {...register("company_code")} />
+            {errors.company_code ? <p className="text-xs text-destructive">{errors.company_code.message}</p> : null}
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="username">Username</Label>
             <Input id="username" autoComplete="username" autoFocus {...register("username")} />
