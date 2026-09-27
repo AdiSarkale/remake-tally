@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app import models
+from app.db.control_models import TenantCompany
 from app.core.security import decode_access_token
 from app.db.control import get_control_db
 from app.db.tenant import get_tenant_db
@@ -23,7 +24,7 @@ ROLE_PERMISSIONS: dict[models.Role, set[str]] = {
 def current_company(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
     control_db: Session = Depends(get_control_db),
-) -> models.TenantCompany:
+) -> TenantCompany:
     if creds is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     try:
