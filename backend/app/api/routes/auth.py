@@ -17,7 +17,7 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)) -> schem
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
     token = create_access_token(user.username, user.role.value)
-    return schemas.TokenResponse(access_token=token, role=user.role, full_name=user.full_name)
+    return schemas.TokenResponse(access_token=token, role=user.role, full_name=user.full_name, must_change_password=user.must_change_password)
 
 
 @router.get("/me", response_model=schemas.UserOut)
