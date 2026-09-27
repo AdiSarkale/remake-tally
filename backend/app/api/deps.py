@@ -44,9 +44,13 @@ def current_company(
 def get_db(
     company: models.TenantCompany = Depends(current_company),
 ):
+    """Compatibility name used by ERP routes; always resolves to tenant DB."""
     db = get_tenant_db(company)
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
