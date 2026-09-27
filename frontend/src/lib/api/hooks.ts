@@ -460,6 +460,29 @@ export function useDeleteCustomerPo() {
   });
 }
 
+export function usePurchaseRequisitions() {
+  return useQuery({
+    queryKey: ["purchase-requisitions"],
+    queryFn: () => api.get<T.PurchaseRequisitionOut[]>("/purchasing/requisitions"),
+  });
+}
+export function useCreatePurchaseRequisition() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: T.PurchaseRequisitionIn) =>
+      api.post<T.PurchaseRequisitionOut>("/purchasing/requisitions", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["purchase-requisitions"] }),
+  });
+}
+export function useUpdatePurchaseRequisitionStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: string; status: T.PurchaseRequisitionStatus }) =>
+      api.patch<T.PurchaseRequisitionOut>(`/purchasing/requisitions/${id}/status`, { status }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["purchase-requisitions"] }),
+  });
+}
+
 // ---------- Purchasing ----------
 export function usePurchaseOrders() {
   return useQuery({ queryKey: ["purchase-orders"], queryFn: () => api.get<T.PurchaseOrderOut[]>("/purchasing/orders") });
