@@ -47,7 +47,7 @@ function LoginPage() {
           username: values.username,
         });
         toast.success(`Welcome back, ${res.full_name}`);
-        navigate({ to: "/" });
+        navigate({ to: res.must_change_password ? "/change-password" : "/" });
       },
       onError: (err) => {
         toast.error(err instanceof ApiError ? err.detail : "Sign in failed");
