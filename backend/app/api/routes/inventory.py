@@ -12,6 +12,7 @@ from app.services.inventory import apply_movement, log_audit
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 guard = Depends(require_area("inventory"))
+write_guard = Depends(require_area("masters"))
 
 
 @router.get("/movements", response_model=list[schemas.MovementOut])
@@ -25,7 +26,7 @@ def list_movements(limit: int = 200, db: Session = Depends(get_db), user: models
 
 
 @router.post("/movements", response_model=schemas.MovementOut, status_code=201)
-def create_movement(payload: schemas.MovementIn, db: Session = Depends(get_db), user: models.User = guard):
+def create_movement(payload: schemas.MovementIn, db: Session = Depends(get_db), user: models.User = write_guard):
     movement = apply_movement(
         db,
         kind=payload.item_kind,
