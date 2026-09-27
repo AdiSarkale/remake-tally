@@ -32,6 +32,7 @@ def register_company(code: str, name: str, database_url: str, initialize_schema:
         engine = create_engine(database_url, pool_pre_ping=True)
         tables = [table for table in models.Base.metadata.tables.values() if table.name != "tenant_companies"]
         models.Base.metadata.create_all(bind=engine, tables=tables)
+        engine.dispose()
 
     return company_id
 
