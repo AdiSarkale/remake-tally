@@ -24,6 +24,8 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     role: Role
     full_name: str
+    company_id: str
+    company_name: str
     must_change_password: bool = False
 
 
@@ -35,6 +37,7 @@ class UserOut(ORMModel):
     email: str = ""
     active: bool = True
     must_change_password: bool = False
+    company_id: str
 
 
 class UserCreate(BaseModel):
