@@ -9,8 +9,11 @@ class Settings(BaseSettings):
     app_name: str = "MiniTally ERP API"
     api_v1_prefix: str = "/api/v1"
 
+    # Control-plane DB: users, companies, and tenant routing metadata.
     control_database_url: str | None = None
 
+    # Transitional/local fallback. Existing single-DB deployments continue to work
+    # until control_database_url is configured.
     database_url: str = "postgresql+psycopg://minitally:minitally@localhost:5432/minitally"
 
     jwt_secret: str = "change-me-in-production"
