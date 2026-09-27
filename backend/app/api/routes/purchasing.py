@@ -903,20 +903,38 @@ def update_purchase_order(
     ]
 
     # ---------------------------------------------------------------
-    # Recalculate status from actual receipts.
+    # Reconcile status with actual receipts.
+    #
+    # A PO with no receipts may be explicitly moved between draft/sent.
+    # Once receipts exist, the receipt quantities are the source of truth
+    # and the status is derived as partially_received/received.
     # ---------------------------------------------------------------
-    if all(
-        line.received_quantity >= line.quantity
-        for line in row.lines
-    ):
-        row.status = models.PurchaseOrderStatus.received
-    elif any(
+    has_partial_receipt = any(
         line.received_quantity > 0
         for line in row.lines
-    ):
+    )
+    fully_received = all(
+        line.received_quantity >= line.quantity
+        for line in row.lines
+    )
+
+    if fully_received:
+        row.status = models.PurchaseOrderStatus.received
+    elif has_partial_receipt:
         row.status = models.PurchaseOrderStatus.partially_received
+    elif payload.status in {
+        models.PurchaseOrderStatus.draft,
+        models.PurchaseOrderStatus.sent,
+    }:
+        row.status = payload.status
     else:
-        row.status = models.PurchaseOrderStatus.draft
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "A purchase order can only be marked partially received "
+                "or received after goods have been received."
+            ),
+        )
 
     log_audit(
         db,
