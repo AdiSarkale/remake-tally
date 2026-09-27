@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     app_name: str = "MiniTally ERP API"
     api_v1_prefix: str = "/api/v1"
 
+    control_database_url: str | None = None
+
     database_url: str = "postgresql+psycopg://minitally:minitally@localhost:5432/minitally"
 
     jwt_secret: str = "change-me-in-production"
