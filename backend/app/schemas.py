@@ -726,6 +726,44 @@ class DispatchOut(ORMModel):
     created_by: str
 
 
+# ---------- Purchase requisitions ----------
+class PurchaseRequisitionLineIn(BaseModel):
+    material_id: str
+    material_name: str
+    quantity: float = Field(gt=0)
+    required_date: date | None = None
+    notes: str = ""
+
+
+class PurchaseRequisitionLineOut(PurchaseRequisitionLineIn, ORMModel):
+    id: int
+
+
+class PurchaseRequisitionIn(BaseModel):
+    pr_no: str
+    pr_date: date
+    required_date: date | None = None
+    requested_by: str = ""
+    department: str = ""
+    priority: str = "normal"
+    warehouse_id: str | None = None
+    notes: str = ""
+    source: PurchaseRequisitionSource = PurchaseRequisitionSource.manual
+    source_reference: str = ""
+    status: PurchaseRequisitionStatus = PurchaseRequisitionStatus.draft
+    lines: list[PurchaseRequisitionLineIn] = Field(min_length=1)
+
+
+class PurchaseRequisitionOut(PurchaseRequisitionIn, ORMModel):
+    id: str
+    created_by: str
+    lines: list[PurchaseRequisitionLineOut]
+
+
+class PurchaseRequisitionStatusIn(BaseModel):
+    status: PurchaseRequisitionStatus
+
+
 # ---------- Purchasing, locations, and customer POs ----------
 class SupplierProductIn(BaseModel):
     supplier_id: str
