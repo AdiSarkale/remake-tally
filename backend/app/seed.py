@@ -887,33 +887,51 @@ def _production_flow(db, product, rm1, rm2, bom, routing, operation, workcenter,
 
 
 def _delete_demo_transactions(db):
-    # Reset only the known demo-owned transactions and balances.
-    for payment in db.query(models.CustomerPayment).filter(
+    """Delete only the known demo transactions in FK-safe dependency order.
+
+    The order follows the business-document dependency graph:
+    payments -> invoice/dispatch -> delivery -> sales order -> quotation,
+    and supplier payment/GRN -> purchase order. Production children are
+    removed before the production order.
+    """
+    # Payments must be removed before their invoice / purchase-order parents.
+    db.query(models.CustomerPayment).filter(
         models.CustomerPayment.payment_no == "CPAY-DEMO-0001"
-    ).all():
-        db.delete(payment)
+    ).delete(synchronize_session=False)
 
-    for payment in db.query(models.SupplierPayment).filter(
+    db.query(models.SupplierPayment).filter(
         models.SupplierPayment.payment_no == "SPAY-DEMO-0001"
-    ).all():
-        db.delete(payment)
+    ).delete(synchronize_session=False)
 
-    invoice = _first(db, models.Invoice, invoice_no="SPW-DEMO-001")
-    if invoice is not None:
-        db.delete(invoice)
+    # Dispatch references DeliveryNote, so it must be deleted first.
+    db.query(models.Dispatch).filter(
+        models.Dispatch.dispatch_no == "DSP-DEMO-001"
+    ).delete(synchronize_session=False)
 
-    dispatch = _first(db, models.Dispatch, dispatch_no="DSP-DEMO-001")
-    if dispatch is not None:
-        db.delete(dispatch)
-
+    # DeliveryNote references SalesOrder. Delete its lines explicitly for
+    # deterministic cleanup across databases with older FK definitions.
     delivery = _first(db, models.DeliveryNote, delivery_no="DN-DEMO-001")
     if delivery is not None:
-        db.delete(delivery)
+        db.query(models.DeliveryLine).filter_by(
+            delivery_id=delivery.id
+        ).delete(synchronize_session=False)
+        db.query(models.DeliveryNote).filter_by(
+            id=delivery.id
+        ).delete(synchronize_session=False)
 
+    # Invoice lines cascade from Invoice, but remove them explicitly as well.
+    invoice = _first(db, models.Invoice, invoice_no="SPW-DEMO-001")
+    if invoice is not None:
+        db.query(models.InvoiceLine).filter_by(
+            invoice_id=invoice.id
+        ).delete(synchronize_session=False)
+        db.query(models.Invoice).filter_by(
+            id=invoice.id
+        ).delete(synchronize_session=False)
+
+    # SalesOrder references Quotation, so SalesOrder must precede Quotation.
     so = _first(db, models.SalesOrder, so_no="SO-DEMO-001")
     if so is not None:
-        # Sales orders reference quotations, so the order must be removed
-        # before its source quotation. Its line rows cascade from the order.
         db.query(models.SalesOrderLine).filter_by(
             sales_order_id=so.id
         ).delete(synchronize_session=False)
@@ -923,7 +941,6 @@ def _delete_demo_transactions(db):
 
     quotation = _first(db, models.Quotation, quotation_no="QT-DEMO-001")
     if quotation is not None:
-        # Quotation lines cascade from the quotation.
         db.query(models.QuotationLine).filter_by(
             quotation_id=quotation.id
         ).delete(synchronize_session=False)
@@ -931,14 +948,20 @@ def _delete_demo_transactions(db):
             id=quotation.id
         ).delete(synchronize_session=False)
 
+    # Customer PO is independent of the sales quotation chain.
     customer_po = _first(db, models.CustomerPO, po_no="CPO-DEMO-001")
     if customer_po is not None:
-        db.delete(customer_po)
+        db.query(models.CustomerPOLine).filter_by(
+            customer_po_id=customer_po.id
+        ).delete(synchronize_session=False)
+        db.query(models.CustomerPO).filter_by(
+            id=customer_po.id
+        ).delete(synchronize_session=False)
 
+    # ProductionEntry references ProductionOrder; consumption references the
+    # entry. Remove the full child chain before the order.
     production = _first(db, models.ProductionEntry, batch_no="BATCH-DEMO-001")
     if production is not None:
-        # Production entries reference production_orders, so remove the
-        # entry (and its consumption rows) before deleting the parent order.
         db.query(models.ProductionConsumption).filter_by(
             production_id=production.id
         ).delete(synchronize_session=False)
@@ -946,10 +969,10 @@ def _delete_demo_transactions(db):
             id=production.id
         ).delete(synchronize_session=False)
 
-    production_order = _first(db, models.ProductionOrder, order_no="PO-PROD-DEMO-001")
+    production_order = _first(
+        db, models.ProductionOrder, order_no="PO-PROD-DEMO-001"
+    )
     if production_order is not None:
-        # The operation table has ON DELETE CASCADE, but delete explicitly
-        # so reset remains deterministic across existing demo databases.
         db.query(models.ProductionOrderOperation).filter_by(
             production_order_id=production_order.id
         ).delete(synchronize_session=False)
@@ -957,14 +980,28 @@ def _delete_demo_transactions(db):
             id=production_order.id
         ).delete(synchronize_session=False)
 
+    # GRN references PurchaseOrder, and SupplierPayment was already removed
+    # above, so GRN must be deleted before the purchase order.
     grn = _first(db, models.GRN, grn_no="GRN-DEMO-001")
     if grn is not None:
-        db.delete(grn)
+        db.query(models.GRNLine).filter_by(
+            grn_id=grn.id
+        ).delete(synchronize_session=False)
+        db.query(models.GRN).filter_by(
+            id=grn.id
+        ).delete(synchronize_session=False)
 
     po = _first(db, models.PurchaseOrder, po_no="PO-DEMO-001")
     if po is not None:
-        db.delete(po)
+        db.query(models.PurchaseOrderLine).filter_by(
+            purchase_order_id=po.id
+        ).delete(synchronize_session=False)
+        db.query(models.PurchaseOrder).filter_by(
+            id=po.id
+        ).delete(synchronize_session=False)
 
+    # Inventory movements are leaf records and must be removed before the
+    # demo stock values are reset.
     db.query(models.InventoryMovement).filter(
         models.InventoryMovement.reference.in_(
             ("DEMO-OPENING", "GRN-DEMO-001", "BATCH-DEMO-001", "DN-DEMO-001")
