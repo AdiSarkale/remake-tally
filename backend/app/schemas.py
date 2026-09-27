@@ -15,6 +15,7 @@ class ORMModel(BaseModel):
 
 # ---------- Auth ----------
 class LoginRequest(BaseModel):
+    company_code: str = Field(min_length=2, max_length=32)
     username: str
     password: str
 
@@ -25,6 +26,7 @@ class TokenResponse(BaseModel):
     role: Role
     full_name: str
     company_id: str
+    company_code: str
     company_name: str
     must_change_password: bool = False
 
