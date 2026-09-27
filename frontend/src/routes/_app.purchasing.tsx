@@ -55,8 +55,9 @@ function docNo(prefix: string) {
 }
 
 function PurchasingPage() {
-  const { can } = useAuth();
+  const { can, profile } = useAuth();
   const canEdit = can("masters") || can("inventory");
+  const employeeOnly = !can("masters") && can("purchase_requests");
   const [poSeed, setPoSeed] = useState<DraftLine[] | null>(null);
   const [tab, setTab] = useState(0);
   return (
@@ -64,40 +65,78 @@ function PurchasingPage() {
       <PageHeader title="Procurement" description="Requisition → Purchase order → Goods receipt → Stock" />
       <ModuleTabs
         key={tab}
-        defaultValue={tab === 1 ? "orders" : "requisition"}
-        tabs={[
+        defaultValue={tab === 1 && !employeeOnly ? "orders" : "requisition"}
+        tabs={employeeOnly ? [
+          { value: "requisition", label: "Purchase Requisition", content: <EmployeeRequisitionTab username={profile?.username ?? ""} /> },
+        ] : [
           {
             value: "requisition",
             label: "Requisition",
-            content: (
-              <RequisitionTab
-                onRaise={(lines) => {
-                  setPoSeed(lines);
-                  setTab(1);
-                }}
-              />
-            ),
+            content: <RequisitionTab onRaise={(lines) => { setPoSeed(lines); setTab(1); }} />,
           },
           { value: "orders", label: "Purchase Orders", content: <OrdersTab canEdit={canEdit} seed={poSeed} clearSeed={() => setPoSeed(null)} /> },
           { value: "grns", label: "Goods Receipts", content: <GrnsTab /> },
           {
             value: "suppliers",
             label: "Suppliers",
-            content: (
-              <PartyManager
-                label="Supplier"
-                query={H.useSuppliers()}
-                create={H.useCreateSupplier()}
-                update={H.useUpdateSupplier()}
-                remove={H.useDeleteSupplier()}
-                canEdit={can("masters")}
-              />
-            ),
+            content: <PartyManager label="Supplier" query={H.useSuppliers()} create={H.useCreateSupplier()} update={H.useUpdateSupplier()} remove={H.useDeleteSupplier()} canEdit={can("masters")} />,
           },
         ]}
       />
     </div>
   );
+}
+
+function EmployeeRequisitionTab({ username }: { username: string }) {
+  const materials = H.useMaterials();
+  const warehouses = H.useWarehouses();
+  const create = H.useCreatePurchaseRequisition();
+  const [open, setOpen] = useState(false);
+  const [materialId, setMaterialId] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const [notes, setNotes] = useState("");
+
+  const submit = async () => {
+    if (!materialId || quantity <= 0) return toast.error("Select a material and quantity");
+    const material = (materials.data ?? []).find(m => m.id === materialId);
+    if (!material) return;
+    const no = docNo("PR");
+    const result = await runMutation(create.mutateAsync({
+      pr_no: no,
+      pr_date: todayIso(),
+      required_date: null,
+      requested_by: username,
+      department: "General",
+      priority: "normal",
+      warehouse_id: warehouses.data?.[0]?.id ?? null,
+      notes,
+      source: "manual",
+      source_reference: "",
+      status: "draft",
+      lines: [{ material_id: material.id, material_name: material.name, quantity, required_date: null, notes: "" }],
+    }), "Purchase requisition created");
+    if (result) { setOpen(false); setMaterialId(""); setQuantity(1); setNotes(""); }
+  };
+
+  return <div className="space-y-4">
+    <div className="flex items-center justify-between">
+      <div><SectionTitle>Purchase Requisition</SectionTitle><p className="text-xs text-muted-foreground">All employees can raise a material requisition. Approval and conversion are handled separately.</p></div>
+      <Button size="sm" onClick={()=>setOpen(true)}><Plus className="mr-1 h-4 w-4"/>New PR</Button>
+    </div>
+    <QueryTable query={H.usePurchaseRequisitions()} rowKey={r=>r.id} exportName="employee-purchase-requisitions" emptyTitle="No purchase requisitions" columns={[
+      {key:"no",header:"PR #",render:r=><span className="font-mono text-xs">{r.pr_no}</span>},
+      {key:"date",header:"Date",render:r=>formatDate(r.pr_date)},
+      {key:"req",header:"Requested by",render:r=>r.requested_by || "—"},
+      {key:"status",header:"Status",render:r=><StatusBadge status={r.status.replace("_"," ")}/>}
+    ]}/>
+    <FormDialog open={open} onOpenChange={setOpen} title="New Purchase Requisition" description="Request material for your department." submitLabel="Create PR" onSubmit={()=>void submit()} submitting={create.isPending}>
+      <div className="space-y-3">
+        <SelectField label="Material" value={materialId} onChange={setMaterialId} options={(materials.data ?? []).map(m=>({value:m.id,label:m.code+" — "+m.name}))}/>
+        <NumInput label="Quantity" value={quantity} onChange={setQuantity}/>
+        <Input placeholder="Reason / notes" value={notes} onChange={e=>setNotes(e.target.value)}/>
+      </div>
+    </FormDialog>
+  </div>;
 }
 
 // Requisition = computed from real data: open sales orders × active BOMs vs raw-material stock.
