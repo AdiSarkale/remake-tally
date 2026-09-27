@@ -13,6 +13,7 @@ from app.services.inventory import apply_movement, log_audit
 router = APIRouter(prefix="/purchasing", tags=["purchasing"])
 
 guard = Depends(require_area("masters"))
+pr_guard = Depends(require_area("purchase_requests"))
 
 
 # ---------------------------------------------------------------------------
@@ -58,7 +59,7 @@ def _replace_fields(row, payload, *, exclude: set[str] | None = None):
 )
 def list_purchase_requisitions(
     db: Session = Depends(get_db),
-    user: models.User = guard,
+    user: models.User = pr_guard,
 ):
     return (
         db.query(models.PurchaseRequisition)
@@ -75,7 +76,7 @@ def list_purchase_requisitions(
 def get_purchase_requisition(
     requisition_id: str,
     db: Session = Depends(get_db),
-    user: models.User = guard,
+    user: models.User = pr_guard,
 ):
     row = (
         db.query(models.PurchaseRequisition)
@@ -96,7 +97,7 @@ def get_purchase_requisition(
 def create_purchase_requisition(
     payload: schemas.PurchaseRequisitionIn,
     db: Session = Depends(get_db),
-    user: models.User = guard,
+    user: models.User = pr_guard,
 ):
     if db.query(models.PurchaseRequisition).filter(
         models.PurchaseRequisition.pr_no == payload.pr_no
