@@ -24,6 +24,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     role: Role
     full_name: str
+    must_change_password: bool = False
 
 
 class UserOut(ORMModel):
@@ -33,6 +34,7 @@ class UserOut(ORMModel):
     role: Role
     email: str = ""
     active: bool = True
+    must_change_password: bool = False
 
 
 class UserCreate(BaseModel):
@@ -40,7 +42,7 @@ class UserCreate(BaseModel):
     full_name: str = Field(min_length=1, max_length=120)
     email: str = ""
     role: Role = Role.operator
-    password: str = Field(min_length=6, max_length=128)
+    password: str | None = Field(default=None, min_length=6, max_length=128)
     active: bool = True
 
 
