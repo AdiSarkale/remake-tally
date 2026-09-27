@@ -600,5 +600,6 @@ export function useResetUserPassword() {
 export function useChangePassword() {
   return useMutation({
     mutationFn: (body: T.PasswordChange) => api.post(`/users/me/change-password`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
   });
 }
