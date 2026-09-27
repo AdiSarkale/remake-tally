@@ -215,8 +215,7 @@ function RequisitionTab({ onRaise }: { onRaise: (lines: DraftLine[]) => void }) 
             render: (r) => {
               const next =
                 r.status === "draft" ? "submitted" :
-                r.status === "submitted" ? "approved" :
-                r.status === "approved" ? "converted" : null;
+                r.status === "submitted" ? "approved" : null;
               return next ? (
                 <Button
                   size="sm"
