@@ -15,10 +15,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app import models
-from app.db import session as tenant_session
 from app.db.control_models import ControlBase, TenantCompany
 from app.db.control import get_control_db
-from app.db.tenant import get_tenant_db
 from app.core.security import hash_password
 from app.main import app
 
@@ -94,6 +92,8 @@ def test_same_username_isolated_by_company(tenant_environment):
     assert a.json()["company_id"] == "company-a"
     assert b.json()["company_id"] == "company-b"
     assert a.json()["company_id"] != b.json()["company_id"]
+    assert a.json()["company_name"] == "Company A"
+    assert b.json()["company_name"] == "Company B"
 
 
 def test_invalid_company_cannot_authenticate(tenant_environment):
