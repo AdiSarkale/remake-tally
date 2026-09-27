@@ -52,7 +52,7 @@ function LoginPage() {
           username: values.username,
         });
         toast.success(`Welcome back, ${res.full_name}`);
-        window.location.assign(res.must_change_password ? "/change-password" : "/");
+        if (res.must_change_password) setForcePasswordChange(true); else window.location.assign("/");
       },
       onError: (err) => {
         toast.error(err instanceof ApiError ? err.detail : "Sign in failed");
