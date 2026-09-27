@@ -1,4 +1,4 @@
-"""Control-plane database access for multi-company Minitally."""
+"""Control-plane database access for company routing metadata."""
 
 from __future__ import annotations
 
@@ -13,7 +13,9 @@ settings = get_settings()
 
 
 def control_database_url() -> str:
-    return settings.control_database_url or settings.database_url
+    if not settings.control_database_url:
+        raise RuntimeError("CONTROL_DATABASE_URL must be configured for production")
+    return settings.control_database_url
 
 
 @lru_cache(maxsize=1)
