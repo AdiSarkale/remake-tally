@@ -25,7 +25,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/sales", label: "Sales", icon: TrendingUp, area: "sales" },
-  { to: "/purchasing", label: "Purchase", icon: ShoppingCart, area: "masters" },
+  { to: "/purchasing", label: "Purchase", icon: ShoppingCart, area: "purchase_requests" },
   { to: "/inventory", label: "Inventory", icon: Boxes, area: "inventory" },
   { to: "/production", label: "Production", icon: Factory, area: "production" },
   { to: "/finance", label: "Finance", icon: Wallet, area: "finance" },
