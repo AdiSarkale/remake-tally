@@ -9,6 +9,7 @@ from app.core.security import hash_password, verify_password
 from app.db.session import get_db
 
 router = APIRouter(prefix="/users", tags=["users"])
+DEFAULT_INITIAL_PASSWORD = "Minitally@123"
 
 # "settings" is Admin-only in ROLE_PERMISSIONS.
 admin_only = require_area("settings")
@@ -48,7 +49,8 @@ def create_user(
         email=payload.email.strip(),
         role=payload.role,
         active=payload.active,
-        password_hash=hash_password(payload.password),
+        password_hash=hash_password(payload.password or DEFAULT_INITIAL_PASSWORD),
+        must_change_password=True,
     )
     db.add(user)
     db.commit()
@@ -88,6 +90,7 @@ def reset_password(
     """Admin sets any user's password without knowing the existing one."""
     user = _get(db, user_id)
     user.password_hash = hash_password(payload.new_password)
+    user.must_change_password = True
     db.commit()
 
 
@@ -101,4 +104,5 @@ def change_own_password(
     if not verify_password(payload.current_password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
     user.password_hash = hash_password(payload.new_password)
+    user.must_change_password = False
     db.commit()
