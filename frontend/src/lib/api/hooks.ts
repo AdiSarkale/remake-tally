@@ -598,6 +598,7 @@ export function useResetUserPassword() {
   });
 }
 export function useChangePassword() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: T.PasswordChange) => api.post(`/users/me/change-password`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
