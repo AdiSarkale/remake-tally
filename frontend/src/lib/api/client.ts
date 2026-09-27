@@ -9,6 +9,9 @@ export interface StoredProfile {
   full_name: string;
   role: string;
   username: string;
+  company_id: string;
+  company_code: string;
+  company_name: string;
 }
 
 export function getToken(): string | null {
