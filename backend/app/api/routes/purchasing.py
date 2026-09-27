@@ -49,6 +49,183 @@ def _replace_fields(row, payload, *, exclude: set[str] | None = None):
 
 
 # ---------------------------------------------------------------------------
+# Purchase Requisitions
+# ---------------------------------------------------------------------------
+
+@router.get(
+    "/requisitions",
+    response_model=list[schemas.PurchaseRequisitionOut],
+)
+def list_purchase_requisitions(
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
+    return (
+        db.query(models.PurchaseRequisition)
+        .options(selectinload(models.PurchaseRequisition.lines))
+        .order_by(models.PurchaseRequisition.pr_date.desc())
+        .all()
+    )
+
+
+@router.get(
+    "/requisitions/{requisition_id}",
+    response_model=schemas.PurchaseRequisitionOut,
+)
+def get_purchase_requisition(
+    requisition_id: str,
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
+    row = (
+        db.query(models.PurchaseRequisition)
+        .options(selectinload(models.PurchaseRequisition.lines))
+        .filter(models.PurchaseRequisition.id == requisition_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Purchase requisition not found")
+    return row
+
+
+@router.post(
+    "/requisitions",
+    response_model=schemas.PurchaseRequisitionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_purchase_requisition(
+    payload: schemas.PurchaseRequisitionIn,
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
+    if db.query(models.PurchaseRequisition).filter(
+        models.PurchaseRequisition.pr_no == payload.pr_no
+    ).first():
+        raise HTTPException(status_code=409, detail="Purchase requisition number already exists")
+
+    if payload.required_date and payload.required_date < payload.pr_date:
+        raise HTTPException(status_code=400, detail="Required date cannot be before PR date")
+
+    if payload.warehouse_id:
+        warehouse = db.get(models.Warehouse, payload.warehouse_id)
+        if warehouse is None:
+            raise HTTPException(status_code=404, detail="Warehouse not found")
+        if not warehouse.active:
+            raise HTTPException(status_code=400, detail="Selected warehouse is inactive")
+
+    lines = []
+    seen: set[str] = set()
+    for line in payload.lines:
+        if line.material_id in seen:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Material {line.material_name} appears more than once",
+            )
+        seen.add(line.material_id)
+
+        material = db.get(models.RawMaterial, line.material_id)
+        if material is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Raw material {line.material_id} not found",
+            )
+        if line.material_name != material.name:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Material name does not match {material.name}",
+            )
+        if line.required_date and line.required_date < payload.pr_date:
+            raise HTTPException(status_code=400, detail="Line required date cannot be before PR date")
+
+        lines.append(
+            models.PurchaseRequisitionLine(
+                material_id=material.id,
+                material_name=material.name,
+                quantity=line.quantity,
+                required_date=line.required_date or payload.required_date,
+                notes=line.notes,
+            )
+        )
+
+    row = models.PurchaseRequisition(
+        pr_no=payload.pr_no,
+        pr_date=payload.pr_date,
+        required_date=payload.required_date,
+        requested_by=payload.requested_by,
+        department=payload.department,
+        priority=payload.priority,
+        warehouse_id=payload.warehouse_id,
+        notes=payload.notes,
+        source=payload.source,
+        source_reference=payload.source_reference,
+        status=models.PurchaseRequisitionStatus.draft,
+        created_by=user.username,
+        lines=lines,
+    )
+    db.add(row)
+    log_audit(db, user.username, "CREATE", "purchase_requisition", row.pr_no)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.patch(
+    "/requisitions/{requisition_id}/status",
+    response_model=schemas.PurchaseRequisitionOut,
+)
+def update_purchase_requisition_status(
+    requisition_id: str,
+    payload: schemas.PurchaseRequisitionStatusIn,
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
+    row = (
+        db.query(models.PurchaseRequisition)
+        .options(selectinload(models.PurchaseRequisition.lines))
+        .filter(models.PurchaseRequisition.id == requisition_id)
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Purchase requisition not found")
+
+    allowed = {
+        models.PurchaseRequisitionStatus.draft: {
+            models.PurchaseRequisitionStatus.submitted
+        },
+        models.PurchaseRequisitionStatus.submitted: {
+            models.PurchaseRequisitionStatus.approved,
+            models.PurchaseRequisitionStatus.rejected,
+            models.PurchaseRequisitionStatus.draft,
+        },
+        models.PurchaseRequisitionStatus.approved: {
+            models.PurchaseRequisitionStatus.converted
+        },
+        models.PurchaseRequisitionStatus.rejected: {
+            models.PurchaseRequisitionStatus.draft
+        },
+        models.PurchaseRequisitionStatus.converted: set(),
+    }
+
+    if payload.status not in allowed[row.status] and payload.status != row.status:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid PR status transition: {row.status.value} -> {payload.status.value}",
+        )
+
+    row.status = payload.status
+    log_audit(
+        db,
+        user.username,
+        "UPDATE",
+        "purchase_requisition",
+        f"{row.pr_no}: {payload.status.value}",
+    )
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+# ---------------------------------------------------------------------------
 # Supplier Products
 # ---------------------------------------------------------------------------
 
