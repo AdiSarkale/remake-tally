@@ -28,13 +28,14 @@ export interface UserOut {
   role: Role;
   email: string;
   active: boolean;
+  must_change_password: boolean;
 }
 export interface UserCreate {
   username: string;
   full_name: string;
   email: string;
   role: Role;
-  password: string;
+  password?: string;
   active: boolean;
 }
 export interface UserUpdate {
