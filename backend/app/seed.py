@@ -16,6 +16,7 @@ import argparse
 from datetime import date, timedelta
 
 from app import models
+from app.api.routes.approvals import ApprovalRequest, Department
 from app.core.security import hash_password
 from app.db.session import Base, SessionLocal, engine
 from app.models import ItemKind, MovementType
@@ -27,6 +28,10 @@ DEMO_USERS = [
     ("admin", "Ravi Kulkarni", "admin123", models.Role.admin),
     ("accounts", "Priya Deshmukh", "accounts123", models.Role.accountant),
     ("operator", "Imran Shaikh", "operator123", models.Role.operator),
+    ("production.hod", "Production HOD", "hod123", models.Role.operator),
+    ("purchase.hod", "Purchase HOD", "hod123", models.Role.operator),
+    ("stores.hod", "Stores HOD", "hod123", models.Role.operator),
+    ("finance.hod", "Finance HOD", "hod123", models.Role.operator),
 ]
 
 DEMO = {
@@ -49,6 +54,36 @@ DEMO = {
 
 def _first(db, model, **filters):
     return db.query(model).filter_by(**filters).first()
+
+
+def _seed_departments_and_approvals(db):
+    departments = [
+        ("PROD", "Production", "production.hod"),
+        ("PUR", "Purchase", "purchase.hod"),
+        ("STO", "Stores", "stores.hod"),
+        ("FIN", "Finance", "finance.hod"),
+    ]
+    for code, name, hod_username in departments:
+        row = _first(db, Department, code=code)
+        if row is None:
+            db.add(Department(code=code, name=name, hod_username=hod_username, active=True))
+        else:
+            row.name = name
+            row.hod_username = hod_username
+            row.active = True
+    db.flush()
+    dept = _first(db, Department, code="PROD")
+    if dept and not _first(db, ApprovalRequest, reference_no="PR-DEMO-001"):
+        db.add(ApprovalRequest(
+            department_id=dept.id,
+            request_type="Purchase Requisition",
+            reference_no="PR-DEMO-001",
+            title="Aluminium Rod replenishment",
+            amount=42000,
+            requested_by="operator",
+            status="Pending",
+            remarks="Demo HOD approval request for production material.",
+        ))
 
 
 def _party(db, kind: str, name: str, **kwargs):
@@ -954,6 +989,8 @@ def run(reset_demo: bool = False) -> None:
                 user.password_hash = hash_password(password)
                 user.role = role
                 user.active = True
+
+        _seed_departments_and_approvals(db)
 
         settings = db.get(models.CompanySettings, 1)
         if settings is None:
