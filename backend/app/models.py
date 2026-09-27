@@ -999,6 +999,58 @@ class Dispatch(Base):
     )
 
 
+class PurchaseRequisitionStatus(str, enum.Enum):
+    draft = "draft"
+    submitted = "submitted"
+    approved = "approved"
+    rejected = "rejected"
+    converted = "converted"
+
+
+class PurchaseRequisitionSource(str, enum.Enum):
+    manual = "manual"
+    mrp = "mrp"
+
+
+class PurchaseRequisition(Base):
+    __tablename__ = "purchase_requisitions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    pr_no: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    pr_date: Mapped[date] = mapped_column(Date, index=True)
+    required_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    requested_by: Mapped[str] = mapped_column(String(120), default="")
+    department: Mapped[str] = mapped_column(String(120), default="")
+    priority: Mapped[str] = mapped_column(String(16), default="normal")
+    warehouse_id: Mapped[str | None] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[PurchaseRequisitionSource] = mapped_column(
+        Enum(PurchaseRequisitionSource), default=PurchaseRequisitionSource.manual
+    )
+    source_reference: Mapped[str] = mapped_column(String(120), default="")
+    status: Mapped[PurchaseRequisitionStatus] = mapped_column(
+        Enum(PurchaseRequisitionStatus), default=PurchaseRequisitionStatus.draft
+    )
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    lines: Mapped[list["PurchaseRequisitionLine"]] = relationship(
+        cascade="all, delete-orphan"
+    )
+
+
+class PurchaseRequisitionLine(Base):
+    __tablename__ = "purchase_requisition_lines"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    purchase_requisition_id: Mapped[str] = mapped_column(
+        ForeignKey("purchase_requisitions.id", ondelete="CASCADE")
+    )
+    material_id: Mapped[str] = mapped_column(ForeignKey("raw_materials.id"))
+    material_name: Mapped[str] = mapped_column(String(160))
+    quantity: Mapped[float] = mapped_column(Float)
+    required_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
 class PurchaseOrderStatus(str, enum.Enum):
     draft = "draft"
     sent = "sent"
