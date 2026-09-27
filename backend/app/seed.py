@@ -924,14 +924,25 @@ def _delete_demo_transactions(db):
 
     production = _first(db, models.ProductionEntry, batch_no="BATCH-DEMO-001")
     if production is not None:
-        db.delete(production)
+        # Production entries reference production_orders, so remove the
+        # entry (and its consumption rows) before deleting the parent order.
+        db.query(models.ProductionConsumption).filter_by(
+            production_id=production.id
+        ).delete(synchronize_session=False)
+        db.query(models.ProductionEntry).filter_by(
+            id=production.id
+        ).delete(synchronize_session=False)
 
     production_order = _first(db, models.ProductionOrder, order_no="PO-PROD-DEMO-001")
     if production_order is not None:
+        # The operation table has ON DELETE CASCADE, but delete explicitly
+        # so reset remains deterministic across existing demo databases.
         db.query(models.ProductionOrderOperation).filter_by(
             production_order_id=production_order.id
         ).delete(synchronize_session=False)
-        db.delete(production_order)
+        db.query(models.ProductionOrder).filter_by(
+            id=production_order.id
+        ).delete(synchronize_session=False)
 
     grn = _first(db, models.GRN, grn_no="GRN-DEMO-001")
     if grn is not None:
