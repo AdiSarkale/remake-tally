@@ -4,12 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api.deps import require_area
+from app.api.deps import require_any_area, require_area
 from app.db.session import get_db
 from app.services.inventory import log_audit
 
 router = APIRouter(prefix="/masters", tags=["masters"])
 guard = Depends(require_area("masters"))
+pr_read_guard = Depends(require_any_area("masters", "purchase_requests"))
 
 
 def _get_or_404(db: Session, model, pk: str):
@@ -339,7 +340,7 @@ def update_product(
 )
 def list_materials(
     db: Session = Depends(get_db),
-    user: models.User = guard,
+    user: models.User = pr_read_guard,
 ):
     return (
         db.query(models.RawMaterial)
@@ -583,7 +584,7 @@ def delete_plant(
 @router.get("/warehouses", response_model=list[schemas.WarehouseOut])
 def list_warehouses(
     db: Session = Depends(get_db),
-    user: models.User = guard,
+    user: models.User = pr_read_guard,
 ):
     return (
         db.query(models.Warehouse)
