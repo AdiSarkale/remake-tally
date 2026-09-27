@@ -1043,6 +1043,7 @@ def run(reset_demo: bool = False) -> None:
                         full_name=full_name,
                         password_hash=hash_password(password),
                         role=role,
+                        must_change_password=False,
                     )
                 )
             else:
@@ -1050,6 +1051,7 @@ def run(reset_demo: bool = False) -> None:
                 user.password_hash = hash_password(password)
                 user.role = role
                 user.active = True
+                user.must_change_password = False
 
         _seed_departments_and_approvals(db)
 
