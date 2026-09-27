@@ -912,11 +912,24 @@ def _delete_demo_transactions(db):
 
     so = _first(db, models.SalesOrder, so_no="SO-DEMO-001")
     if so is not None:
-        db.delete(so)
+        # Sales orders reference quotations, so the order must be removed
+        # before its source quotation. Its line rows cascade from the order.
+        db.query(models.SalesOrderLine).filter_by(
+            sales_order_id=so.id
+        ).delete(synchronize_session=False)
+        db.query(models.SalesOrder).filter_by(
+            id=so.id
+        ).delete(synchronize_session=False)
 
     quotation = _first(db, models.Quotation, quotation_no="QT-DEMO-001")
     if quotation is not None:
-        db.delete(quotation)
+        # Quotation lines cascade from the quotation.
+        db.query(models.QuotationLine).filter_by(
+            quotation_id=quotation.id
+        ).delete(synchronize_session=False)
+        db.query(models.Quotation).filter_by(
+            id=quotation.id
+        ).delete(synchronize_session=False)
 
     customer_po = _first(db, models.CustomerPO, po_no="CPO-DEMO-001")
     if customer_po is not None:
