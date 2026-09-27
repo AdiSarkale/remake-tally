@@ -7,9 +7,9 @@ import type { Role } from "./api/types";
 // Mirrors backend ROLE_PERMISSIONS in app/api/deps.py — used only for
 // navigation visibility; the backend enforces the real permissions.
 const ROLE_AREAS: Record<Role, Set<string>> = {
-  Admin: new Set(["masters", "inventory", "production", "scrap", "sales", "finance", "settings", "reports"]),
+  Admin: new Set(["masters", "inventory", "production", "scrap", "sales", "finance", "settings", "reports", "purchase_requests"]),
   Accountant: new Set(["masters", "inventory", "sales", "reports"]),
-  Operator: new Set(["production", "scrap", "inventory"]),
+  Operator: new Set(["production", "scrap", "inventory", "purchase_requests"]),
 };
 
 interface AuthState {
@@ -32,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const profile: StoredProfile | null = me
       ? { full_name: me.full_name, role: me.role, username: me.username }
       : stored;
-    const role = (profile?.role as Role | undefined) ?? null;
+    const role = (me?.role ?? profile?.role) as Role | null;
     return {
       token,
       profile,
