@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -30,7 +30,6 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 function LoginPage() {
-  const navigate = useNavigate();
   const login = useLogin();
   const {
     register,
@@ -47,7 +46,7 @@ function LoginPage() {
           username: values.username,
         });
         toast.success(`Welcome back, ${res.full_name}`);
-        navigate({ to: res.must_change_password ? "/change-password" : "/" });
+        window.location.assign(res.must_change_password ? "/change-password" : "/");
       },
       onError: (err) => {
         toast.error(err instanceof ApiError ? err.detail : "Sign in failed");
