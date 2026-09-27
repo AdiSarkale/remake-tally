@@ -1271,3 +1271,15 @@ class ProductionOrderOperation(Base):
     status: Mapped[str] = mapped_column(String(32), default="Pending")
     planned_qty: Mapped[float] = mapped_column(Float)
     completed_qty: Mapped[float] = mapped_column(Float, default=0)
+
+
+class TenantCompany(Base):
+    """Central control-plane record for one isolated company database."""
+    __tablename__ = "tenant_companies"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    database_url: Mapped[str] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
