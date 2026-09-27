@@ -102,78 +102,242 @@ function PurchasingPage() {
 
 // Requisition = computed from real data: open sales orders × active BOMs vs raw-material stock.
 function RequisitionTab({ onRaise }: { onRaise: (lines: DraftLine[]) => void }) {
+  const requisitions = H.usePurchaseRequisitions();
+  const create = H.useCreatePurchaseRequisition();
+  const updateStatus = H.useUpdatePurchaseRequisitionStatus();
   const materials = H.useMaterials();
+  const warehouses = H.useWarehouses();
   const boms = H.useBoms();
   const orders = H.useSalesOrders();
-  const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [open, setOpen] = useState(false);
+  const [lines, setLines] = useState<T.PurchaseRequisitionLineIn[]>([
+    { material_id: "", material_name: "", quantity: 1, required_date: null, notes: "" },
+  ]);
+  const [head, setHead] = useState({
+    pr_no: docNo("PR"),
+    pr_date: todayIso(),
+    required_date: "",
+    requested_by: "",
+    department: "",
+    priority: "normal",
+    warehouse_id: "",
+    notes: "",
+  });
 
-  const rows = useMemo(() => {
+  const planningRows = useMemo(() => {
     const demand: Record<string, number> = {};
     for (const so of orders.data ?? []) {
       if (so.status !== "Open" && so.status !== "Partially Delivered") continue;
       for (const l of so.lines) {
         const bom = (boms.data ?? []).find((b) => b.product_id === l.product_id && b.active);
         if (!bom) continue;
-        const open = Math.max(0, l.quantity - l.delivered_quantity);
-        for (const bl of bom.lines) demand[bl.material_id] = (demand[bl.material_id] ?? 0) + bl.quantity * open;
+        const openQty = Math.max(0, l.quantity - l.delivered_quantity);
+        for (const bl of bom.lines) demand[bl.material_id] = (demand[bl.material_id] ?? 0) + bl.quantity * openQty;
       }
     }
     return (materials.data ?? [])
-      .map((m) => {
-        const req = demand[m.id] ?? 0;
-        const shortage = Math.max(0, req + m.min_stock - m.stock);
-        return { ...m, required: req, shortage };
-      })
+      .map((m) => ({ ...m, shortage: Math.max(0, (demand[m.id] ?? 0) + m.min_stock - m.stock) }))
       .filter((m) => m.shortage > 0)
       .sort((a, b) => b.shortage - a.shortage);
   }, [materials.data, boms.data, orders.data]);
 
-  if (materials.isLoading || boms.isLoading || orders.isLoading) return <TableSkeleton />;
-  if (materials.isError) return <ErrorState error={materials.error} />;
+  const submit = async () => {
+    const valid = lines.filter((l) => l.material_id && l.quantity > 0);
+    if (!valid.length) return;
+    const body: T.PurchaseRequisitionIn = {
+      pr_no: head.pr_no,
+      pr_date: head.pr_date,
+      required_date: head.required_date || null,
+      requested_by: head.requested_by,
+      department: head.department,
+      priority: head.priority,
+      warehouse_id: head.warehouse_id || null,
+      notes: head.notes,
+      source: "manual",
+      source_reference: "",
+      status: "draft",
+      lines: valid.map((l) => ({
+        ...l,
+        material_name: materials.data?.find((m) => m.id === l.material_id)?.name ?? l.material_name,
+        required_date: l.required_date || (head.required_date || null),
+      })),
+    };
+    const result = await runMutation(create.mutateAsync(body), `Purchase requisition ${head.pr_no} created`);
+    if (result) {
+      setOpen(false);
+      setHead({
+        pr_no: docNo("PR"),
+        pr_date: todayIso(),
+        required_date: "",
+        requested_by: "",
+        department: "",
+        priority: "normal",
+        warehouse_id: "",
+        notes: "",
+      });
+      setLines([{ material_id: "", material_name: "", quantity: 1, required_date: null, notes: "" }]);
+    }
+  };
 
-  const selected = rows.filter((r) => picked[r.id]);
+  const addLine = () => setLines([...lines, { material_id: "", material_name: "", quantity: 1, required_date: null, notes: "" }]);
+
   return (
-    <div className="space-y-3">
-      <BackendGap>
-        the backend has no stored purchase-requisition document. This list is calculated live from open sales orders, active BOMs and
-        raw-material stock/minimum levels, and converts directly into a real purchase order.
-      </BackendGap>
-      <DataTable
-        data={rows}
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <SectionTitle>Purchase Requisitions</SectionTitle>
+          <p className="text-xs text-muted-foreground">
+            Manual PR entry now. The source field is reserved for future MRP-generated requisitions.
+          </p>
+        </div>
+        <Button size="sm" onClick={() => setOpen(true)}>
+          <Plus className="mr-1 h-4 w-4" /> New PR
+        </Button>
+      </div>
+
+      <QueryTable
+        query={requisitions}
         rowKey={(r) => r.id}
-        exportName="material-requirements"
-        emptyTitle="No shortages — stock covers open orders and minimum levels"
-        toolbar={
-          <Button
-            size="sm"
-            disabled={selected.length === 0}
-            onClick={() => onRaise(selected.map((r) => ({ material_id: r.id, quantity: Math.ceil(r.shortage), rate: r.cost, gst_rate: 18 })))}
-          >
-            <ShoppingCart className="mr-1 h-4 w-4" /> Raise PO ({selected.length})
-          </Button>
-        }
+        exportName="purchase-requisitions"
+        emptyTitle="No purchase requisitions"
         columns={[
+          { key: "no", header: "PR #", render: (r) => <span className="font-mono text-xs">{r.pr_no}</span>, searchValue: (r) => r.pr_no },
+          { key: "date", header: "Date", render: (r) => formatDate(r.pr_date), sortValue: (r) => r.pr_date },
+          { key: "req", header: "Requested by", render: (r) => r.requested_by || "—", searchValue: (r) => r.requested_by },
+          { key: "dept", header: "Department", render: (r) => r.department || "—", searchValue: (r) => r.department },
+          { key: "priority", header: "Priority", render: (r) => r.priority },
+          { key: "source", header: "Source", render: (r) => r.source.toUpperCase() },
+          { key: "lines", header: "Lines", render: (r) => String(r.lines.length) },
+          { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status.replace("_", " ")} />, sortValue: (r) => r.status },
           {
-            key: "pick",
-            header: "",
-            className: "w-8",
-            render: (r) => (
-              <input
-                type="checkbox"
-                aria-label={`Select ${r.name}`}
-                checked={picked[r.id] ?? false}
-                onChange={(e) => setPicked({ ...picked, [r.id]: e.target.checked })}
-              />
-            ),
+            key: "action",
+            header: "Next",
+            render: (r) => {
+              const next =
+                r.status === "draft" ? "submitted" :
+                r.status === "submitted" ? "approved" :
+                r.status === "approved" ? "converted" : null;
+              return next ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={updateStatus.isPending}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void runMutation(
+                      updateStatus.mutateAsync({ id: r.id, status: next as T.PurchaseRequisitionStatus }),
+                      `PR ${r.pr_no} marked ${next}`,
+                    );
+                  }}
+                >
+                  {next.replace("_", " ")}
+                </Button>
+              ) : null;
+            },
           },
-          { key: "code", header: "Code", render: (r) => <span className="font-mono text-xs">{r.code}</span>, searchValue: (r) => r.code },
-          { key: "name", header: "Material", render: (r) => r.name, searchValue: (r) => r.name, sortValue: (r) => r.name },
-          { key: "stock", header: "Stock", className: "text-right", render: (r) => <span className="tabular-nums">{formatNumber(r.stock, 2)} {r.unit}</span> },
-          { key: "min", header: "Min", className: "text-right", render: (r) => <span className="tabular-nums">{formatNumber(r.min_stock, 2)}</span> },
-          { key: "req", header: "SO demand", className: "text-right", render: (r) => <span className="tabular-nums">{formatNumber(r.required, 2)}</span> },
-          { key: "short", header: "Shortage", className: "text-right", render: (r) => <span className="font-semibold tabular-nums text-destructive">{formatNumber(r.shortage, 2)}</span>, sortValue: (r) => r.shortage },
         ]}
       />
+
+      <div className="rounded-md border p-4">
+        <SectionTitle>Planning suggestions</SectionTitle>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Current demo calculation only: open sales demand + minimum stock − on-hand. This is deliberately separate from stored PRs so the future MRP engine can replace the calculation without changing the PR document.
+        </p>
+        <DataTable
+          data={planningRows}
+          rowKey={(r) => r.id}
+          exportName="material-planning-suggestions"
+          emptyTitle="No current material shortages"
+          toolbar={
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={planningRows.length === 0}
+              onClick={() => onRaise(planningRows.map((r) => ({
+                material_id: r.id,
+                quantity: Math.ceil(r.shortage),
+                rate: r.cost,
+                gst_rate: 18,
+              })))}
+            >
+              <ShoppingCart className="mr-1 h-4 w-4" /> Prepare PO from shortages
+            </Button>
+          }
+          columns={[
+            { key: "code", header: "Code", render: (r) => <span className="font-mono text-xs">{r.code}</span> },
+            { key: "name", header: "Material", render: (r) => r.name },
+            { key: "stock", header: "Stock", className: "text-right", render: (r) => formatNumber(r.stock, 2) },
+            { key: "min", header: "Min", className: "text-right", render: (r) => formatNumber(r.min_stock, 2) },
+            { key: "short", header: "Suggested qty", className: "text-right", render: (r) => <span className="font-semibold">{formatNumber(r.shortage, 2)}</span> },
+          ]}
+        />
+      </div>
+
+      <FormDialog
+        open={open}
+        onOpenChange={setOpen}
+        title="New purchase requisition"
+        wide
+        onSubmit={() => void submit()}
+        pending={create.isPending}
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <FormField label="PR number">
+            <Input value={head.pr_no} onChange={(e) => setHead({ ...head, pr_no: e.target.value })} className="font-mono" />
+          </FormField>
+          <FormField label="PR date">
+            <Input type="date" value={head.pr_date} onChange={(e) => setHead({ ...head, pr_date: e.target.value })} />
+          </FormField>
+          <FormField label="Required by">
+            <Input type="date" value={head.required_date} onChange={(e) => setHead({ ...head, required_date: e.target.value })} />
+          </FormField>
+          <FormField label="Requested by">
+            <Input value={head.requested_by} onChange={(e) => setHead({ ...head, requested_by: e.target.value })} placeholder="Employee / requester" />
+          </FormField>
+          <FormField label="Department">
+            <Input value={head.department} onChange={(e) => setHead({ ...head, department: e.target.value })} placeholder="Production / Stores / Maintenance" />
+          </FormField>
+          <FormField label="Priority">
+            <SelectField value={head.priority} onChange={(v) => setHead({ ...head, priority: v })} options={[
+              { value: "low", label: "Low" },
+              { value: "normal", label: "Normal" },
+              { value: "high", label: "High" },
+              { value: "urgent", label: "Urgent" },
+            ]} />
+          </FormField>
+          <FormField label="Warehouse">
+            <SelectField allowNone value={head.warehouse_id} onChange={(v) => setHead({ ...head, warehouse_id: v })} options={(warehouses.data ?? []).map((w) => ({ value: w.id, label: `${w.code} — ${w.name}` }))} />
+          </FormField>
+          <FormField label="Notes" className="sm:col-span-2">
+            <Input value={head.notes} onChange={(e) => setHead({ ...head, notes: e.target.value })} />
+          </FormField>
+        </div>
+
+        <SectionTitle actions={<Button type="button" size="sm" variant="outline" onClick={addLine}><Plus className="mr-1 h-3.5 w-3.5" /> Line</Button>}>
+          Materials
+        </SectionTitle>
+        <div className="space-y-2">
+          {lines.map((l, i) => (
+            <div key={i} className="grid grid-cols-[1fr_100px_140px_32px] items-center gap-2">
+              <SelectField
+                value={l.material_id}
+                onChange={(v) => {
+                  const m = materials.data?.find((x) => x.id === v);
+                  setLines(lines.map((x, j) => j === i ? { ...x, material_id: v, material_name: m?.name ?? "" } : x));
+                }}
+                options={(materials.data ?? []).map((m) => ({ value: m.id, label: `${m.code} — ${m.name}` }))}
+                placeholder="Material"
+              />
+              <NumInput value={l.quantity} onChange={(n) => setLines(lines.map((x, j) => j === i ? { ...x, quantity: n } : x))} />
+              <Input type="date" value={l.required_date ?? head.required_date} onChange={(e) => setLines(lines.map((x, j) => j === i ? { ...x, required_date: e.target.value || null } : x))} />
+              <Button type="button" size="icon" variant="ghost" className="h-8 w-8" onClick={() => setLines(lines.filter((_, j) => j !== i))} aria-label="Remove line">
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ))}
+          <p className="text-xs text-muted-foreground">Quantity · Required date</p>
+        </div>
+      </FormDialog>
     </div>
   );
 }
