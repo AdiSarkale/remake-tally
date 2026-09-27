@@ -14,6 +14,8 @@ class Settings(BaseSettings):
 
     # Transitional/local fallback. Existing single-DB deployments continue to work
     # until control_database_url is configured.
+    control_database_url: str | None = None
+
     database_url: str = "postgresql+psycopg://minitally:minitally@localhost:5432/minitally"
 
     jwt_secret: str = "change-me-in-production"
