@@ -20,7 +20,7 @@ ROLE_PERMISSIONS: dict[models.Role, set[str]] = {
 def current_user(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
     db: Session = Depends(get_db),
-    request: Request = None,
+    request: Request,
 ) -> models.User:
     if creds is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
