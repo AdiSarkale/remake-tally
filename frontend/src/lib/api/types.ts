@@ -569,6 +569,42 @@ export interface DispatchOut {
   created_by: string;
 }
 
+export type PurchaseRequisitionStatus = "draft" | "submitted" | "approved" | "rejected" | "converted";
+export type PurchaseRequisitionSource = "manual" | "mrp";
+
+export interface PurchaseRequisitionLineIn {
+  material_id: string;
+  material_name: string;
+  quantity: number;
+  required_date: string | null;
+  notes: string;
+}
+
+export interface PurchaseRequisitionLineOut extends PurchaseRequisitionLineIn {
+  id: number;
+}
+
+export interface PurchaseRequisitionIn {
+  pr_no: string;
+  pr_date: string;
+  required_date: string | null;
+  requested_by: string;
+  department: string;
+  priority: string;
+  warehouse_id: string | null;
+  notes: string;
+  source: PurchaseRequisitionSource;
+  source_reference: string;
+  status: PurchaseRequisitionStatus;
+  lines: PurchaseRequisitionLineIn[];
+}
+
+export interface PurchaseRequisitionOut extends PurchaseRequisitionIn {
+  id: string;
+  created_by: string;
+  lines: PurchaseRequisitionLineOut[];
+}
+
 // ---------- Purchasing / locations / customer POs ----------
 export interface SupplierProductIn {
   supplier_id: string;
