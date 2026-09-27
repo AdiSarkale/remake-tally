@@ -12,6 +12,7 @@ export type QualityStatus = "Pending" | "Accepted" | "Rejected" | "Accepted with
 
 // ---------- Auth ----------
 export interface LoginRequest {
+  company_code: string;
   username: string;
   password: string;
 }
@@ -20,6 +21,9 @@ export interface TokenResponse {
   token_type: string;
   role: Role;
   full_name: string;
+  company_id: string;
+  company_code: string;
+  company_name: string;
   must_change_password: boolean;
 }
 export interface UserOut {
