@@ -198,6 +198,14 @@ def decide_approval(
         raise HTTPException(400, "Approval is already decided")
     row.status = payload.status
     row.remarks = payload.remarks
+    if row.request_type == "Purchase Requisition" and row.reference_id:
+        pr = db.get(models.PurchaseRequisition, row.reference_id)
+        if pr is not None:
+            pr.status = (
+                models.PurchaseRequisitionStatus.approved
+                if payload.status == "Approved"
+                else models.PurchaseRequisitionStatus.rejected
+            )
     row.decided_by = user.username
     row.decided_at = datetime.utcnow()
     log_audit(db, user.username, payload.status.upper(), "approval_request", row.reference_no or row.id)
