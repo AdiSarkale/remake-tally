@@ -39,7 +39,7 @@ class UserOut(ORMModel):
     email: str = ""
     active: bool = True
     must_change_password: bool = False
-    company_id: str
+    company_id: str = ""
 
 
 class UserCreate(BaseModel):
