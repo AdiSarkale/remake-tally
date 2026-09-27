@@ -1,0 +1,55 @@
+import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { clearSession, getStoredProfile, getToken, type StoredProfile } from "./api/client";
+import { useMe } from "./api/hooks";
+import type { Role } from "./api/types";
+
+// Mirrors backend ROLE_PERMISSIONS in app/api/deps.py — used only for
+// navigation visibility; the backend enforces the real permissions.
+const ROLE_AREAS: Record<Role, Set<string>> = {
+  Admin: new Set(["masters", "inventory", "production", "scrap", "sales", "finance", "settings", "reports"]),
+  Accountant: new Set(["masters", "inventory", "sales", "reports"]),
+  Operator: new Set(["production", "scrap", "inventory"]),
+};
+
+interface AuthState {
+  token: string | null;
+  profile: StoredProfile | null;
+  role: Role | null;
+  can: (area: string) => boolean;
+  logout: () => void;
+}
+
+const AuthContext = createContext<AuthState | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
+  const token = getToken();
+  const { data: me } = useMe(!!token);
+  const stored = getStoredProfile();
+
+  const value = useMemo<AuthState>(() => {
+    const profile: StoredProfile | null = me
+      ? { full_name: me.full_name, role: me.role, username: me.username }
+      : stored;
+    const role = (profile?.role as Role | undefined) ?? null;
+    return {
+      token,
+      profile,
+      role,
+      can: (area: string) => (role ? (ROLE_AREAS[role]?.has(area) ?? false) : false),
+      logout: () => {
+        clearSession();
+        navigate({ to: "/login" });
+      },
+    };
+  }, [token, me, stored, navigate]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth(): AuthState {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
+  return ctx;
+}
