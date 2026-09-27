@@ -20,6 +20,7 @@ export interface TokenResponse {
   token_type: string;
   role: Role;
   full_name: string;
+  must_change_password: boolean;
 }
 export interface UserOut {
   id: string;
