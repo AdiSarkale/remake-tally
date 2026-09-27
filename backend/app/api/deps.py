@@ -41,7 +41,7 @@ def current_company(
     return company
 
 
-def tenant_db(
+def get_db(
     company: models.TenantCompany = Depends(current_company),
 ):
     db = get_tenant_db(company)
