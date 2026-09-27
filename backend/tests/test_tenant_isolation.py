@@ -8,6 +8,8 @@ and self-contained for CI.
 from pathlib import Path
 
 import pytest
+import app.api.deps as deps
+import app.api.routes.auth as auth_routes
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -61,11 +63,12 @@ def tenant_environment(tmp_path: Path):
         finally:
             db.close()
 
-    def override_tenant_db(company):
+    def tenant_db_for(company):
         return TenantASession() if company.id == "company-a" else TenantBSession()
 
+    deps.get_tenant_db = tenant_db_for
+    auth_routes.get_tenant_db = tenant_db_for
     app.dependency_overrides[get_control_db] = override_control_db
-
     yield {
         "control": control,
         "companies": (company_a, company_b),
