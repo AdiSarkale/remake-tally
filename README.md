@@ -86,7 +86,7 @@ Scrap / Finished Goods
 
 Current known gaps:
 
-- Purchase Requisition is a computed view because the backend does not store a requisition entity.
+- Purchase Requisition is a stored manual document with draft/submitted/approved workflow; MRP-generated PRs are reserved through the source field for future planning.
 - Employee edit/deactivate is not implemented.
 - Reports and Settings are placeholders.
 - Full Payroll, Attendance and Leave are intentionally out of current scope.
