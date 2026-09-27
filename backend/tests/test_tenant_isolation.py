@@ -115,3 +115,17 @@ def test_deactivated_company_cannot_authenticate(tenant_environment):
         "company_code": "A", "username": "admin", "password": "Password@123"
     })
     assert response.status_code == 401
+
+def test_deactivated_company_invalidates_existing_token(tenant_environment):
+    client = TestClient(app)
+    login = client.post('/api/v1/auth/login', json={'company_code': 'A', 'username': 'admin', 'password': 'Password@123'})
+    assert login.status_code == 200
+    token = login.json()['access_token']
+
+    company = tenant_environment['companies'][0]
+    control = tenant_environment['control']
+    company.active = False
+    control.commit()
+
+    response = client.get('/api/v1/auth/me', headers={'Authorization': f'Bearer {token}'})
+    assert response.status_code == 401
