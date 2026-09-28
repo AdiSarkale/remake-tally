@@ -37,3 +37,11 @@ def get_control_db():
         raise
     finally:
         db.close()
+
+
+def dispose_control_engine() -> None:
+    """Dispose the cached control-plane pool during application shutdown."""
+    if get_control_engine.cache_info().currsize:
+        get_control_engine().dispose()
+        get_control_engine.cache_clear()
+        get_control_session_factory.cache_clear()
