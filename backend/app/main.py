@@ -45,14 +45,16 @@ def liveness() -> dict[str, str]:
 @app.get("/health/ready", tags=["system"])
 def readiness() -> dict[str, str]:
     """Readiness check for the control plane required by authenticated traffic."""
-    db = next(get_control_db())
+    db = None
     try:
+        db = next(get_control_db())
         db.execute(text("SELECT 1"))
         db.execute(select(TenantCompany.id).limit(1))
-    except SQLAlchemyError as exc:
+    except (SQLAlchemyError, RuntimeError) as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Control-plane database is not ready") from exc
     finally:
-        db.close()
+        if db is not None:
+            db.close()
     return {"status": "ready"}
 
 
