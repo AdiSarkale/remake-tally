@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, inspect, text
 
 from app.db.control_models import TenantCompany
 from app.db.control import get_control_session_factory
-from app.services.tenants import migrate_all_ready_tenants, register_company
+from app.services.tenants import migrate_all_ready_tenants, register_company, retry_failed_company
 
 
 pytestmark = pytest.mark.integration
@@ -125,6 +125,27 @@ def test_postgres_company_provisioning_and_fleet_migration():
 
         migrated = migrate_all_ready_tenants()
         assert all(code in migrated for code in (f"PG{marker}A", f"PG{marker}B"))
+
+        control_factory = get_control_session_factory()
+        control = control_factory()
+        try:
+            first = control.query(TenantCompany).filter_by(code=f"PG{marker}A").one()
+            first.active = False
+            first.provisioning_status = "failed"
+            failed_id = first.id
+            control.commit()
+        finally:
+            control.close()
+
+        retry_failed_company(failed_id)
+
+        control = control_factory()
+        try:
+            recovered = control.get(TenantCompany, failed_id)
+            assert recovered.active is True
+            assert recovered.provisioning_status == "ready"
+        finally:
+            control.close()
 
     finally:
         for suffix in ("A", "B"):
