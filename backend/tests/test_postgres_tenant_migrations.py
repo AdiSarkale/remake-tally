@@ -97,7 +97,8 @@ def test_postgres_company_provisioning_and_fleet_migration():
             assert len(companies) == 2
             assert all(company.active for company in companies)
             assert all(company.provisioning_status == "ready" for company in companies)
-            assert all(company.database_secret_ref == company.code for company in companies)
+            expected_secret_refs = {f"PG{marker}A", f"PG{marker}B"}
+            assert {company.database_secret_ref for company in companies} == expected_secret_refs
 
             with psycopg.connect(_psycopg_url(control_url)) as control_connection:
                 columns = {
