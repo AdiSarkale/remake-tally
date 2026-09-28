@@ -26,6 +26,10 @@ from app.services.tenants import migrate_all_ready_tenants, register_company, re
 pytestmark = pytest.mark.integration
 
 
+def _psycopg_url(url: str) -> str:
+    return url.replace("postgresql+psycopg://", "postgresql://", 1)
+
+
 def _admin_url() -> str:
     value = os.getenv("POSTGRES_TEST_ADMIN_URL")
     if not value:
@@ -41,12 +45,12 @@ def _control_url() -> str:
 
 
 def _create_database(admin_url: str, name: str) -> None:
-    with psycopg.connect(admin_url, autocommit=True) as conn:
+    with psycopg.connect(_psycopg_url(admin_url), autocommit=True) as conn:
         conn.execute(f'CREATE DATABASE "{name}"')
 
 
 def _drop_database(admin_url: str, name: str) -> None:
-    with psycopg.connect(admin_url, autocommit=True) as conn:
+    with psycopg.connect(_psycopg_url(admin_url), autocommit=True) as conn:
         conn.execute(
             "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
             "WHERE datname = %s AND pid <> pg_backend_pid()",
@@ -95,7 +99,7 @@ def test_postgres_company_provisioning_and_fleet_migration():
             assert all(company.provisioning_status == "ready" for company in companies)
             assert all(company.database_secret_ref == company.code for company in companies)
 
-            with psycopg.connect(control_url) as control_connection:
+            with psycopg.connect(_psycopg_url(control_url)) as control_connection:
                 columns = {
                     row[0]
                     for row in control_connection.execute(
