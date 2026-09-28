@@ -18,6 +18,7 @@ def _auto_employee(db: Session, operation: models.RoutingOperation) -> models.Em
         models.EmployeeSkill.employee_id == models.Employee.id,
     ).filter(
         models.Employee.active.is_(True),
+        models.Employee.employee_type == models.EmployeeType.shop_floor,
         models.EmployeeSkill.active.is_(True),
     )
     if operation.required_skill.strip():
