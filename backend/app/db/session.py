@@ -59,7 +59,7 @@ def get_db(
         )
 
     company = control_db.get(TenantCompany, str(company_id))
-    if company is None or not company.active:
+    if company is None or not company.active or company.provisioning_status != "ready":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Company no longer exists or is inactive",
