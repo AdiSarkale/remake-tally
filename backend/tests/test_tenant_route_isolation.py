@@ -182,8 +182,8 @@ def test_route_db_dependency_is_tenant_scoped(isolated_tenants):
     checks = [
         ("/api/v1/masters/customers", lambda rows: [r["name"] for r in rows], "Company A Customer", "Company B Customer"),
         ("/api/v1/masters/suppliers", lambda rows: [r["name"] for r in rows], "Company A Supplier", "Company B Supplier"),
-        ("/api/v1/masters/products", lambda rows: [r["code"] for r in rows], "FG-A", "FG-B"),
-        ("/api/v1/masters/materials", lambda rows: [r["code"] for r in rows], "RM-A", "RM-B"),
+        ("/api/v1/masters/products", lambda rows: [r["code"] for r in rows], "FG-a", "FG-b"),
+        ("/api/v1/masters/materials", lambda rows: [r["code"] for r in rows], "RM-a", "RM-b"),
         ("/api/v1/sales/invoices", lambda rows: [r["invoice_no"] for r in rows], "INV-A", "INV-B"),
         ("/api/v1/purchasing/requisitions", lambda rows: [r["pr_no"] for r in rows], "PR-A", "PR-B"),
         ("/api/v1/finance/customer-payments", lambda rows: [r["payment_no"] for r in rows], "CPAY-A", "CPAY-B"),
