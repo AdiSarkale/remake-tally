@@ -25,4 +25,5 @@ class TenantCompany(ControlBase):
     name: Mapped[str] = mapped_column(String(160))
     database_url: Mapped[str] = mapped_column(Text)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    provisioning_status: Mapped[str] = mapped_column(String(24), default="ready", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
