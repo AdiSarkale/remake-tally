@@ -66,11 +66,13 @@ def test_postgres_company_provisioning_and_fleet_migration():
 
         company_ids = []
         for suffix, database_url in zip(("A", "B"), tenant_urls):
+            secret_ref = f"PG{marker}{suffix}"
+            os.environ[f"TENANT_DB_URL_{secret_ref}"] = database_url
             company_ids.append(
                 register_company(
-                    f"pg{marker}{suffix}",
+                    secret_ref,
                     f"PostgreSQL Company {suffix}",
-                    database_url,
+                    secret_ref,
                     initialize_schema=True,
                 )
             )
@@ -87,6 +89,7 @@ def test_postgres_company_provisioning_and_fleet_migration():
             assert len(companies) == 2
             assert all(company.active for company in companies)
             assert all(company.provisioning_status == "ready" for company in companies)
+            assert all(company.database_secret_ref == company.code for company in companies)
         finally:
             control.close()
 
@@ -112,5 +115,7 @@ def test_postgres_company_provisioning_and_fleet_migration():
         assert all(code in migrated for code in (f"PG{marker}A", f"PG{marker}B"))
 
     finally:
+        for suffix in ("A", "B"):
+            os.environ.pop(f"TENANT_DB_URL_PG{marker}{suffix}", None)
         for name in database_names:
             _drop_database(admin_url, name)
