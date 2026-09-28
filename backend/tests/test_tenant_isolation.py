@@ -36,8 +36,8 @@ def tenant_environment(tmp_path: Path):
     TenantBSession = sessionmaker(bind=tenant_b_engine)
 
     control = ControlSession()
-    company_a = TenantCompany(id="company-a", code="A", name="Company A", database_url=f"sqlite:///{tmp_path / 'company_a.db'}")
-    company_b = TenantCompany(id="company-b", code="B", name="Company B", database_url=f"sqlite:///{tmp_path / 'company_b.db'}")
+    company_a = TenantCompany(id="company-a", code="AA", name="Company A", database_url=f"sqlite:///{tmp_path / 'company_a.db'}")
+    company_b = TenantCompany(id="company-b", code="BB", name="Company B", database_url=f"sqlite:///{tmp_path / 'company_b.db'}")
     control.add_all([company_a, company_b])
     control.commit()
 
@@ -81,10 +81,10 @@ def test_same_username_isolated_by_company(tenant_environment):
     client = TestClient(app)
 
     a = client.post("/api/v1/auth/login", json={
-        "company_code": "A", "username": "admin", "password": "Password@123"
+        "company_code": "AA", "username": "admin", "password": "Password@123"
     })
     b = client.post("/api/v1/auth/login", json={
-        "company_code": "B", "username": "admin", "password": "Password@123"
+        "company_code": "BB", "username": "admin", "password": "Password@123"
     })
 
     assert a.status_code == 200
