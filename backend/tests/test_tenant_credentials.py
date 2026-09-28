@@ -26,6 +26,7 @@ def test_local_default_is_development_only(monkeypatch):
         "CONTROL_DATABASE_URL",
         "postgresql+psycopg://user:pass@control/control",
     )
+    monkeypatch.setenv("CORS_ORIGINS", '["https://erp.example.com"]')
     get_settings.cache_clear()
     try:
         with pytest.raises(RuntimeError, match="unavailable"):
@@ -35,3 +36,4 @@ def test_local_default_is_development_only(monkeypatch):
         monkeypatch.delenv("ENVIRONMENT", raising=False)
         monkeypatch.delenv("JWT_SECRET", raising=False)
         monkeypatch.delenv("CONTROL_DATABASE_URL", raising=False)
+        monkeypatch.delenv("CORS_ORIGINS", raising=False)
