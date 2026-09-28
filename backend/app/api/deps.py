@@ -59,7 +59,7 @@ def get_db(
 def current_user(
     request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
-    company: models.TenantCompany = Depends(current_company),
+    company: TenantCompany = Depends(current_company),
 ) -> models.User:
     db = get_tenant_db(company)
     try:
