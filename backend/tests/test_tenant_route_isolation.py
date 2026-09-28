@@ -7,6 +7,10 @@ resolved against the JWT-selected tenant database.
 """
 
 from pathlib import Path
+import sys
+
+# Allow the suite to run both from the repository root and from backend/.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pytest
 from fastapi.routing import APIRoute
