@@ -20,7 +20,11 @@ def login(
 ) -> schemas.TokenResponse:
     company = (
         control_db.query(TenantCompany)
-        .filter(TenantCompany.code == payload.company_code.upper(), TenantCompany.active.is_(True))
+        .filter(\
+            TenantCompany.code == payload.company_code.upper(),\
+            TenantCompany.active.is_(True),\
+            TenantCompany.provisioning_status == "ready",\
+        )
         .first()
     )
     if company is None:
