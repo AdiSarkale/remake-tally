@@ -20,7 +20,8 @@ from sqlalchemy.orm import sessionmaker
 
 import app.api.deps as deps
 import app.api.routes.auth as auth_routes
-import app.db.session as session_module\nimport app.db.control_models as models_control
+import app.db.session as session_module
+import app.db.control_models as models_control\nimport app.db.control_models as models_control
 from app import models
 from app.db.control import get_control_db
 from app.db.control_models import ControlBase, TenantCompany
@@ -151,7 +152,8 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
 
     yield {
         "client": TestClient(app),
-        "sessions": (TenantASession, TenantBSession),\n        "control_session": ControlSession,
+        "sessions": (TenantASession, TenantBSession),
+        "control_session": ControlSession,\n        "control_session": ControlSession,
     }
 
     app.dependency_overrides.clear()
@@ -477,3 +479,193 @@ def test_operator_and_accountant_have_inventory_and_purchase_request_access(isol
         requisitions = client.get("/api/v1/purchasing/requisitions", headers=headers)
         assert inventory.status_code == 200
         assert requisitions.status_code == 200
+
+
+def test_company_write_operations_stay_in_selected_tenant(isolated_tenants):
+    client = isolated_tenants["client"]
+    sessions = isolated_tenants["sessions"]
+    a = _login(client, "AA")
+    b = _login(client, "BB")
+    a_headers = {"Authorization": f"Bearer {a['access_token']}"}
+    b_headers = {"Authorization": f"Bearer {b['access_token']}"}
+
+    created = client.post("/api/v1/masters/customers", headers=a_headers, json={"name": "A-only Customer"})
+    assert created.status_code == 201, created.text
+    customer_id = created.json()["id"]
+
+    a_db, b_db = sessions
+    a_check = a_db()
+    b_check = b_db()
+    try:
+        assert a_check.get(models.Party, customer_id).name == "A-only Customer"
+        assert b_check.get(models.Party, customer_id) is None
+    finally:
+        a_check.close()
+        b_check.close()
+
+    cross_tenant_update = client.put(
+        f"/api/v1/masters/customers/{customer_id}",
+        headers=b_headers,
+        json={"name": "B attempted takeover"},
+    )
+    assert cross_tenant_update.status_code == 404
+
+    cross_tenant_delete = client.delete(f"/api/v1/masters/customers/{customer_id}", headers=b_headers)
+    assert cross_tenant_delete.status_code == 404
+
+
+def test_inactive_or_non_ready_company_cannot_login(isolated_tenants):
+    client = isolated_tenants["client"]
+    ControlSession = isolated_tenants["control_session"]
+
+    db = ControlSession()
+    company_b = db.get(models_control.TenantCompany, "company-b")
+    company_b.active = False
+    db.commit()
+    db.close()
+
+    inactive = client.post("/api/v1/auth/login", json={
+        "company_code": "BB", "username": "admin", "password": "Password@123"
+    })
+    assert inactive.status_code == 401
+
+    db = ControlSession()
+    company_b = db.get(models_control.TenantCompany, "company-b")
+    company_b.active = True
+    company_b.provisioning_status = "provisioning"
+    db.commit()
+    db.close()
+
+    not_ready = client.post("/api/v1/auth/login", json={
+        "company_code": "BB", "username": "admin", "password": "Password@123"
+    })
+    assert not_ready.status_code == 401
+
+
+def test_first_login_requires_password_change_and_then_unlocks_access(isolated_tenants):
+    client = isolated_tenants["client"]
+    TenantASession = isolated_tenants["sessions"][0]
+
+    db = TenantASession()
+    db.add(models.User(
+        username="firstlogin",
+        full_name="First Login",
+        password_hash=hash_password("Initial@123"),
+        role=models.Role.operator,
+        active=True,
+        must_change_password=True,
+    ))
+    db.commit()
+    db.close()
+
+    login = client.post("/api/v1/auth/login", json={
+        "company_code": "AA", "username": "firstlogin", "password": "Initial@123"
+    })
+    assert login.status_code == 200
+    assert login.json()["must_change_password"] is True
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    blocked = client.get("/api/v1/masters/products", headers=headers)
+    assert blocked.status_code == 403
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
+
+    changed = client.post(
+        "/api/v1/users/me/change-password",
+        headers=headers,
+        json={"current_password": "Initial@123", "new_password": "Changed@123"},
+    )
+    assert changed.status_code == 204
+    assert client.get("/api/v1/inventory/valuation", headers=headers).status_code == 200
+
+
+def test_only_admin_can_reset_passwords(isolated_tenants):
+    client = isolated_tenants["client"]
+    TenantASession = isolated_tenants["sessions"][0]
+
+    db = TenantASession()
+    operator = models.User(
+        username="operator",
+        full_name="Operator",
+        password_hash=hash_password("Operator@123"),
+        role=models.Role.operator,
+        active=True,
+        must_change_password=False,
+    )
+    target = models.User(
+        username="target",
+        full_name="Target",
+        password_hash=hash_password("Target@123"),
+        role=models.Role.operator,
+        active=True,
+        must_change_password=False,
+    )
+    db.add_all([operator, target])
+    db.commit()
+    target_id = target.id
+    db.close()
+
+    admin_login = _login(client, "AA")
+    login = client.post("/api/v1/auth/login", json={
+        "company_code": "AA", "username": "operator", "password": "Operator@123"
+    })
+    assert login.status_code == 200
+    operator_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    forbidden = client.post(
+        f"/api/v1/users/{target_id}/reset-password",
+        headers=operator_headers,
+        json={"new_password": "Reset@123"},
+    )
+    assert forbidden.status_code == 403
+
+    allowed = client.post(
+        f"/api/v1/users/{target_id}/reset-password",
+        headers={"Authorization": f"Bearer {admin_login['access_token']}"},
+        json={"new_password": "Reset@123"},
+    )
+    assert allowed.status_code == 204
+
+    target_login = client.post("/api/v1/auth/login", json={
+        "company_code": "AA", "username": "target", "password": "Reset@123"
+    })
+    assert target_login.status_code == 200
+    assert target_login.json()["must_change_password"] is True
+
+
+def test_operator_and_accountant_have_inventory_and_purchase_request_access(isolated_tenants):
+    client = isolated_tenants["client"]
+    TenantASession = isolated_tenants["sessions"][0]
+
+    db = TenantASession()
+    db.add_all([
+        models.User(
+            username="accountant",
+            full_name="Accountant",
+            password_hash=hash_password("Accountant@123"),
+            role=models.Role.accountant,
+            active=True,
+            must_change_password=False,
+        ),
+        models.User(
+            username="operator2",
+            full_name="Operator 2",
+            password_hash=hash_password("Operator2@123"),
+            role=models.Role.operator,
+            active=True,
+            must_change_password=False,
+        ),
+    ])
+    db.commit()
+    db.close()
+
+    for username, password in (
+        ("accountant", "Accountant@123"),
+        ("operator2", "Operator2@123"),
+    ):
+        login = client.post("/api/v1/auth/login", json={
+            "company_code": "AA", "username": username, "password": password
+        })
+        assert login.status_code == 200
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        assert client.get("/api/v1/inventory/valuation", headers=headers).status_code == 200
+        assert client.get("/api/v1/purchasing/requisitions", headers=headers).status_code == 200
