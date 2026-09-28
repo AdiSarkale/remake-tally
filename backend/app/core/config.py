@@ -22,7 +22,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_issuer: str = "minitally-api"
     jwt_audience: str = "minitally-web"
-    access_token_expire_minutes: int = 60 * 8
+    access_token_expire_minutes: int = 30
+    jwt_clock_skew_seconds: int = 30
+    tenant_db_require_tls: bool = True
 
     tenant_engine_cache_size: int = 32
     tenant_pool_size: int = 2
@@ -45,6 +47,8 @@ class Settings(BaseSettings):
             or self.tenant_pool_max_overflow < 0
             or self.tenant_pool_timeout_seconds <= 0
             or self.tenant_pool_recycle_seconds <= 0
+            or self.access_token_expire_minutes < 5
+            or self.jwt_clock_skew_seconds < 0
         ):
             raise ValueError("Tenant connection pool settings must be positive and valid")
         if self.environment.lower() == "production":
@@ -52,6 +56,10 @@ class Settings(BaseSettings):
                 raise ValueError("JWT_SECRET must be a strong secret of at least 32 characters in production")
             if not self.control_database_url:
                 raise ValueError("CONTROL_DATABASE_URL must be configured in production")
+            if "sslmode=" not in self.control_database_url.lower():
+                raise ValueError("CONTROL_DATABASE_URL must explicitly configure PostgreSQL TLS via sslmode")
+            if self.access_token_expire_minutes > 60:
+                raise ValueError("ACCESS_TOKEN_EXPIRE_MINUTES must not exceed 60 in production")
             if not self.cors_origins:
                 raise ValueError("CORS_ORIGINS must contain the production frontend origin")
             if any(origin.startswith("http://localhost") for origin in self.cors_origins):
