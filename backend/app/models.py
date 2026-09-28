@@ -1101,7 +1101,7 @@ class PurchaseOrder(Base):
     supplier_id: Mapped[str] = mapped_column(ForeignKey("parties.id"))
     supplier_name: Mapped[str] = mapped_column(String(160))
     warehouse_id: Mapped[str | None] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
-    notes: Mapped[str] = mapped_column(Text)
+    notes: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[PurchaseOrderStatus] = mapped_column(Enum(PurchaseOrderStatus))
     sub_total: Mapped[float] = mapped_column(Float)
     gst_total: Mapped[float] = mapped_column(Float)
