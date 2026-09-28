@@ -45,5 +45,6 @@ def decode_access_token(token: str) -> dict[str, Any]:
         algorithms=[settings.jwt_algorithm],
         issuer=settings.jwt_issuer,
         audience=settings.jwt_audience,
-        options={"require": ["exp", "iat", "iss", "aud", "sub", "company_id"]},
+        leeway=settings.jwt_clock_skew_seconds,
+        options={"require": ["exp", "iat", "iss", "aud", "sub", "company_id", "jti", "role"]},
     )
