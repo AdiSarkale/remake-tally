@@ -85,13 +85,15 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
         product = models.Product(
             id=f"product-{suffix}",
             code=f"FG-{suffix}",
-            name=f"{company_label} Product",
+            name=f"${company_label} Product",
+            cost_price=10 if suffix == "a" else 20,
             stock=10 if suffix == "a" else 20,
         )
         material = models.RawMaterial(
             id=f"material-{suffix}",
             code=f"RM-{suffix}",
-            name=f"{company_label} Material",
+            name=f"${company_label} Material",
+            cost=5 if suffix == "a" else 15,
             stock=5 if suffix == "a" else 15,
         )
         invoice = models.Invoice(
@@ -178,16 +180,16 @@ def test_route_db_dependency_is_tenant_scoped(isolated_tenants):
     b_headers = {"Authorization": f"Bearer {b['access_token']}"}
 
     checks = [
-        ("/api/v1/masters/customers", lambda rows: [r["name"] for r in rows]),
-        ("/api/v1/masters/suppliers", lambda rows: [r["name"] for r in rows]),
-        ("/api/v1/masters/products", lambda rows: [r["code"] for r in rows]),
-        ("/api/v1/masters/materials", lambda rows: [r["code"] for r in rows]),
-        ("/api/v1/sales/invoices", lambda rows: [r["invoice_no"] for r in rows]),
-        ("/api/v1/purchasing/requisitions", lambda rows: [r["pr_no"] for r in rows]),
-        ("/api/v1/finance/customer-payments", lambda rows: [r["payment_no"] for r in rows]),
+        ("/api/v1/masters/customers", lambda rows: [r["name"] for r in rows], "Company A Customer", "Company B Customer"),
+        ("/api/v1/masters/suppliers", lambda rows: [r["name"] for r in rows], "Company A Supplier", "Company B Supplier"),
+        ("/api/v1/masters/products", lambda rows: [r["code"] for r in rows], "FG-A", "FG-B"),
+        ("/api/v1/masters/materials", lambda rows: [r["code"] for r in rows], "RM-A", "RM-B"),
+        ("/api/v1/sales/invoices", lambda rows: [r["invoice_no"] for r in rows], "INV-A", "INV-B"),
+        ("/api/v1/purchasing/requisitions", lambda rows: [r["pr_no"] for r in rows], "PR-A", "PR-B"),
+        ("/api/v1/finance/customer-payments", lambda rows: [r["payment_no"] for r in rows], "CPAY-A", "CPAY-B"),
     ]
 
-    for path, extract in checks:
+    for path, extract, expected_a, expected_b in checks:
         a_response = client.get(path, headers=a_headers)
         b_response = client.get(path, headers=b_headers)
         assert a_response.status_code == 200, f"{path}: {a_response.text}"
@@ -198,8 +200,10 @@ def test_route_db_dependency_is_tenant_scoped(isolated_tenants):
 
         assert a_values
         assert b_values
-        assert all("B" not in value for value in a_values)
-        assert all("A" not in value for value in b_values)
+        assert expected_a in a_values
+        assert expected_b in b_values
+        assert expected_b not in a_values
+        assert expected_a not in b_values
         assert set(a_values).isdisjoint(b_values)
 
 
