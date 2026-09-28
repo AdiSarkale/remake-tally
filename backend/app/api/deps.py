@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.db.control_models import TenantCompany
+from app.core.security import decode_access_token
 from app.db.control import get_control_db
 from app.db.tenant import get_tenant_db
 from app.services.company_context import resolve_company_from_token
