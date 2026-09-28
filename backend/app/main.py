@@ -3,15 +3,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.db.control_models import ControlBase
-from app.db.control import get_control_engine
 from app.api.routes import approvals, auth, customer_pos, dashboard, delivery, dispatches, finance, inventory, masters, production, purchasing, quotations, sales, sales_orders, scrap, users, bom, manufacturing
 from app.core.config import get_settings
 
 settings = get_settings()
-if settings.control_database_url:
-    ControlBase.metadata.create_all(bind=get_control_engine())
 
+# Schema changes are owned by Alembic. Application startup must never create
+# or mutate control-plane tables implicitly.
 app = FastAPI(title=settings.app_name, version="1.0.0")
 
 app.add_middleware(
