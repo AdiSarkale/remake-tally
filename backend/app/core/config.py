@@ -20,6 +20,8 @@ class Settings(BaseSettings):
 
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
+    jwt_issuer: str = "minitally-api"
+    jwt_audience: str = "minitally-web"
     access_token_expire_minutes: int = 60 * 8
 
     tenant_engine_cache_size: int = 32
