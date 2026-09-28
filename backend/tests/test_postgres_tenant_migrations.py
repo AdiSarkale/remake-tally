@@ -54,6 +54,7 @@ def _drop_database(admin_url: str, name: str) -> None:
 def test_postgres_company_provisioning_and_fleet_migration():
     admin_url = _admin_url()
     control_url = _control_url()
+    control_url = _control_url()
 
     marker = uuid.uuid4().hex[:10]
     database_names = [f"minitally_tenant_{marker}_a", f"minitally_tenant_{marker}_b"]
@@ -90,6 +91,17 @@ def test_postgres_company_provisioning_and_fleet_migration():
             assert all(company.active for company in companies)
             assert all(company.provisioning_status == "ready" for company in companies)
             assert all(company.database_secret_ref == company.code for company in companies)
+
+            with psycopg.connect(control_url) as control_connection:
+                columns = {
+                    row[0]
+                    for row in control_connection.execute(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'tenant_companies'"
+                    )
+                }
+            assert "database_secret_ref" in columns
+            assert "database_url" not in columns
         finally:
             control.close()
 
