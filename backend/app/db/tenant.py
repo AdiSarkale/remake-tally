@@ -1,8 +1,13 @@
-"""Resolve and cache isolated SQLAlchemy connections per company."""
+"""Resolve isolated SQLAlchemy connections per company.
+
+The registry is bounded and disposes evicted engines so a growing tenant
+population cannot leave abandoned connection pools behind.
+"""
 
 from __future__ import annotations
 
-from functools import lru_cache
+from collections import OrderedDict
+from threading import RLock
 
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -10,15 +15,35 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app import models
 
+_MAX_TENANT_ENGINES = 128
+_registry: OrderedDict[str, tuple[Engine, sessionmaker]] = OrderedDict()
+_lock = RLock()
 
-@lru_cache(maxsize=128)
+
+def _get_or_create(database_url: str) -> tuple[Engine, sessionmaker]:
+    with _lock:
+        existing = _registry.pop(database_url, None)
+        if existing is not None:
+            _registry[database_url] = existing
+            return existing
+
+        engine = create_engine(database_url, pool_pre_ping=True)
+        factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+        _registry[database_url] = (engine, factory)
+
+        while len(_registry) > _MAX_TENANT_ENGINES:
+            _, (evicted_engine, _) = _registry.popitem(last=False)
+            evicted_engine.dispose()
+
+        return engine, factory
+
+
 def get_tenant_engine(database_url: str) -> Engine:
-    return create_engine(database_url, pool_pre_ping=True)
+    return _get_or_create(database_url)[0]
 
 
-@lru_cache(maxsize=128)
 def get_tenant_session_factory(database_url: str) -> sessionmaker:
-    return sessionmaker(bind=get_tenant_engine(database_url), autoflush=False, autocommit=False)
+    return _get_or_create(database_url)[1]
 
 
 def get_tenant_db(company: models.TenantCompany) -> Session:
