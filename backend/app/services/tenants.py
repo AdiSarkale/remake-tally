@@ -137,3 +137,55 @@ def bootstrap_demo_company() -> str:
         "LOCAL_DEFAULT",
         initialize_schema=False,
     )
+
+
+def retry_failed_company(company_id: str) -> str:
+    """Retry provisioning/migration for one failed tenant.
+
+    A failed tenant remains inactive until its current schema reaches the
+    tenant Alembic head successfully. A failed retry leaves it failed/inactive.
+    """
+    db = get_control_session_factory()()
+    try:
+        company = db.get(TenantCompany, company_id)
+        if company is None:
+            raise ValueError(f"Company not found: {company_id}")
+        if company.provisioning_status != "failed":
+            raise ValueError(
+                f"Company {company.code} is not failed; refusing recovery transition"
+            )
+        secret_ref = company.database_secret_ref
+        company.provisioning_status = "provisioning"
+        company.active = False
+        db.commit()
+    finally:
+        db.close()
+
+    try:
+        database_url = resolve_tenant_database_url(secret_ref)
+        alembic_cfg = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
+        alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+        command.upgrade(alembic_cfg, "head")
+    except Exception:
+        with get_control_engine().begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE tenant_companies "
+                    "SET provisioning_status = 'failed', active = FALSE "
+                    "WHERE id = :id"
+                ),
+                {"id": company_id},
+            )
+        raise
+
+    with get_control_engine().begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE tenant_companies "
+                "SET provisioning_status = 'ready', active = TRUE "
+                "WHERE id = :id"
+            ),
+            {"id": company_id},
+        )
+
+    return company_id
