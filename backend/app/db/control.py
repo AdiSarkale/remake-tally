@@ -20,7 +20,7 @@ def control_database_url() -> str:
 
 @lru_cache(maxsize=1)
 def get_control_engine():
-    return create_engine(control_database_url(), pool_pre_ping=True)
+    return create_engine(control_database_url(), pool_pre_ping=True, pool_size=5, max_overflow=5, pool_timeout=30, pool_recycle=1800)
 
 
 @lru_cache(maxsize=1)
