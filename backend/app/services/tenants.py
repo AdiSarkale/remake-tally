@@ -52,23 +52,23 @@ def register_company(
             },
         )
 
-    if initialize_schema:
-        try:
-            database_url = resolve_tenant_database_url(database_secret_ref.strip())
+    try:
+        database_url = resolve_tenant_database_url(database_secret_ref.strip())
+        if initialize_schema:
             alembic_cfg = Config(str(Path(__file__).resolve().parents[2] / "alembic.ini"))
             alembic_cfg.set_main_option("sqlalchemy.url", database_url)
             command.upgrade(alembic_cfg, "head")
-        except Exception:
-            with get_control_engine().begin() as connection:
-                connection.execute(
-                    text(
-                        "UPDATE tenant_companies "
-                        "SET provisioning_status = 'failed', active = FALSE "
-                        "WHERE id = :id"
-                    ),
-                    {"id": company_id},
-                )
-            raise
+    except Exception:
+        with get_control_engine().begin() as connection:
+            connection.execute(
+                text(
+                    "UPDATE tenant_companies "
+                    "SET provisioning_status = 'failed', active = FALSE "
+                    "WHERE id = :id"
+                ),
+                {"id": company_id},
+            )
+        raise
 
     with get_control_engine().begin() as connection:
         connection.execute(
