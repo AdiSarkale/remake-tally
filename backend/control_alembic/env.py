@@ -8,22 +8,35 @@ settings = get_settings()
 target_metadata = ControlBase.metadata
 
 
+def _database_url() -> str:
+    return config.get_main_option("sqlalchemy.url") or settings.control_database_url or ""
+
+
 def run_migrations_offline():
-    url = settings.control_database_url
+    url = _database_url()
     if not url:
         raise RuntimeError("CONTROL_DATABASE_URL is required")
-    context.configure(url=url, target_metadata=target_metadata, literal_binds=True, dialect_opts={"paramstyle": "named"})
+    context.configure(
+        url=url,
+        target_metadata=target_metadata,
+        literal_binds=True,
+        dialect_opts={"paramstyle": "named"},
+    )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def run_migrations_online():
-    url = settings.control_database_url
+    url = _database_url()
     if not url:
         raise RuntimeError("CONTROL_DATABASE_URL is required")
     configuration = config.get_section(config.config_ini_section, {})
     configuration["sqlalchemy.url"] = url
-    connectable = engine_from_config(configuration, prefix="sqlalchemy.", poolclass=pool.NullPool)
+    connectable = engine_from_config(
+        configuration,
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
