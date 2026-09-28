@@ -98,7 +98,10 @@ function EmployeeRequisitionTab({ username }: { username: string }) {
   const [notes, setNotes] = useState("");
 
   const submit = async () => {
-    if (!materialId || quantity <= 0) return toast.error("Select a material and quantity");
+    if (!materialId || quantity <= 0) {
+      toast.error("Select a material and quantity");
+      return;
+    }
     const material = (materials.data ?? []).find(m => m.id === materialId);
     if (!material) return;
     const no = docNo("PR");
@@ -130,10 +133,10 @@ function EmployeeRequisitionTab({ username }: { username: string }) {
       {key:"req",header:"Requested by",render:r=>r.requested_by || "—"},
       {key:"status",header:"Status",render:r=><StatusBadge status={r.status.replace("_"," ")}/>}
     ]}/>
-    <FormDialog open={open} onOpenChange={setOpen} title="New Purchase Requisition" description="Request material for your department." submitLabel="Create PR" onSubmit={()=>void submit()} submitting={create.isPending}>
+    <FormDialog open={open} onOpenChange={setOpen} title="New Purchase Requisition" description="Request material for your department." submitLabel="Create PR" onSubmit={()=>void submit()} pending={create.isPending}>
       <div className="space-y-3">
-        <SelectField label="Material" value={materialId} onChange={setMaterialId} options={(materials.data ?? []).map(m=>({value:m.id,label:m.code+" — "+m.name}))}/>
-        <NumInput label="Quantity" value={quantity} onChange={setQuantity}/>
+        <FormField label="Material"><SelectField value={materialId} onChange={setMaterialId} options={(materials.data ?? []).map(m=>({value:m.id,label:m.code+" — "+m.name}))}/></FormField>
+        <FormField label="Quantity"><NumInput value={quantity} onChange={setQuantity}/></FormField>
         <Input placeholder="Reason / notes" value={notes} onChange={e=>setNotes(e.target.value)}/>
       </div>
     </FormDialog>
