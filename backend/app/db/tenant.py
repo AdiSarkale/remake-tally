@@ -13,10 +13,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.core.config import get_settings
 from app.db.control_models import TenantCompany
 from app.services.tenant_credentials import resolve_tenant_database_url
 
-_MAX_TENANT_ENGINES = 128
+_settings = get_settings()
+_MAX_TENANT_ENGINES = _settings.tenant_engine_cache_size
 _registry: OrderedDict[str, tuple[Engine, sessionmaker]] = OrderedDict()
 _lock = RLock()
 
@@ -28,7 +30,14 @@ def _get_or_create(database_url: str) -> tuple[Engine, sessionmaker]:
             _registry[database_url] = existing
             return existing
 
-        engine = create_engine(database_url, pool_pre_ping=True)
+        engine = create_engine(
+            database_url,
+            pool_pre_ping=True,
+            pool_size=_settings.tenant_pool_size,
+            max_overflow=_settings.tenant_pool_max_overflow,
+            pool_timeout=_settings.tenant_pool_timeout_seconds,
+            pool_recycle=_settings.tenant_pool_recycle_seconds,
+        )
         factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
         _registry[database_url] = (engine, factory)
 
