@@ -21,7 +21,7 @@ from sqlalchemy.orm import sessionmaker
 import app.api.deps as deps
 import app.api.routes.auth as auth_routes
 import app.db.session as session_module
-import app.db.control_models as models_control\nimport app.db.control_models as models_control
+import app.db.control_models as models_control
 from app import models
 from app.db.control import get_control_db
 from app.db.control_models import ControlBase, TenantCompany
@@ -48,7 +48,7 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
         id="company-a",
         code="AA",
         name="Company A",
-        database_url=f"sqlite:///{tmp_path / 'company_a.db'}",
+        database_secret_ref="LOCAL_A",
         active=True,
         provisioning_status="ready",
     )
@@ -56,7 +56,7 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
         id="company-b",
         code="BB",
         name="Company B",
-        database_url=f"sqlite:///{tmp_path / 'company_b.db'}",
+        database_secret_ref="LOCAL_B",
         active=True,
         provisioning_status="ready",
     )
@@ -153,7 +153,7 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
     yield {
         "client": TestClient(app),
         "sessions": (TenantASession, TenantBSession),
-        "control_session": ControlSession,\n        "control_session": ControlSession,
+        "control_session": ControlSession,
     }
 
     app.dependency_overrides.clear()
