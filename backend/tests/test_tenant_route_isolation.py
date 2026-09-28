@@ -669,3 +669,8 @@ def test_operator_and_accountant_have_inventory_and_purchase_request_access(isol
         headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
         assert client.get("/api/v1/inventory/valuation", headers=headers).status_code == 200
         assert client.get("/api/v1/purchasing/requisitions", headers=headers).status_code == 200
+
+
+def test_control_schema_is_not_created_by_application_startup():
+    import app.main as main_module
+    assert not hasattr(main_module, "ControlBase")
