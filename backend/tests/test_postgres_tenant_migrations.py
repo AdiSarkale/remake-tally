@@ -207,7 +207,7 @@ def test_postgres_control_secret_ref_migration_preserves_existing_tenants():
                 )
             }
 
-        assert row == (f"LEGACY{marker.upper()}", f"LEGACY{marker.upper()}")
+        assert row == (f"legacy{marker}", f"LEGACY{marker.upper()}")
         assert "database_secret_ref" in columns
         assert "database_url" not in columns
     finally:
