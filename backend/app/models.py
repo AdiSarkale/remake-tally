@@ -28,6 +28,11 @@ class ItemKind(str, enum.Enum):
     scrap = "scrap"
 
 
+class EmployeeType(str, enum.Enum):
+    shop_floor = "shop_floor"
+    staff = "staff"
+
+
 class MovementType(str, enum.Enum):
     IN = "IN"
     OUT = "OUT"
@@ -1230,6 +1235,9 @@ class Employee(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     emp_code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
+    employee_type: Mapped[EmployeeType] = mapped_column(
+        String(20), default=EmployeeType.staff, nullable=False, index=True
+    )
     department: Mapped[str] = mapped_column(String(120), default="")
     designation: Mapped[str] = mapped_column(String(120), default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
