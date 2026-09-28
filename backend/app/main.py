@@ -11,7 +11,8 @@ from app.db.control_models import ControlBase
 from app.db.control import get_control_engine
 
 settings = get_settings()
-if settings.control_database_url:\n    ControlBase.metadata.create_all(bind=get_control_engine())
+if settings.control_database_url:
+    ControlBase.metadata.create_all(bind=get_control_engine())
 
 app = FastAPI(title=settings.app_name, version="1.0.0")
 

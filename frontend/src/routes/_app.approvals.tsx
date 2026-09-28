@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/client";
 
-export const Route = createFileRoute("/approvals")({ component: () => <AppShell><ApprovalsPage /></AppShell> });
+export const Route = createFileRoute("/_app/approvals")({ component: () => <AppShell><ApprovalsPage /></AppShell> });
 
 type Approval = {
   id:string; department_id:string; department_code:string; department_name:string;
