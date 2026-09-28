@@ -575,6 +575,13 @@ def test_first_login_requires_password_change_and_then_unlocks_access(isolated_t
         json={"current_password": "Initial@123", "new_password": "Changed@123"},
     )
     assert changed.status_code == 204
+
+    verify_db = TenantASession()
+    try:
+        assert verify_db.query(models.User).filter_by(username="firstlogin").one().must_change_password is False
+    finally:
+        verify_db.close()
+
     assert client.get("/api/v1/inventory/valuation", headers=headers).status_code == 200
 
 
