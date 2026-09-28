@@ -13,7 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app import models
+from app.db.control_models import TenantCompany
 
 _MAX_TENANT_ENGINES = 128
 _registry: OrderedDict[str, tuple[Engine, sessionmaker]] = OrderedDict()
@@ -46,5 +46,5 @@ def get_tenant_session_factory(database_url: str) -> sessionmaker:
     return _get_or_create(database_url)[1]
 
 
-def get_tenant_db(company: models.TenantCompany) -> Session:
+def get_tenant_db(company: TenantCompany) -> Session:
     return get_tenant_session_factory(company.database_url)()
