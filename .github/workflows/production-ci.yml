@@ -71,6 +71,13 @@ jobs:
           CONTROL_DATABASE_URL: postgresql+psycopg://minitally:minitally@127.0.0.1:5432/minitally_control
         run: alembic upgrade head
 
+      - name: Test PostgreSQL tenant provisioning lifecycle
+        env:
+          DATABASE_URL: postgresql+psycopg://minitally:minitally@127.0.0.1:5432/minitally
+          CONTROL_DATABASE_URL: postgresql+psycopg://minitally:minitally@127.0.0.1:5432/minitally_control
+          POSTGRES_TEST_ADMIN_URL: postgresql+psycopg://minitally:minitally@127.0.0.1:5432/minitally
+        run: pytest -q tests/test_postgres_tenant_migrations.py
+
   frontend:
     runs-on: ubuntu-latest
     steps:
