@@ -36,14 +36,14 @@ def current_company(
     if not company_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has no company context")
 
-    company = control_db.get(models.TenantCompany, str(company_id))
+    company = control_db.get(TenantCompany, str(company_id))
     if company is None or not company.active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Company no longer exists or is inactive")
     return company
 
 
 def get_db(
-    company: models.TenantCompany = Depends(current_company),
+    company: TenantCompany = Depends(current_company),
 ):
     """Compatibility name used by ERP routes; always resolves to tenant DB."""
     db = get_tenant_db(company)
