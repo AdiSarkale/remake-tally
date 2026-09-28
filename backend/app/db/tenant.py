@@ -14,6 +14,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.control_models import TenantCompany
+from app.services.tenant_credentials import resolve_tenant_database_url
 
 _MAX_TENANT_ENGINES = 128
 _registry: OrderedDict[str, tuple[Engine, sessionmaker]] = OrderedDict()
@@ -47,7 +48,8 @@ def get_tenant_session_factory(database_url: str) -> sessionmaker:
 
 
 def get_tenant_db(company: TenantCompany) -> Session:
-    return get_tenant_session_factory(company.database_url)()
+    database_url = resolve_tenant_database_url(company.database_secret_ref)
+    return get_tenant_session_factory(database_url)()
 
 
 def dispose_tenant_engines() -> None:
