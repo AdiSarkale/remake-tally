@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 8
 
+    tenant_engine_cache_size: int = 32
+    tenant_pool_size: int = 2
+    tenant_pool_max_overflow: int = 1
+    tenant_pool_timeout_seconds: int = 30
+    tenant_pool_recycle_seconds: int = 1800
+
     cors_origins: list[str] = [
         "http://localhost:8080",
         "http://localhost:8081",
