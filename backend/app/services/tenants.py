@@ -25,14 +25,40 @@ def register_company(code: str, name: str, database_url: str, initialize_schema:
             raise ValueError(f"Company code already exists: {code}")
 
         connection.execute(
-            text("INSERT INTO tenant_companies (id, code, name, database_url, active) VALUES (:id, :code, :name, :database_url, TRUE)"),
-            {"id": company_id, "code": code, "name": name, "database_url": database_url},
+            text(
+                "INSERT INTO tenant_companies "
+                "(id, code, name, database_url, active, provisioning_status) "
+                "VALUES (:id, :code, :name, :database_url, FALSE, 'provisioning')"
+            ),
+            {"id": company_id, "code": code.upper(), "name": name, "database_url": database_url},
         )
 
     if initialize_schema:
-        alembic_cfg = Config("backend/alembic.ini")
-        alembic_cfg.set_main_option("sqlalchemy.url", database_url)
-        command.upgrade(alembic_cfg, "head")
+        try:
+            alembic_cfg = Config("backend/alembic.ini")
+            alembic_cfg.set_main_option("sqlalchemy.url", database_url)
+            command.upgrade(alembic_cfg, "head")
+        except Exception:
+            with get_control_engine().begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE tenant_companies "
+                        "SET provisioning_status = 'failed', active = FALSE "
+                        "WHERE id = :id"
+                    ),
+                    {"id": company_id},
+                )
+            raise
+
+    with get_control_engine().begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE tenant_companies "
+                "SET provisioning_status = 'ready', active = TRUE "
+                "WHERE id = :id"
+            ),
+            {"id": company_id},
+        )
 
     return company_id
 
