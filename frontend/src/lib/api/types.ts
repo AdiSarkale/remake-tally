@@ -34,6 +34,9 @@ export interface UserOut {
   email: string;
   active: boolean;
   must_change_password: boolean;
+  company_id: string;
+  company_code: string;
+  company_name: string;
 }
 export interface UserCreate {
   username: string;
