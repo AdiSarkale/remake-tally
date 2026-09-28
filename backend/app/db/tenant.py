@@ -48,3 +48,13 @@ def get_tenant_session_factory(database_url: str) -> sessionmaker:
 
 def get_tenant_db(company: TenantCompany) -> Session:
     return get_tenant_session_factory(company.database_url)()
+
+
+def dispose_tenant_engines() -> None:
+    """Dispose every cached tenant pool during application shutdown."""
+    with _lock:
+        engines = [engine for engine, _ in _registry.values()]
+        _registry.clear()
+
+    for engine in engines:
+        engine.dispose()
