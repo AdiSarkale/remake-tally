@@ -36,8 +36,8 @@ def tenant_environment(tmp_path: Path):
     TenantBSession = sessionmaker(bind=tenant_b_engine)
 
     control = ControlSession()
-    company_a = TenantCompany(id="company-a", code="AA", name="Company A", database_url=f"sqlite:///{tmp_path / 'company_a.db'}")
-    company_b = TenantCompany(id="company-b", code="BB", name="Company B", database_url=f"sqlite:///{tmp_path / 'company_b.db'}")
+    company_a = TenantCompany(id="company-a", code="AA", name="Company A", database_secret_ref="LOCAL_A", active=True, provisioning_status="ready")
+    company_b = TenantCompany(id="company-b", code="BB", name="Company B", database_secret_ref="LOCAL_B", active=True, provisioning_status="ready")
     control.add_all([company_a, company_b])
     control.commit()
 
