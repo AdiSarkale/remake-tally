@@ -14,7 +14,7 @@ from app.db.control import get_control_engine, get_control_session_factory
 from app.db.control_models import TenantCompany
 
 
-def register_company(code: str, name: str, database_url: str, initialize_schema: bool = False) -> str:
+def register_company(code: str, name: str, database_url: str, initialize_schema: bool = True) -> str:
     """Register a company and optionally initialize its isolated ERP schema."""
     company_id = str(uuid.uuid4())
 
