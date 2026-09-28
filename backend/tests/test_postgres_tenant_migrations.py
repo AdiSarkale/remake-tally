@@ -132,7 +132,8 @@ def test_postgres_company_provisioning_and_fleet_migration():
                 engine.dispose()
 
         migrated = migrate_all_ready_tenants()
-        assert all(code in migrated for code in (f"PG{marker}A", f"PG{marker}B"))
+        expected_codes = {f"PG{marker}A".upper(), f"PG{marker}B".upper()}
+        assert expected_codes.issubset(set(migrated))
 
         control_factory = get_control_session_factory()
         control = control_factory()
