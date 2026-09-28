@@ -58,6 +58,56 @@ def _drop_database(admin_url: str, name: str) -> None:
         conn.execute(f'DROP DATABASE IF EXISTS "{name}"')
 
 
+def test_existing_tenant_upgrades_from_previous_head_to_current_head():
+    """Prove an existing tenant at the previous migration head can reach head."""
+    admin_url = _admin_url()
+    marker = uuid.uuid4().hex[:10]
+    database_name = f"minitally_upgrade_{marker}"
+    database_url = admin_url.rsplit("/", 1)[0] + "/" + database_name
+
+    _create_database(admin_url, database_name)
+    try:
+        cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+        cfg.set_main_option("sqlalchemy.url", database_url)
+
+        # This represents an existing tenant created by the architecture
+        # before the latest employee classification migration.
+        command.upgrade(cfg, "8d4f6a1b2c3e")
+
+        engine = create_engine(database_url)
+        try:
+            inspector = inspect(engine)
+            assert "employees" in inspector.get_table_names()
+            assert "employee_type" not in {
+                column["name"] for column in inspector.get_columns("employees")
+            }
+        finally:
+            engine.dispose()
+
+        # The normal deployment path must upgrade that existing tenant,
+        # rather than requiring a rebuild from scratch.
+        command.upgrade(cfg, "head")
+
+        engine = create_engine(database_url)
+        try:
+            inspector = inspect(engine)
+            employee_columns = {
+                column["name"] for column in inspector.get_columns("employees")
+            }
+            assert "employee_type" in employee_columns
+
+            with engine.connect() as connection:
+                revision = connection.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar_one()
+
+            assert revision == "employee_type_001"
+        finally:
+            engine.dispose()
+    finally:
+        _drop_database(admin_url, database_name)
+
+
 def test_postgres_company_provisioning_and_fleet_migration():
     admin_url = _admin_url()
     control_url = _control_url()
