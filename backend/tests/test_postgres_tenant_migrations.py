@@ -8,7 +8,11 @@ runs control migrations, then executes this lifecycle test.
 from __future__ import annotations
 
 import os
+import sys
 import uuid
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pytest
 import psycopg
@@ -53,7 +57,6 @@ def _drop_database(admin_url: str, name: str) -> None:
 
 def test_postgres_company_provisioning_and_fleet_migration():
     admin_url = _admin_url()
-    control_url = _control_url()
     control_url = _control_url()
 
     marker = uuid.uuid4().hex[:10]
