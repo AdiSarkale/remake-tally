@@ -83,11 +83,30 @@ def migrate_all_ready_tenants() -> list[str]:
         db.close()
 
     alembic_ini = Path(__file__).resolve().parents[2] / "alembic.ini"
+    failed: list[str] = []
+
     for company in companies:
-        alembic_cfg = Config(str(alembic_ini))
-        alembic_cfg.set_main_option("sqlalchemy.url", company.database_url)
-        command.upgrade(alembic_cfg, "head")
-        migrated.append(company.code)
+        try:
+            alembic_cfg = Config(str(alembic_ini))
+            alembic_cfg.set_main_option("sqlalchemy.url", company.database_url)
+            command.upgrade(alembic_cfg, "head")
+            migrated.append(company.code)
+        except Exception:
+            failed.append(company.code)
+            with get_control_engine().begin() as connection:
+                connection.execute(
+                    text(
+                        "UPDATE tenant_companies "
+                        "SET provisioning_status = 'failed', active = FALSE "
+                        "WHERE id = :id"
+                    ),
+                    {"id": company.id},
+                )
+
+    if failed:
+        raise RuntimeError(
+            "Tenant migrations failed for: " + ", ".join(sorted(failed))
+        )
 
     return migrated
 
