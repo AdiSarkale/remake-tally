@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, Text, func
+from sqlalchemy import Boolean, DateTime, String, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -23,7 +23,7 @@ class TenantCompany(ControlBase):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(160))
-    database_url: Mapped[str] = mapped_column(Text)
+    database_secret_ref: Mapped[str] = mapped_column(String(160), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    provisioning_status: Mapped[str] = mapped_column(String(24), default="ready", nullable=False)
+    provisioning_status: Mapped[str] = mapped_column(String(24), default="provisioning", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
