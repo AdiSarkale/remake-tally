@@ -37,6 +37,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
+        if (
+            self.tenant_engine_cache_size < 1
+            or self.tenant_pool_size < 1
+            or self.tenant_pool_max_overflow < 0
+            or self.tenant_pool_timeout_seconds <= 0
+            or self.tenant_pool_recycle_seconds <= 0
+        ):
+            raise ValueError("Tenant connection pool settings must be positive and valid")
         if self.environment.lower() == "production":
             if self.jwt_secret == "change-me-in-production" or len(self.jwt_secret) < 32:
                 raise ValueError("JWT_SECRET must be a strong secret of at least 32 characters in production")
