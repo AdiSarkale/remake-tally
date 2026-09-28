@@ -16,6 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pytest
 import psycopg
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
 from app.db.control_models import TenantCompany
@@ -158,3 +160,56 @@ def test_postgres_company_provisioning_and_fleet_migration():
             os.environ.pop(f"TENANT_DB_URL_PG{marker}{suffix}", None)
         for name in database_names:
             _drop_database(admin_url, name)
+
+
+def test_postgres_control_secret_ref_migration_preserves_existing_tenants():
+    admin_url = _admin_url()
+    marker = uuid.uuid4().hex[:10]
+    database_name = f"minitally_control_migration_{marker}"
+    control_url = admin_url.rsplit("/", 1)[0] + "/" + database_name
+    secret_ref = f"LEGACY{marker.upper()}"
+
+    _create_database(admin_url, database_name)
+    try:
+        os.environ[f"TENANT_DB_URL_{secret_ref}"] = "postgresql+psycopg://example/tenant"
+
+        cfg = Config(str(Path(__file__).resolve().parents[1] / "control_alembic.ini"))
+        cfg.set_main_option("sqlalchemy.url", control_url)
+        command.upgrade(cfg, "control_002")
+
+        with psycopg.connect(_psycopg_url(control_url), autocommit=True) as connection:
+            connection.execute(
+                """
+                INSERT INTO tenant_companies
+                    (id, code, name, database_url, active, provisioning_status)
+                VALUES
+                    (%s, %s, %s, %s, TRUE, 'ready')
+                """,
+                (
+                    str(uuid.uuid4()),
+                    f"legacy{marker}",
+                    "Legacy Company",
+                    "postgresql+psycopg://legacy-user:legacy-password@db.example/legacy",
+                ),
+            )
+
+        command.upgrade(cfg, "head")
+
+        with psycopg.connect(_psycopg_url(control_url)) as connection:
+            row = connection.execute(
+                "SELECT code, database_secret_ref FROM tenant_companies"
+            ).fetchone()
+            columns = {
+                item[0]
+                for item in connection.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = 'tenant_companies'"
+                )
+            }
+
+        assert row == (f"LEGACY{marker.upper()}", f"LEGACY{marker.upper()}")
+        assert "database_secret_ref" in columns
+        assert "database_url" not in columns
+    finally:
+        os.environ.pop(f"TENANT_DB_URL_{secret_ref}", None)
+        _drop_database(admin_url, database_name)
