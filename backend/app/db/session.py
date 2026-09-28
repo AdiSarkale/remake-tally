@@ -8,10 +8,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
-from app.core.security import decode_access_token
 from app.db.control import get_control_db
 from app.db.control_models import TenantCompany
 from app.db.tenant import get_tenant_db
+from app.services.company_context import resolve_company_from_token
 
 settings = get_settings()
 
@@ -43,27 +43,7 @@ def get_db(
             detail="Not authenticated",
         )
 
-    try:
-        payload = decode_access_token(creds.credentials)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        ) from exc
-
-    company_id = payload.get("company_id")
-    if not company_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has no company context",
-        )
-
-    company = control_db.get(TenantCompany, str(company_id))
-    if company is None or not company.active or company.provisioning_status != "ready":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Company no longer exists or is inactive",
-        )
+    _, company = resolve_company_from_token(creds.credentials, control_db)
 
     db = get_tenant_db(company)
     try:
