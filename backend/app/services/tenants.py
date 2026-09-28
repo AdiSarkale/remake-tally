@@ -16,6 +16,10 @@ from app.db.control_models import TenantCompany
 
 def register_company(code: str, name: str, database_url: str, initialize_schema: bool = True) -> str:
     """Register a company and optionally initialize its isolated ERP schema."""
+    code = code.strip().upper()
+    if not code:
+        raise ValueError("Company code is required")
+
     company_id = str(uuid.uuid4())
 
     with get_control_engine().begin() as connection:
@@ -32,7 +36,7 @@ def register_company(code: str, name: str, database_url: str, initialize_schema:
                 "(id, code, name, database_url, active, provisioning_status) "
                 "VALUES (:id, :code, :name, :database_url, FALSE, 'provisioning')"
             ),
-            {"id": company_id, "code": code.upper(), "name": name, "database_url": database_url},
+            {"id": company_id, "code": code, "name": name, "database_url": database_url},
         )
 
     if initialize_schema:
