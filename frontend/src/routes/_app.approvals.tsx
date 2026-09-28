@@ -23,9 +23,9 @@ function ApprovalsPage() {
   const [isAdmin,setIsAdmin]=useState(false);
   const [form,setForm]=useState({code:"",name:"",hod_username:""});
   const load=async()=>{ 
-    const a=await apiFetch("/api/v1/approvals/mine");
+    const a=await apiFetch<Approval[]>("/api/v1/approvals/mine");
     setRows(a);
-    try { const d=await apiFetch("/api/v1/approvals/departments"); setDepartments(d); setIsAdmin(true); } catch { setIsAdmin(false); }
+    try { const d=await apiFetch<Department[]>("/api/v1/approvals/departments"); setDepartments(d); setIsAdmin(true); } catch { setIsAdmin(false); }
   };
   useEffect(()=>{void load().catch(e=>toast.error(e instanceof Error?e.message:"Failed to load approvals"));},[]);
   const addDept=async()=>{
