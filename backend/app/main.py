@@ -1,6 +1,6 @@
 """FastAPI application entrypoint."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -50,7 +50,7 @@ def readiness() -> dict[str, str]:
         db.execute(text("SELECT 1"))
         db.execute(select(TenantCompany.id).limit(1))
     except SQLAlchemyError as exc:
-        raise RuntimeError("Control-plane database is not ready") from exc
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Control-plane database is not ready") from exc
     finally:
         db.close()
     return {"status": "ready"}
