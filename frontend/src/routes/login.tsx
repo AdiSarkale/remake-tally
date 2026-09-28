@@ -84,7 +84,34 @@ function LoginPage() {
             <div className="space-y-1.5"><Label>Current / default password</Label><Input type="password" value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)} /></div>
             <div className="space-y-1.5"><Label>New password</Label><Input type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} /></div>
             <div className="space-y-1.5"><Label>Confirm new password</Label><Input type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} /></div>
-            <Button type="button" className="w-full" disabled={changePassword.isPending} onClick={()=>{ if(newPassword.length<6)return toast.error("New password must be at least 6 characters"); if(newPassword!==confirmPassword)return toast.error("Passwords do not match"); changePassword.mutate({current_password:currentPassword,new_password:newPassword},{onSuccess:()=>{toast.success("Password changed"); window.location.assign("/");},onError:e=>toast.error(e instanceof ApiError?e.detail:"Could not change password")}); }}>{changePassword.isPending ? "Saving…" : "Set password"}</Button>
+            <Button
+              type="button"
+              className="w-full"
+              disabled={changePassword.isPending}
+              onClick={() => {
+                if (newPassword.length < 6) {
+                  toast.error("New password must be at least 6 characters");
+                  return;
+                }
+                if (newPassword !== confirmPassword) {
+                  toast.error("Passwords do not match");
+                  return;
+                }
+                changePassword.mutate(
+                  { current_password: currentPassword, new_password: newPassword },
+                  {
+                    onSuccess: () => {
+                      toast.success("Password changed");
+                      window.location.assign("/");
+                    },
+                    onError: (e) =>
+                      toast.error(e instanceof ApiError ? e.detail : "Could not change password"),
+                  },
+                );
+              }}
+            >
+              {changePassword.isPending ? "Saving…" : "Set password"}
+            </Button>
           </div>
         ) : (
         <form
