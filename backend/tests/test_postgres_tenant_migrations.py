@@ -23,9 +23,6 @@ from app.db.control import get_control_session_factory
 from app.services.tenants import migrate_all_ready_tenants, register_company, retry_failed_company
 
 
-pytestmark = pytest.mark.integration
-
-
 def _psycopg_url(url: str) -> str:
     return url.replace("postgresql+psycopg://", "postgresql://", 1)
 
@@ -138,7 +135,7 @@ def test_postgres_company_provisioning_and_fleet_migration():
         control_factory = get_control_session_factory()
         control = control_factory()
         try:
-            first = control.query(TenantCompany).filter_by(code=f"PG{marker}A").one()
+            first = control.query(TenantCompany).filter_by(code=f"PG{marker}A".upper()).one()
             first.active = False
             first.provisioning_status = "failed"
             failed_id = first.id
