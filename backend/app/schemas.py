@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import (DispatchStatus, InvoiceStatus, ItemKind, MovementType, PurchaseOrderStatus, PurchaseRequisitionSource, PurchaseRequisitionStatus, QuotationStatus, Role, SalesOrderStatus)
+from app.models import (DispatchStatus, EmployeeType, InvoiceStatus, ItemKind, MovementType, PurchaseOrderStatus, PurchaseRequisitionSource, PurchaseRequisitionStatus, QuotationStatus, Role, SalesOrderStatus)
 
 
 class ORMModel(BaseModel):
@@ -966,6 +966,7 @@ class RoutingOut(ORMModel):
 class EmployeeIn(BaseModel):
     emp_code: str
     name: str
+    employee_type: EmployeeType = EmployeeType.staff
     department: str = ""
     designation: str = ""
     active: bool = True
@@ -980,6 +981,7 @@ class EmployeeOut(ORMModel):
     id: str
     emp_code: str
     name: str
+    employee_type: EmployeeType
     department: str
     designation: str
     active: bool
