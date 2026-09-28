@@ -3,12 +3,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import approvals, auth, customer_pos, dashboard, delivery, dispatches, finance, inventory, masters, production, purchasing, quotations, sales, sales_orders, scrap, users, bom, manufacturing
-from app.core.config import get_settings
-from app.db.session import Base, engine
-from app import models
 from app.db.control_models import ControlBase
 from app.db.control import get_control_engine
+from app.api.routes import approvals, auth, customer_pos, dashboard, delivery, dispatches, finance, inventory, masters, production, purchasing, quotations, sales, sales_orders, scrap, users, bom, manufacturing
+from app.core.config import get_settings
 
 settings = get_settings()
 if settings.control_database_url:
