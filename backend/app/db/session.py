@@ -2,11 +2,16 @@
 
 from collections.abc import Generator
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
+from app.core.security import decode_access_token
+from app.db.control import get_control_db
+from app.db.control_models import TenantCompany
+from app.db.tenant import get_tenant_db
 
 settings = get_settings()
 
@@ -20,37 +25,51 @@ class Base(DeclarativeBase):
 engine = create_engine(settings.database_url, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
+bearer = HTTPBearer(auto_error=False)
+
 
 def get_db(
-    company = Depends("current_company"),  # resolved lazily below to avoid import cycle
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+    control_db: Session = Depends(get_control_db),
 ) -> Generator[Session, None, None]:
-    from app.api.deps import current_company
-    from app.db.tenant import get_tenant_db
+    """Resolve the ERP session exclusively from the signed JWT company context.
 
-    # FastAPI replaces this dependency marker with the actual callable at runtime.
-    # The explicit annotation is intentionally omitted because TenantCompany lives
-    # in the application model layer.
-    raise RuntimeError("get_db dependency was not initialized")
+    Kept in the DB layer so models.py can import Base without creating an
+    import cycle through api.deps.
+    """
+    if creds is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
 
+    try:
+        payload = decode_access_token(creds.credentials)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+        ) from exc
 
-# FastAPI dependency override with a real callable; kept separate so importing
-# session.py never imports the auth dependency graph.
-def tenant_db_dependency():
-    from fastapi import Depends
-    from app.api.deps import current_company
-    from app.db.tenant import get_tenant_db
+    company_id = payload.get("company_id")
+    if not company_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has no company context",
+        )
 
-    def _dependency(company=Depends(current_company)):
-        db = get_tenant_db(company)
-        try:
-            yield db
-        except Exception:
-            db.rollback()
-            raise
-        finally:
-            db.close()
+    company = control_db.get(TenantCompany, str(company_id))
+    if company is None or not company.active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Company no longer exists or is inactive",
+        )
 
-    return _dependency
-
-
-get_db = tenant_db_dependency()
+    db = get_tenant_db(company)
+    try:
+        yield db
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
