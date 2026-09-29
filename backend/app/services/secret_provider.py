@@ -10,6 +10,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import os
 
+from app.core.config import get_settings
+
 
 class SecretProvider(ABC):
     """Resolve a secret value from an application-level reference."""
@@ -38,4 +40,7 @@ def get_secret_provider() -> SecretProvider:
     The first production-neutral implementation is environment-backed.
     A managed provider can replace this factory without changing callers.
     """
-    return EnvironmentSecretProvider()
+    provider = get_settings().secret_provider.lower()
+    if provider == "environment":
+        return EnvironmentSecretProvider()
+    raise RuntimeError(f"Unsupported secret provider: {provider}")
