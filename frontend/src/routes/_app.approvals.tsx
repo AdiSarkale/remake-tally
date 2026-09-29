@@ -2,13 +2,12 @@ import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Check, Plus, X } from "lucide-react";
 import { toast } from "sonner";
-import { AppShell } from "@/components/erp/AppShell";
-import { PageHeader } from "@/components/erp/PageHeader";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api/client";
 
-export const Route = createFileRoute("/approvals")({ component: () => <AppShell><ApprovalsPage /></AppShell> });
+export const Route = createFileRoute("/_app/approvals")({ component: ApprovalsPage });
 
 type Approval = {
   id:string; department_id:string; department_code:string; department_name:string;
@@ -24,9 +23,9 @@ function ApprovalsPage() {
   const [isAdmin,setIsAdmin]=useState(false);
   const [form,setForm]=useState({code:"",name:"",hod_username:""});
   const load=async()=>{ 
-    const a=await apiFetch("/api/v1/approvals/mine");
+    const a=await apiFetch<Approval[]>("/api/v1/approvals/mine");
     setRows(a);
-    try { const d=await apiFetch("/api/v1/approvals/departments"); setDepartments(d); setIsAdmin(true); } catch { setIsAdmin(false); }
+    try { const d=await apiFetch<Department[]>("/api/v1/approvals/departments"); setDepartments(d); setIsAdmin(true); } catch { setIsAdmin(false); }
   };
   useEffect(()=>{void load().catch(e=>toast.error(e instanceof Error?e.message:"Failed to load approvals"));},[]);
   const addDept=async()=>{
@@ -43,7 +42,7 @@ function ApprovalsPage() {
     catch(e){toast.error(e instanceof Error?e.message:"Could not update approval");}
   };
   return <div className="space-y-5">
-    <PageHeader title="HOD Approvals" subtitle="Each HOD sees only approval requests assigned to their department." />
+    <PageHeader title="HOD Approvals" description="Each HOD sees only approval requests assigned to their department." />
     {isAdmin ? <section className="rounded-lg border p-4">
       <div className="mb-3 flex items-center gap-2"><Plus className="h-4 w-4"/><h2 className="font-semibold">Department Master</h2></div>
       <div className="grid gap-3 md:grid-cols-4">

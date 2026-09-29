@@ -33,7 +33,7 @@ function HrPage() {
   const orders = H.useProductionOrders();
   const create = H.useCreateEmployee();
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState<T.EmployeeIn>({ emp_code: "", name: "", department: "Production", designation: "Operator", active: true });
+  const [f, setF] = useState<T.EmployeeIn>({ emp_code: "", name: "", employee_type: "shop_floor", department: "Production", designation: "Operator", active: true });
   const [sel, setSel] = useState<T.EmployeeOut | null>(null);
 
   const load = (id: string) =>
@@ -57,6 +57,7 @@ function HrPage() {
         columns={[
           { key: "code", header: "Code", render: (r) => <span className="font-mono text-xs">{r.emp_code}</span>, searchValue: (r) => r.emp_code, sortValue: (r) => r.emp_code },
           { key: "name", header: "Name", render: (r) => r.name, searchValue: (r) => r.name, sortValue: (r) => r.name },
+          { key: "type", header: "Type", render: (r) => r.employee_type === "shop_floor" ? "Shop floor" : "Staff", searchValue: (r) => r.employee_type },
           { key: "dept", header: "Department", render: (r) => r.department, searchValue: (r) => r.department },
           { key: "desig", header: "Designation", render: (r) => r.designation },
           { key: "load", header: "Open operations", className: "text-right", render: (r) => <span className="tabular-nums">{load(r.id)}</span>, sortValue: (r) => load(r.id) },
@@ -67,6 +68,7 @@ function HrPage() {
         <div className="grid gap-3 sm:grid-cols-2">
           <FormField label="Employee code *"><Input value={f.emp_code} onChange={(e) => setF({ ...f, emp_code: e.target.value })} className="font-mono" placeholder="EMP-002" /></FormField>
           <FormField label="Name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></FormField>
+          <FormField label="Employee type"><select className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={f.employee_type} onChange={(e) => setF({ ...f, employee_type: e.target.value as T.EmployeeType, department: e.target.value === "shop_floor" ? "Production" : "" })}><option value="shop_floor">Shop floor</option><option value="staff">Staff</option></select></FormField>
           <FormField label="Department"><Input value={f.department} onChange={(e) => setF({ ...f, department: e.target.value })} /></FormField>
           <FormField label="Designation"><Input value={f.designation} onChange={(e) => setF({ ...f, designation: e.target.value })} /></FormField>
         </div>
@@ -96,7 +98,7 @@ function EmployeeDetail({ emp, canEdit }: { emp: T.EmployeeOut; canEdit: boolean
 
   return (
     <>
-      <KeyValues items={[["Department", emp.department], ["Designation", emp.designation], ["Status", <StatusBadge key="s" status={emp.active ? "Active" : "Inactive"} />], ["Skills", String(skillSet.size)]]} />
+      <KeyValues items={[["Type", emp.employee_type === "shop_floor" ? "Shop floor" : "Staff"], ["Department", emp.department], ["Designation", emp.designation], ["Status", <StatusBadge key="s" status={emp.active ? "Active" : "Inactive"} />], ["Skills", String(skillSet.size)]]} />
       <SectionTitle>Skills</SectionTitle>
       {skills.isLoading ? <TableSkeleton rows={2} cols={3} /> : (
         <DataTable data={skills.data ?? []} rowKey={(r) => r.id} exportName={`${emp.emp_code}-skills`} emptyTitle="No skills recorded" pageSize={10}

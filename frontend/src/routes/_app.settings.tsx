@@ -26,7 +26,7 @@ function SettingsPage() {
   if (role !== "Admin") return <div className="p-6 text-sm text-destructive">Admin access required.</div>;
 
   const create = async () => {
-    if (!form.username.trim() || !form.full_name.trim()) return toast.error("Username and full name are required");
+    if (!form.username.trim() || !form.full_name.trim()) { toast.error("Username and full name are required"); return; }
     try {
       await createUser.mutateAsync({ ...form, active: true });
       toast.success("User created. Initial password: " + DEFAULT_INITIAL_PASSWORD);

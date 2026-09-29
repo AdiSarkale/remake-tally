@@ -1,12 +1,17 @@
-"""Auth dependencies: current user + role guard."""
+"""Auth dependencies: current user + role guard + tenant DB context."""
+
+from __future__ import annotations
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app import models
+from app.db.control_models import TenantCompany
 from app.core.security import decode_access_token
-from app.db.session import get_db
+from app.db.control import get_control_db
+from app.db.tenant import get_tenant_db
+from app.services.company_context import resolve_company_from_token
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -17,24 +22,45 @@ ROLE_PERMISSIONS: dict[models.Role, set[str]] = {
 }
 
 
+def current_company(
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+    control_db: Session = Depends(get_control_db),
+) -> TenantCompany:
+    if creds is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    _, company = resolve_company_from_token(creds.credentials, control_db)
+    return company
+
+
+def get_db(
+    company: TenantCompany = Depends(current_company),
+):
+    """Compatibility name used by ERP routes; always resolves to tenant DB."""
+    db = get_tenant_db(company)
+    try:
+        yield db
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
 def current_user(
     request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
-    db: Session = Depends(get_db),
+    company: TenantCompany = Depends(current_company),
 ) -> models.User:
-    if creds is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    db = get_tenant_db(company)
     try:
-        payload = decode_access_token(creds.credentials)
-    except Exception as exc:  # noqa: BLE001 - any decode failure is a 401
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
-
-    user = db.query(models.User).filter(models.User.username == payload.get("sub")).first()
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists")
-    if user.must_change_password and request is not None and request.url.path not in {"/api/v1/auth/me", "/api/v1/users/me/change-password"}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Password change required before continuing")
-    return user
+        user = db.query(models.User).filter(models.User.username == decode_access_token(creds.credentials).get("sub")).first()  # type: ignore[union-attr]
+        if user is None or not user.active:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists")
+        if user.must_change_password and request.url.path not in {"/api/v1/auth/me", "/api/v1/users/me/change-password"}:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Password change required before continuing")
+        return user
+    finally:
+        db.close()
 
 
 def require_area(area: str):
@@ -42,7 +68,6 @@ def require_area(area: str):
         if area not in ROLE_PERMISSIONS[user.role]:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"{user.role.value} cannot access {area}")
         return user
-
     return guard
 
 

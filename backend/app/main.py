@@ -1,16 +1,20 @@
 """FastAPI application entrypoint."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select, text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.routes import approvals, auth, customer_pos, dashboard, delivery, dispatches, finance, inventory, masters, production, purchasing, quotations, sales, sales_orders, scrap, users, bom, manufacturing
 from app.core.config import get_settings
-from app.db.session import Base, engine
-from app import models
+from app.db.control import dispose_control_engine, get_control_db
+from app.db.control_models import TenantCompany
+from app.db.tenant import dispose_tenant_engines
 
 settings = get_settings()
-# Base.metadata.create_all(bind=engine)
 
+# Schema changes are owned by Alembic. Application startup must never create
+# or mutate control-plane tables implicitly.
 app = FastAPI(title=settings.app_name, version="1.0.0")
 
 app.add_middleware(
@@ -26,6 +30,35 @@ for router in (auth.router, masters.router, inventory.router, production.router,
     app.include_router(router, prefix=settings.api_v1_prefix)
 
 
+@app.on_event("shutdown")
+def shutdown() -> None:
+    dispose_tenant_engines()
+    dispose_control_engine()
+
+
+@app.get("/health/live", tags=["system"])
+def liveness() -> dict[str, str]:
+    """Process-level liveness check with no database dependency."""
+    return {"status": "ok"}
+
+
+@app.get("/health/ready", tags=["system"])
+def readiness() -> dict[str, str]:
+    """Readiness check for the control plane required by authenticated traffic."""
+    db = None
+    try:
+        db = next(get_control_db())
+        db.execute(text("SELECT 1"))
+        db.execute(select(TenantCompany.id).limit(1))
+    except (SQLAlchemyError, RuntimeError) as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Control-plane database is not ready") from exc
+    finally:
+        if db is not None:
+            db.close()
+    return {"status": "ready"}
+
+
 @app.get("/health", tags=["system"])
 def health() -> dict[str, str]:
+    """Backward-compatible health endpoint; use /health/live and /health/ready for probes."""
     return {"status": "ok"}

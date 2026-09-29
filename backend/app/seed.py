@@ -193,6 +193,7 @@ def _employee(db, emp_code: str, name: str, designation: str, skill: str):
         row = models.Employee(
             emp_code=emp_code,
             name=name,
+            employee_type=models.EmployeeType.shop_floor,
             department="Production",
             designation=designation,
             active=True,
@@ -201,6 +202,7 @@ def _employee(db, emp_code: str, name: str, designation: str, skill: str):
         db.flush()
     else:
         row.name = name
+        row.employee_type = models.EmployeeType.shop_floor
         row.department = "Production"
         row.designation = designation
         row.active = True
