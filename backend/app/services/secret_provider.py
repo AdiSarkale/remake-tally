@@ -37,8 +37,7 @@ class EnvironmentSecretProvider(SecretProvider):
 def get_secret_provider() -> SecretProvider:
     """Return the configured provider.
 
-    The first production-neutral implementation is environment-backed.
-    A managed provider can replace this factory without changing callers.
+    AWS Secrets Manager is used for production; environment-backed resolution remains available for local/demo use.
     """
     provider = get_settings().secret_provider.lower()
     if provider == "environment":
