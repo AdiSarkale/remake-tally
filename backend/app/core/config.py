@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     jwt_clock_skew_seconds: int = 30
     tenant_db_require_tls: bool = True
+    secret_provider: str = "environment"
 
     tenant_engine_cache_size: int = 32
     tenant_pool_size: int = 2
@@ -41,6 +42,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
+        if self.secret_provider.lower() not in {"environment"}:
+            raise ValueError("Unsupported SECRET_PROVIDER")
         if (
             self.tenant_engine_cache_size < 1
             or self.tenant_pool_size < 1
