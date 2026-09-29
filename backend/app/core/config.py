@@ -42,7 +42,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
-        if self.secret_provider.lower() not in {"environment"}:
+        if self.secret_provider.lower() not in {"environment", "aws_secrets_manager"}:
             raise ValueError("Unsupported SECRET_PROVIDER")
         if (
             self.tenant_engine_cache_size < 1
