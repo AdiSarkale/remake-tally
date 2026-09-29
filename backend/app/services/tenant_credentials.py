@@ -8,15 +8,13 @@ neutral so the ERP is not coupled to one cloud vendor.
 
 from __future__ import annotations
 
-import os
 import re
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from app.core.config import get_settings
+from app.services.secret_provider import get_secret_provider
 
 _SECRET_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$")
-_ENV_PREFIX = "TENANT_DB_URL_"
-
 
 def resolve_tenant_database_url(secret_ref: str) -> str:
     """Resolve a tenant DB URL without storing it in the control database."""
@@ -27,10 +25,7 @@ def resolve_tenant_database_url(secret_ref: str) -> str:
     if secret_ref == "LOCAL_DEFAULT" and settings.environment.lower() != "production":
         return settings.database_url
 
-    value = os.getenv(f"{_ENV_PREFIX}{secret_ref}")
-    if not value:
-        raise RuntimeError(f"Tenant database secret is unavailable: {secret_ref}")
-
+    value = get_secret_provider().get_secret(secret_ref)
     return _enforce_postgres_tls(value)
 
 
