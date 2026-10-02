@@ -22,6 +22,7 @@ from app.db.session import Base, SessionLocal, engine
 from app.models import ItemKind, MovementType
 from app.services.gst import compute_line, round_off
 from app.services.inventory import apply_movement
+from app.services.tenants import register_company
 
 
 DEMO_USERS = [
@@ -1028,7 +1029,30 @@ def _delete_demo_transactions(db):
     db.commit()
 
 
+def _ensure_demo_tenant() -> None:
+    """Ensure the demo company exists in the control plane for tenant-aware login."""
+    from sqlalchemy import text
+    from app.db.control import get_control_engine
+
+    with get_control_engine().begin() as connection:
+        exists = connection.execute(
+            text("SELECT 1 FROM tenant_companies WHERE code = :code"),
+            {"code": "SPW"},
+        ).scalar_one_or_none()
+
+    if exists:
+        return
+
+    register_company(
+        "SPW",
+        "Shreeji Precision Works",
+        "LOCAL_DEFAULT",
+        initialize_schema=False,
+    )
+
+
 def run(reset_demo: bool = False) -> None:
+    _ensure_demo_tenant()
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
