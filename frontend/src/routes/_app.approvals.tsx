@@ -6,7 +6,7 @@ import { AppShell } from "@/components/erp/AppShell";
 import { PageHeader } from "@/components/erp/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { apiFetch } from "@/lib/api/client";
+import { api } from "@/lib/api/client";
 
 export const Route = createFileRoute("/approvals")({ component: () => <AppShell><ApprovalsPage /></AppShell> });
 
@@ -24,14 +24,14 @@ function ApprovalsPage() {
   const [isAdmin,setIsAdmin]=useState(false);
   const [form,setForm]=useState({code:"",name:"",hod_username:""});
   const load=async()=>{ 
-    const a=await apiFetch("/api/v1/approvals/mine");
+    const a=await api.get<Approval[]>("/approvals/mine");
     setRows(a);
-    try { const d=await apiFetch("/api/v1/approvals/departments"); setDepartments(d); setIsAdmin(true); } catch { setIsAdmin(false); }
+    try { const d=await api.get<Department[]>("/approvals/departments"); setDepartments(d); setIsAdmin(true); } catch { setIsAdmin(false); }
   };
   useEffect(()=>{void load().catch(e=>toast.error(e instanceof Error?e.message:"Failed to load approvals"));},[]);
   const addDept=async()=>{
     try {
-      await apiFetch("/api/v1/approvals/departments",{method:"POST",body:JSON.stringify({...form,active:true})});
+      await api.post<Department>("/approvals/departments",{...form,active:true});
       setForm({code:"",name:"",hod_username:""});
       toast.success("Department created");
       await load();
@@ -39,7 +39,7 @@ function ApprovalsPage() {
   };
   const decide=async(id:string,status:"Approved"|"Rejected")=>{
     const remarks=window.prompt(status==="Approved"?"Approval remarks":"Rejection reason","") ?? "";
-    try { await apiFetch("/api/v1/approvals/"+id,{method:"PATCH",body:JSON.stringify({status,remarks})}); toast.success(status); await load(); }
+    try { await api.patch<Approval>("/approvals/"+id,{status,remarks}); toast.success(status); await load(); }
     catch(e){toast.error(e instanceof Error?e.message:"Could not update approval");}
   };
   return <div className="space-y-5">
