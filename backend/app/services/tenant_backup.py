@@ -193,6 +193,9 @@ def restore_database(
         raise TenantBackupError(f"Backup file does not exist: {path}")
 
     manifest = path.with_suffix(path.suffix + ".json")
+    if not manifest.is_file() and expected_company_code:
+        raise TenantBackupError("Backup manifest is required for company-validated restore")
+
     if manifest.is_file():
         try:
             metadata = json.loads(manifest.read_text(encoding="utf-8"))
