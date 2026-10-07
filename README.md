@@ -554,17 +554,11 @@ Keep the UI simple, fast and beginner friendly.
 
 The project should resemble a lightweight version of Tally suitable for small manufacturing businesses, focusing mainly on invoicing, inventory, production tracking, and scrap management rather than full accounting.
 
-This project was built with [Lovable](https://lovable.dev).
+## Local frontend
 
-**Live app**: https://remake-tally.lovable.app
+The frontend is available locally at:
 
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/a40a96ea-54b7-48a7-b598-babd2375344e).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+http://localhost:5173
 
 ## Development
 
