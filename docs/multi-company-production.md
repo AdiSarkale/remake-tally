@@ -93,3 +93,27 @@ Restore is intentionally explicit: the target database must be supplied by the o
 CI executes a real PostgreSQL backup/restore round trip against the same PostgreSQL service used for migration validation. This proves that a tenant can be reconstructed into an empty replacement database rather than merely generating a dump file.
 
 For production, upload the generated dump and manifest to encrypted, access-controlled object storage with retention and lifecycle policies. The repository utility deliberately does not embed a cloud-specific backup store.
+
+## Tenant decommissioning
+
+Decommissioning is a control-plane state transition, not an automatic database drop.
+
+Run:
+
+```bash
+cd backend
+python scripts/tenant_lifecycle.py decommission \
+  --company-id <control-plane-company-id> \
+  --backup backups/demo-final.dump \
+  --reason "Contract terminated"
+```
+
+The workflow:
+
+1. acquires the per-company advisory lock;
+2. immediately disables the tenant and moves it to `decommissioning`;
+3. creates and checks the final PostgreSQL backup;
+4. records the lifecycle event;
+5. only then marks the company `decommissioned`.
+
+A failed backup never reactivates the tenant. The database is not physically dropped by the application. That destruction step remains a separate operator action after retention and restore requirements are satisfied.
