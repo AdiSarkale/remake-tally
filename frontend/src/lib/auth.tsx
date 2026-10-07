@@ -30,7 +30,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthState>(() => {
     const profile: StoredProfile | null = me
-      ? { full_name: me.full_name, role: me.role, username: me.username }
+      ? {
+          full_name: me.full_name,
+          role: me.role,
+          username: me.username,
+          company_id: me.company_id,
+          company_code: me.company_code,
+          company_name: me.company_name,
+        }
       : stored;
     const role = (me?.role ?? profile?.role) as Role | null;
     return {

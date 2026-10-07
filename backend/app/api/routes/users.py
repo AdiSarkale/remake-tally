@@ -101,8 +101,12 @@ def change_own_password(
     user: models.User = Depends(current_user),
 ) -> None:
     """Self-service change — the current password IS required here."""
-    if not verify_password(payload.current_password, user.password_hash):
+    managed_user = db.get(models.User, user.id)
+    if managed_user is None or not managed_user.active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User no longer exists")
+
+    if not verify_password(payload.current_password, managed_user.password_hash):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
-    user.password_hash = hash_password(payload.new_password)
-    user.must_change_password = False
+    managed_user.password_hash = hash_password(payload.new_password)
+    managed_user.must_change_password = False
     db.commit()

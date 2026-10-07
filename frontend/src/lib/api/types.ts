@@ -12,6 +12,7 @@ export type QualityStatus = "Pending" | "Accepted" | "Rejected" | "Accepted with
 
 // ---------- Auth ----------
 export interface LoginRequest {
+  company_code: string;
   username: string;
   password: string;
 }
@@ -20,6 +21,9 @@ export interface TokenResponse {
   token_type: string;
   role: Role;
   full_name: string;
+  company_id: string;
+  company_code: string;
+  company_name: string;
   must_change_password: boolean;
 }
 export interface UserOut {
@@ -30,6 +34,9 @@ export interface UserOut {
   email: string;
   active: boolean;
   must_change_password: boolean;
+  company_id: string;
+  company_code: string;
+  company_name: string;
 }
 export interface UserCreate {
   username: string;
@@ -782,9 +789,11 @@ export interface RoutingOut {
   active: boolean;
   operations: RoutingOperationOut[];
 }
+export type EmployeeType = "shop_floor" | "staff";
 export interface EmployeeIn {
   emp_code: string;
   name: string;
+  employee_type: EmployeeType;
   department: string;
   designation: string;
   active: boolean;
@@ -799,6 +808,7 @@ export interface EmployeeOut {
   id: string;
   emp_code: string;
   name: string;
+  employee_type: EmployeeType;
   department: string;
   designation: string;
   active: boolean;

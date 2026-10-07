@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models import (DispatchStatus, InvoiceStatus, ItemKind, MovementType, PurchaseOrderStatus, PurchaseRequisitionSource, PurchaseRequisitionStatus, QuotationStatus, Role, SalesOrderStatus)
+from app.models import (DispatchStatus, EmployeeType, InvoiceStatus, ItemKind, MovementType, PurchaseOrderStatus, PurchaseRequisitionSource, PurchaseRequisitionStatus, QuotationStatus, Role, SalesOrderStatus)
 
 
 class ORMModel(BaseModel):
@@ -15,6 +15,7 @@ class ORMModel(BaseModel):
 
 # ---------- Auth ----------
 class LoginRequest(BaseModel):
+    company_code: str = Field(min_length=2, max_length=32)
     username: str
     password: str
 
@@ -24,6 +25,9 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     role: Role
     full_name: str
+    company_id: str
+    company_code: str
+    company_name: str
     must_change_password: bool = False
 
 
@@ -35,6 +39,7 @@ class UserOut(ORMModel):
     email: str = ""
     active: bool = True
     must_change_password: bool = False
+    company_id: str = ""
 
 
 class UserCreate(BaseModel):
@@ -961,6 +966,7 @@ class RoutingOut(ORMModel):
 class EmployeeIn(BaseModel):
     emp_code: str
     name: str
+    employee_type: EmployeeType = EmployeeType.staff
     department: str = ""
     designation: str = ""
     active: bool = True
@@ -975,6 +981,7 @@ class EmployeeOut(ORMModel):
     id: str
     emp_code: str
     name: str
+    employee_type: EmployeeType
     department: str
     designation: str
     active: bool

@@ -9,6 +9,9 @@ export interface StoredProfile {
   full_name: string;
   role: string;
   username: string;
+  company_id: string;
+  company_code: string;
+  company_name: string;
 }
 
 export function getToken(): string | null {
@@ -97,3 +100,18 @@ export const api = {
 };
 
 export { BASE_URL };
+
+
+export async function apiFetch<T = unknown>(
+  path: string,
+  init: { method?: string; body?: string } = {},
+): Promise<T> {
+  const method = (init.method ?? "GET").toUpperCase();
+  const body = init.body ? JSON.parse(init.body) : undefined;
+  if (method === "GET") return api.get<T>(path);
+  if (method === "POST") return api.post<T>(path, body);
+  if (method === "PUT") return api.put<T>(path, body);
+  if (method === "PATCH") return api.patch<T>(path, body);
+  if (method === "DELETE") return api.delete<T>(path);
+  throw new Error(`Unsupported HTTP method: ${method}`);
+}

@@ -2,22 +2,74 @@
 
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    environment: str = "development"
     app_name: str = "MiniTally ERP API"
     api_v1_prefix: str = "/api/v1"
 
+    # Control-plane DB: company routing metadata only. Tenant DB credentials
+    # are resolved from database_secret_ref at runtime.
     control_database_url: str | None = None
 
+    # Legacy/default local tenant DB used for migrations and development.
     database_url: str = "postgresql+psycopg://minitally:minitally@localhost:5432/minitally"
 
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 60 * 8
+    jwt_issuer: str = "minitally-api"
+    jwt_audience: str = "minitally-web"
+    access_token_expire_minutes: int = 30
+    jwt_clock_skew_seconds: int = 30
+    tenant_db_require_tls: bool = True
+    secret_provider: str = "environment"
 
-    cors_origins: list[str] = ["http://localhost:8080","http://localhost:8081","http://localhost:5173","http://localhost:8000"]
+    tenant_engine_cache_size: int = 32
+    tenant_pool_size: int = 2
+    tenant_pool_max_overflow: int = 1
+    tenant_pool_timeout_seconds: int = 30
+    tenant_pool_recycle_seconds: int = 1800
+
+    cors_origins: list[str] = [
+        "http://localhost:8080",
+        "http://localhost:8081",
+        "http://localhost:5173",
+        "http://localhost:8000",
+    ]
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        if self.secret_provider.lower() not in {"environment", "aws_secrets_manager"}:
+            raise ValueError("Unsupported SECRET_PROVIDER")
+        if (
+            self.tenant_engine_cache_size < 1
+            or self.tenant_pool_size < 1
+            or self.tenant_pool_max_overflow < 0
+            or self.tenant_pool_timeout_seconds <= 0
+            or self.tenant_pool_recycle_seconds <= 0
+            or self.access_token_expire_minutes < 5
+            or self.jwt_clock_skew_seconds < 0
+        ):
+            raise ValueError("Tenant connection pool settings must be positive and valid")
+        if self.environment.lower() == "production":
+            if self.jwt_secret == "change-me-in-production" or len(self.jwt_secret) < 32:
+                raise ValueError("JWT_SECRET must be a strong secret of at least 32 characters in production")
+            if not self.control_database_url:
+                raise ValueError("CONTROL_DATABASE_URL must be configured in production")
+            if "sslmode=" not in self.control_database_url.lower():
+                raise ValueError("CONTROL_DATABASE_URL must explicitly configure PostgreSQL TLS via sslmode")
+            if self.access_token_expire_minutes > 60:
+                raise ValueError("ACCESS_TOKEN_EXPIRE_MINUTES must not exceed 60 in production")
+            if not self.cors_origins:
+                raise ValueError("CORS_ORIGINS must contain the production frontend origin")
+            if any(origin.startswith("http://localhost") for origin in self.cors_origins):
+                raise ValueError("Production CORS_ORIGINS must not contain localhost")
+            if "*" in self.cors_origins:
+                raise ValueError("Production CORS_ORIGINS must be explicit; wildcard is forbidden")
+        return self
 
     class Config:
         env_file = ".env"
