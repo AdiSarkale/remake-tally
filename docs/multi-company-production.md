@@ -117,3 +117,19 @@ The workflow:
 5. only then marks the company `decommissioned`.
 
 A failed backup never reactivates the tenant. The database is not physically dropped by the application. That destruction step remains a separate operator action after retention and restore requirements are satisfied.
+
+
+## Migration lineage preflight
+
+Before a production fleet migration, run the read-only tenant revision audit:
+
+```bash
+cd backend
+python scripts/audit_tenant_migrations.py
+```
+
+The audit enumerates every control-plane tenant that is both `active` and `ready`, resolves its database URL through the configured SecretProvider, reads its `alembic_version`, and verifies that the recorded revision exists on the currently deployed migration head path.
+
+The command performs no schema changes. A non-zero exit means at least one tenant is not safely represented by the deployed migration lineage and the fleet migration must not proceed until that tenant is investigated.
+
+This is the runtime gate for the "every actually deployed tenant revision" requirement. The audit should be run against the production control database immediately before a migration release and retained with the release evidence.
