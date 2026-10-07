@@ -1,19 +1,20 @@
 """Move tenant DB credentials behind deployment secret references.
 
 For existing control-plane rows, the migration derives a deterministic secret
-reference from the normalized company code and verifies that the corresponding
-runtime secret is available before removing database_url. The database URL is
-never copied into database_secret_ref.
+reference from the normalized company code and validates the reference through
+the configured SecretProvider before removing database_url. The plaintext URL
+is never copied into database_secret_ref.
 """
 
 from __future__ import annotations
 
-import os
 import re
 
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy import text
+
+from app.services.secret_provider import get_secret_provider
 
 
 revision = "control_003"
@@ -22,7 +23,6 @@ branch_labels = None
 depends_on = None
 
 _SECRET_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$")
-_ENV_PREFIX = "TENANT_DB_URL_"
 
 
 def upgrade() -> None:
@@ -33,9 +33,6 @@ def upgrade() -> None:
         sa.Column("database_secret_ref", sa.String(length=160), nullable=True),
     )
 
-    # Existing companies receive a deterministic reference based on their
-    # normalized company code. Only the reference is written; the plaintext
-    # database_url remains untouched until all references are validated.
     bind.execute(
         text(
             "UPDATE tenant_companies "
@@ -50,12 +47,15 @@ def upgrade() -> None:
 
     invalid_refs: list[str] = []
     missing_secrets: list[str] = []
+    provider = get_secret_provider()
 
     for code, secret_ref in rows:
         if not isinstance(secret_ref, str) or not _SECRET_REF_RE.fullmatch(secret_ref):
             invalid_refs.append(str(code))
             continue
-        if not os.getenv(f"{_ENV_PREFIX}{secret_ref}"):
+        try:
+            provider.get_secret(secret_ref)
+        except Exception:
             missing_secrets.append(secret_ref)
 
     if invalid_refs or missing_secrets:
@@ -67,7 +67,7 @@ def upgrade() -> None:
             )
         if missing_secrets:
             problems.append(
-                "missing tenant DB secrets: "
+                "unresolvable tenant DB secrets: "
                 + ", ".join(sorted(set(missing_secrets)))
             )
         raise RuntimeError(
