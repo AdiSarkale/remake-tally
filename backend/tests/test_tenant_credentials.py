@@ -24,7 +24,7 @@ def test_local_default_is_development_only(monkeypatch):
     monkeypatch.setenv("JWT_SECRET", "x" * 32)
     monkeypatch.setenv(
         "CONTROL_DATABASE_URL",
-        "postgresql+psycopg://user:pass@control/control",
+        "postgresql+psycopg://user:pass@control/control?sslmode=require",
     )
     monkeypatch.setenv("CORS_ORIGINS", '["https://erp.example.com"]')
     get_settings.cache_clear()
