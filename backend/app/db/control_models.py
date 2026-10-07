@@ -27,6 +27,8 @@ class TenantCompany(ControlBase):
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     provisioning_status: Mapped[str] = mapped_column(String(24), default="provisioning", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    decommissioned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decommission_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class TenantMigrationEvent(ControlBase):
