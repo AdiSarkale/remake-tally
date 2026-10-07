@@ -95,6 +95,8 @@ Current known gaps:
 
 GitHub Actions validates backend compilation/tests and the frontend typecheck/build.
 
-## Live app
+## Local frontend
 
-https://remake-tally.lovable.app
+The frontend is available locally at:
+
+http://localhost:5173
