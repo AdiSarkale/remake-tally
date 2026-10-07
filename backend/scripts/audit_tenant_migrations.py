@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+
+# Allow direct execution from the backend directory:
+#   py scripts/audit_tenant_migrations.py
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.services.tenant_migration_audit import audit_ready_tenants
 
