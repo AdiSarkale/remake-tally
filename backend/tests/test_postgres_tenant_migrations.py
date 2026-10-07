@@ -21,10 +21,11 @@ from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.pool import NullPool
 
-from app.db.control_models import TenantCompany, TenantMigrationEvent
+from app.db.control_models import TenantAdminEvent, TenantCompany, TenantMigrationEvent
 from app.db.control import get_control_session_factory
 from app.services.tenant_migration_lock import build_lock_key, company_migration_lock
 from app.services.tenant_backup import backup_database, restore_database
+from app.services.tenant_lifecycle import decommission_company
 from app.services.tenants import migrate_all_ready_tenants, register_company, retry_failed_company
 
 
@@ -333,6 +334,39 @@ def test_postgres_company_provisioning_and_fleet_migration():
             assert retry_events[0].to_revision == "employee_type_001"
         finally:
             control.close()
+
+        decommission_backup = Path(__file__).resolve().parent / f".tenant-decommission-{marker}.dump"
+        decommission_company(
+            company_ids[1],
+            decommission_backup,
+            reason="CI disaster-recovery lifecycle validation",
+        )
+        assert decommission_backup.is_file()
+
+        control = control_factory()
+        try:
+            retired = control.get(TenantCompany, company_ids[1])
+            assert retired is not None
+            assert retired.active is False
+            assert retired.provisioning_status == "decommissioned"
+            assert retired.decommissioned_at is not None
+            assert retired.decommission_reason == "CI disaster-recovery lifecycle validation"
+
+            lifecycle_events = (
+                control.query(TenantAdminEvent)
+                .filter(
+                    TenantAdminEvent.company_id == company_ids[1],
+                    TenantAdminEvent.action == "decommission",
+                )
+                .all()
+            )
+            assert len(lifecycle_events) == 1
+            assert lifecycle_events[0].status == "succeeded"
+        finally:
+            control.close()
+
+        decommission_backup.unlink(missing_ok=True)
+        decommission_backup.with_suffix(".dump.json").unlink(missing_ok=True)
 
     finally:
         for suffix in ("A", "B"):
