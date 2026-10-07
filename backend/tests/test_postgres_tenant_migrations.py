@@ -24,6 +24,7 @@ from sqlalchemy.pool import NullPool
 from app.db.control_models import TenantCompany, TenantMigrationEvent
 from app.db.control import get_control_session_factory
 from app.services.tenant_migration_lock import build_lock_key, company_migration_lock
+from app.services.tenant_backup import backup_database, restore_database
 from app.services.tenants import migrate_all_ready_tenants, register_company, retry_failed_company
 
 
@@ -58,6 +59,73 @@ def _drop_database(admin_url: str, name: str) -> None:
             (name,),
         )
         conn.execute(f'DROP DATABASE IF EXISTS "{name}"')
+
+
+def test_postgres_tenant_backup_and_restore_round_trip():
+    admin_url = _admin_url()
+    marker = uuid.uuid4().hex[:10]
+    source_name = f"minitally_backup_source_{marker}"
+    restore_name = f"minitally_backup_restore_{marker}"
+    source_url = admin_url.rsplit("/", 1)[0] + "/" + source_name
+    restore_url = admin_url.rsplit("/", 1)[0] + "/" + restore_name
+
+    _create_database(admin_url, source_name)
+    _create_database(admin_url, restore_name)
+    backup_path = Path(__file__).resolve().parent / f".tenant-backup-{marker}.dump"
+
+    try:
+        cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+        cfg.set_main_option("sqlalchemy.url", source_url)
+        command.upgrade(cfg, "head")
+
+        engine = create_engine(source_url)
+        try:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "CREATE TABLE dr_round_trip_marker "
+                        "(id INTEGER PRIMARY KEY, value TEXT NOT NULL)"
+                    )
+                )
+                connection.execute(
+                    text(
+                        "INSERT INTO dr_round_trip_marker (id, value) "
+                        "VALUES (1, 'tenant-backup-ok')"
+                    )
+                )
+        finally:
+            engine.dispose()
+
+        backup_database(source_url, backup_path, company_code="DRTEST")
+        assert backup_path.is_file()
+        assert backup_path.with_suffix(".dump.json").is_file()
+
+        restore_database(
+            restore_url,
+            backup_path,
+            expected_company_code="DRTEST",
+        )
+
+        engine = create_engine(restore_url)
+        try:
+            with engine.connect() as connection:
+                value = connection.execute(
+                    text(
+                        "SELECT value FROM dr_round_trip_marker "
+                        "WHERE id = 1"
+                    )
+                ).scalar_one()
+            assert value == "tenant-backup-ok"
+        finally:
+            engine.dispose()
+    finally:
+        for path in (
+            backup_path,
+            backup_path.with_suffix(".dump.json"),
+        ):
+            path.unlink(missing_ok=True)
+        for name in (source_name, restore_name):
+            _drop_database(admin_url, name)
 
 
 def test_postgres_company_migration_advisory_lock_serializes_processes():
