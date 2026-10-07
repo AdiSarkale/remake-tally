@@ -94,6 +94,73 @@ CI executes a real PostgreSQL backup/restore round trip against the same Postgre
 
 For production, upload the generated dump and manifest to encrypted, access-controlled object storage with retention and lifecycle policies. The repository utility deliberately does not embed a cloud-specific backup store.
 
+## Production backup storage policy
+
+The repository backup utility is responsible for producing and validating PostgreSQL backup artifacts. It deliberately does not embed a cloud-specific object-storage client. Production deployments must provide durable object storage outside the application runtime.
+
+### Required controls
+
+Production tenant backup artifacts must be stored in a **private object-storage bucket** with the following controls:
+
+- **Encryption at rest:** server-side encryption is mandatory. AWS deployments should use SSE-KMS with a dedicated backup KMS key where organizational policy permits.
+- **Encryption in transit:** all backup uploads and downloads must use TLS.
+- **Access control:** bucket access must be denied publicly. The application or backup worker should have only the object permissions required to write new artifacts; restore operators receive read access. Historical backup deletion must not be part of ordinary application permissions.
+- **Versioning:** object versioning should be enabled so an accidental overwrite does not destroy the previous artifact.
+- **Retention:** production backups must have a defined retention period. The default operational baseline is **90 days**, unless contractual, accounting, legal, or customer-specific requirements require longer retention.
+- **Immutability:** critical production backups should use object-lock/immutable retention for the applicable retention window where the storage platform supports it.
+- **Lifecycle management:** expiration or archival must be implemented through the storage platform's lifecycle policy rather than application code deleting backup objects.
+- **Audit logging:** object access and administrative deletion events should be retained according to the organization's security/audit policy.
+- **Integrity:** the PostgreSQL dump and its JSON manifest must be stored together. The manifest SHA-256 checksum must be verified before restore.
+- **Company isolation:** backup storage permissions and object prefixes should prevent one company's backup artifacts from being casually exposed to another company's operators.
+
+A recommended AWS layout is:
+
+```text
+Private S3 bucket
+└── tenants/
+    └── <COMPANY_CODE>/
+        └── <YYYY>/
+            └── <MM>/
+                ├── <backup-id>.dump
+                └── <backup-id>.dump.json
+```
+
+The bucket should use a dedicated backup policy, block public access, enable versioning, and apply the organization's approved KMS key and lifecycle/retention rules. Object Lock should be enabled for backup classes that require immutable retention.
+
+### Backup and restore evidence
+
+For every production backup, retain the dump and manifest as one logical backup set. The manifest records the company code, source Alembic revision, creation timestamp, and SHA-256 checksum. Restore operators must verify:
+
+1. the artifact exists and is readable;
+2. the manifest checksum matches the downloaded dump;
+3. the manifest company code matches the intended restore company;
+4. the target PostgreSQL database is explicitly identified;
+5. the restore completes successfully.
+
+Restore tests should be performed periodically and the result retained as operational evidence. A successful `pg_dump` alone is not sufficient proof of recoverability.
+
+### Decommissioning retention
+
+A tenant's final decommissioning backup must be uploaded to the production backup store before the tenant database is physically destroyed. The retention policy must outlive the destruction event for the required retention window. Physical database deletion remains a separate, operator-controlled action and must not bypass backup retention or restore-validation requirements.
+
+### Deployment checklist
+
+Before treating production backup storage as ready, verify:
+
+- [ ] private bucket/container with public access blocked;
+- [ ] encryption at rest enabled and approved key configured;
+- [ ] TLS required for object access;
+- [ ] least-privilege writer and restore roles configured;
+- [ ] versioning enabled;
+- [ ] retention period configured (90 days minimum baseline unless policy requires longer);
+- [ ] lifecycle/archive policy configured;
+- [ ] immutable retention/Object Lock enabled where required;
+- [ ] object access and deletion auditing enabled;
+- [ ] dump and manifest stored together;
+- [ ] a restore test has been completed and evidence retained.
+
+The application remains cloud-neutral: `tenant_backup.py` creates the dump and manifest, while deployment/operations tooling is responsible for uploading and protecting those artifacts in the approved object store.
+
 ## Tenant decommissioning
 
 Decommissioning is a control-plane state transition, not an automatic database drop.
