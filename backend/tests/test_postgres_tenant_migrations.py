@@ -19,9 +19,11 @@ import psycopg
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.pool import NullPool
 
-from app.db.control_models import TenantCompany
+from app.db.control_models import TenantCompany, TenantMigrationEvent
 from app.db.control import get_control_session_factory
+from app.services.tenant_migration_lock import build_lock_key, company_migration_lock
 from app.services.tenants import migrate_all_ready_tenants, register_company, retry_failed_company
 
 
@@ -58,6 +60,28 @@ def _drop_database(admin_url: str, name: str) -> None:
         conn.execute(f'DROP DATABASE IF EXISTS "{name}"')
 
 
+def test_postgres_company_migration_advisory_lock_serializes_processes():
+    marker = uuid.uuid4().hex[:10]
+    company_id = f"lock-test-{marker}"
+    lock_key = build_lock_key("tenant-migration", "company", company_id)
+
+    with company_migration_lock(company_id):
+        engine = create_engine(_control_url(), poolclass=NullPool)
+        try:
+            with engine.connect() as connection:
+                acquired = connection.execute(
+                    text(
+                        "SELECT pg_try_advisory_lock("
+                        "hashtextextended(:lock_key, 0)"
+                        ")"
+                    ),
+                    {"lock_key": lock_key},
+                ).scalar_one()
+                assert acquired is False
+        finally:
+            engine.dispose()
+
+
 def test_existing_tenant_upgrades_from_previous_head_to_current_head():
     """Prove an existing tenant at the previous migration head can reach head."""
     admin_url = _admin_url()
@@ -70,8 +94,6 @@ def test_existing_tenant_upgrades_from_previous_head_to_current_head():
         cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
         cfg.set_main_option("sqlalchemy.url", database_url)
 
-        # This represents an existing tenant created by the architecture
-        # before the latest employee classification migration.
         command.upgrade(cfg, "8d4f6a1b2c3e")
 
         engine = create_engine(database_url)
@@ -84,8 +106,6 @@ def test_existing_tenant_upgrades_from_previous_head_to_current_head():
         finally:
             engine.dispose()
 
-        # The normal deployment path must upgrade that existing tenant,
-        # rather than requiring a rebuild from scratch.
         command.upgrade(cfg, "head")
 
         engine = create_engine(database_url)
@@ -149,6 +169,16 @@ def test_postgres_company_provisioning_and_fleet_migration():
             expected_secret_refs = {f"PG{marker}A", f"PG{marker}B"}
             assert {company.database_secret_ref for company in companies} == expected_secret_refs
 
+            events = (
+                control.query(TenantMigrationEvent)
+                .filter(TenantMigrationEvent.company_id.in_(company_ids))
+                .all()
+            )
+            assert len(events) == 2
+            assert {event.operation for event in events} == {"provision"}
+            assert all(event.status == "succeeded" for event in events)
+            assert all(event.to_revision == "employee_type_001" for event in events)
+
             with psycopg.connect(_psycopg_url(control_url)) as control_connection:
                 columns = {
                     row[0]
@@ -157,8 +187,16 @@ def test_postgres_company_provisioning_and_fleet_migration():
                         "WHERE table_name = 'tenant_companies'"
                     )
                 }
+                event_columns = {
+                    row[0]
+                    for row in control_connection.execute(
+                        "SELECT column_name FROM information_schema.columns "
+                        "WHERE table_name = 'tenant_migration_events'"
+                    )
+                }
             assert "database_secret_ref" in columns
             assert "database_url" not in columns
+            assert {"company_id", "status", "from_revision", "to_revision"}.issubset(event_columns)
         finally:
             control.close()
 
@@ -184,7 +222,17 @@ def test_postgres_company_provisioning_and_fleet_migration():
         expected_codes = {f"PG{marker}A".upper(), f"PG{marker}B".upper()}
         assert expected_codes.issubset(set(migrated))
 
-        control_factory = get_control_session_factory()
+        control = control_factory()
+        try:
+            fleet_events = (
+                control.query(TenantMigrationEvent)
+                .filter(TenantMigrationEvent.company_id.in_(company_ids))
+                .all()
+            )
+            assert sum(event.operation == "fleet_migrate" for event in fleet_events) == 2
+        finally:
+            control.close()
+
         control = control_factory()
         try:
             first = control.query(TenantCompany).filter_by(code=f"PG{marker}A".upper()).one()
@@ -202,6 +250,18 @@ def test_postgres_company_provisioning_and_fleet_migration():
             recovered = control.get(TenantCompany, failed_id)
             assert recovered.active is True
             assert recovered.provisioning_status == "ready"
+
+            retry_events = (
+                control.query(TenantMigrationEvent)
+                .filter(
+                    TenantMigrationEvent.company_id == failed_id,
+                    TenantMigrationEvent.operation == "retry",
+                )
+                .all()
+            )
+            assert len(retry_events) == 1
+            assert retry_events[0].status == "succeeded"
+            assert retry_events[0].to_revision == "employee_type_001"
         finally:
             control.close()
 
