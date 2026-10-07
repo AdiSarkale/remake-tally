@@ -82,6 +82,7 @@ def decommission_company(
                 raise ValueError(f"Company not found: {company_id}")
             if company.provisioning_status == "decommissioned":
                 raise ValueError(f"Company {company.code} is already decommissioned")
+            was_retry = company.provisioning_status == "decommissioning"
             if company.provisioning_status not in {"ready", "decommissioning"}:
                 raise ValueError(
                     f"Company {company.code} is not in a decommissionable state"
@@ -108,9 +109,7 @@ def decommission_company(
                 name=company_code,
                 database_secret_ref=secret_ref,
             ),
-            "decommission_retry"
-            if company.provisioning_status == "decommissioning"
-            else "decommission",
+            "decommission_retry" if was_retry else "decommission",
             reason,
         )
 
