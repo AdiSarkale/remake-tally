@@ -61,6 +61,7 @@ def _drop_database(admin_url: str, name: str) -> None:
 
 
 def test_postgres_company_migration_advisory_lock_serializes_processes():
+    _control_url()
     marker = uuid.uuid4().hex[:10]
     company_id = f"lock-test-{marker}"
     lock_key = build_lock_key("tenant-migration", "company", company_id)
