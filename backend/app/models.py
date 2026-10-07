@@ -28,6 +28,11 @@ class ItemKind(str, enum.Enum):
     scrap = "scrap"
 
 
+class EmployeeType(str, enum.Enum):
+    shop_floor = "shop_floor"
+    staff = "staff"
+
+
 class MovementType(str, enum.Enum):
     IN = "IN"
     OUT = "OUT"
@@ -1101,7 +1106,7 @@ class PurchaseOrder(Base):
     supplier_id: Mapped[str] = mapped_column(ForeignKey("parties.id"))
     supplier_name: Mapped[str] = mapped_column(String(160))
     warehouse_id: Mapped[str | None] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
-    notes: Mapped[str] = mapped_column(Text)
+    notes: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[PurchaseOrderStatus] = mapped_column(Enum(PurchaseOrderStatus))
     sub_total: Mapped[float] = mapped_column(Float)
     gst_total: Mapped[float] = mapped_column(Float)
@@ -1230,6 +1235,9 @@ class Employee(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     emp_code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
+    employee_type: Mapped[EmployeeType] = mapped_column(
+        String(20), default=EmployeeType.staff, nullable=False, index=True
+    )
     department: Mapped[str] = mapped_column(String(120), default="")
     designation: Mapped[str] = mapped_column(String(120), default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -1272,14 +1280,3 @@ class ProductionOrderOperation(Base):
     planned_qty: Mapped[float] = mapped_column(Float)
     completed_qty: Mapped[float] = mapped_column(Float, default=0)
 
-
-class TenantCompany(Base):
-    """Central control-plane record for one isolated company database."""
-    __tablename__ = "tenant_companies"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
-    name: Mapped[str] = mapped_column(String(160))
-    database_url: Mapped[str] = mapped_column(Text)
-    active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

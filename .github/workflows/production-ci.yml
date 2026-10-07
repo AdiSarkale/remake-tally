@@ -31,6 +31,53 @@ jobs:
       - name: Compile backend
         run: python -m compileall -q backend/app
 
+  postgres-migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: minitally
+          POSTGRES_PASSWORD: minitally
+          POSTGRES_DB: minitally
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U minitally -d minitally"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+      - name: Create isolated control database
+        env:
+          PGPASSWORD: minitally
+        run: psql -h 127.0.0.1 -U minitally -d minitally -c "CREATE DATABASE minitally_control;"
+      - name: Run control-plane migrations
+        env:
+          CONTROL_DATABASE_URL: postgresql+psycopg://minitally:minitally@127.0.0.1:5432/minitally_control
+        run: alembic -c control_alembic.ini upgrade head
+      - name: Run tenant migrations
+        env:
+          DATABASE_URL: postgresql+psycopg://minitally:minitally@127.0.0.1:5432/minitally
+          CONTROL_DATABASE_URL: postgresql+psycopg://minitally:minitally@127.0.0.1:5432/minitally_control
+        run: alembic upgrade head
+
+      - name: Test PostgreSQL tenant provisioning lifecycle
+        env:
+          DATABASE_URL: postgresql+psycopg://minitally:minitally@127.0.0.1:5432/minitally
+          CONTROL_DATABASE_URL: postgresql+psycopg://minitally:minitally@127.0.0.1:5432/minitally_control
+          POSTGRES_TEST_ADMIN_URL: postgresql+psycopg://minitally:minitally@127.0.0.1:5432/minitally
+        run: pytest -q tests/test_postgres_tenant_migrations.py
+
   frontend:
     runs-on: ubuntu-latest
     steps:

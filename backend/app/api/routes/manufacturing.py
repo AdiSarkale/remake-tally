@@ -18,6 +18,7 @@ def _auto_employee(db: Session, operation: models.RoutingOperation) -> models.Em
         models.EmployeeSkill.employee_id == models.Employee.id,
     ).filter(
         models.Employee.active.is_(True),
+        models.Employee.employee_type == models.EmployeeType.shop_floor,
         models.EmployeeSkill.active.is_(True),
     )
     if operation.required_skill.strip():
@@ -196,6 +197,8 @@ def assign_operation_employee(order_id: str, operation_row_id: str, payload: sch
     employee = db.get(models.Employee, payload.employee_id) if payload.employee_id else _auto_employee(db, operation)
     if employee is None or not employee.active:
         raise HTTPException(400, "No active employee matches the routing skill")
+    if employee.employee_type != models.EmployeeType.shop_floor:
+        raise HTTPException(400, "Only shop-floor employees can be assigned to production operations")
     if operation.required_skill:
         skilled = db.query(models.EmployeeSkill).filter_by(employee_id=employee.id, skill=operation.required_skill, active=True).first()
         if not skilled:
