@@ -65,3 +65,31 @@ Authenticated ERP routes resolve their SQLAlchemy session from the `company_id` 
 - Test restore procedures per tenant.
 - Automate tenant provisioning and schema migration.
 - Require CI tenant-isolation and PostgreSQL migration tests before merging backend changes.
+
+## Tenant backup and restore
+
+Back up an active tenant to PostgreSQL custom format:
+
+```bash
+cd backend
+python scripts/tenant_backup.py backup \
+  --company DEMO \
+  --output backups/demo-$(date +%Y%m%d%H%M%S).dump
+```
+
+The utility resolves the tenant database credential through the configured SecretProvider, creates a `pg_dump -Fc` artifact, and writes a JSON manifest containing the company code, source Alembic revision, creation timestamp, and SHA-256 checksum.
+
+Restore into a replacement PostgreSQL database:
+
+```bash
+python scripts/tenant_backup.py restore \
+  --company DEMO \
+  --backup backups/demo-20261007T094700.dump \
+  --target-url postgresql+psycopg://.../demo_restore
+```
+
+Restore is intentionally explicit: the target database must be supplied by the operator. The manifest checksum is verified, and a cross-company restore is rejected when the backup company code does not match the requested company.
+
+CI executes a real PostgreSQL backup/restore round trip against the same PostgreSQL service used for migration validation. This proves that a tenant can be reconstructed into an empty replacement database rather than merely generating a dump file.
+
+For production, upload the generated dump and manifest to encrypted, access-controlled object storage with retention and lifecycle policies. The repository utility deliberately does not embed a cloud-specific backup store.
