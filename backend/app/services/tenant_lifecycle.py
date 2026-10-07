@@ -10,8 +10,7 @@ from sqlalchemy import text
 
 from app.db.control import get_control_engine, get_control_session_factory
 from app.db.control_models import TenantAdminEvent, TenantCompany
-from app.services.secret_provider import get_secret_provider
-from app.services.tenant_backup import TenantBackupError, backup_database
+from app.services.tenant_backup import backup_database
 from app.services.tenant_migration_lock import company_migration_lock
 from app.services.tenant_credentials import resolve_tenant_database_url
 
@@ -83,10 +82,15 @@ def decommission_company(
                 raise ValueError(f"Company not found: {company_id}")
             if company.provisioning_status == "decommissioned":
                 raise ValueError(f"Company {company.code} is already decommissioned")
-            if company.provisioning_status != "ready" or not company.active:
+            if company.provisioning_status not in {"ready", "decommissioning"}:
                 raise ValueError(
-                    f"Company {company.code} is not active/ready and cannot be decommissioned"
+                    f"Company {company.code} is not in a decommissionable state"
                 )
+            if company.provisioning_status == "ready" and not company.active:
+                raise ValueError(
+                    f"Company {company.code} is inactive but not in decommissioning state"
+                )
+
             company.active = False
             company.provisioning_status = "decommissioning"
             company.decommission_reason = reason
@@ -104,7 +108,9 @@ def decommission_company(
                 name=company_code,
                 database_secret_ref=secret_ref,
             ),
-            "decommission",
+            "decommission_retry"
+            if company.provisioning_status == "decommissioning"
+            else "decommission",
             reason,
         )
 
