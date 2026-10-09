@@ -36,3 +36,16 @@ def test_hr_guard_rejects_non_admin_roles(role):
 def test_production_users_retain_production_access_without_hr_management():
     assert "production" in ROLE_PERMISSIONS[models.Role.operator]
     assert "hr" not in ROLE_PERMISSIONS[models.Role.operator]
+
+
+def test_employee_create_schema_rejects_empty_and_oversized_fields():
+    from pydantic import ValidationError
+
+    from app.schemas import EmployeeIn
+
+    with pytest.raises(ValidationError):
+        EmployeeIn(emp_code="", name="Valid name")
+    with pytest.raises(ValidationError):
+        EmployeeIn(emp_code="E" * 33, name="Valid name")
+    with pytest.raises(ValidationError):
+        EmployeeIn(emp_code="EMP-1", name="N" * 121)
