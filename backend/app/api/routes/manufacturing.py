@@ -121,9 +121,12 @@ def list_employees(db: Session = Depends(get_db), user: models.User = employee_a
 @router.post("/employees", response_model=schemas.EmployeeOut, status_code=201)
 def create_employee(payload: schemas.EmployeeIn, db: Session = Depends(get_db), user: models.User = hr_employee_access):
     emp_code = payload.emp_code.strip()
+    name = payload.name.strip()
+    if not emp_code or not name:
+        raise HTTPException(422, "Employee code and name are required")
     if db.query(models.Employee).filter(models.Employee.emp_code == emp_code).first():
         raise HTTPException(409, "Employee code already exists")
-    row = models.Employee(**{**payload.model_dump(), "emp_code": emp_code, "name": payload.name.strip()})
+    row = models.Employee(**{**payload.model_dump(), "emp_code": emp_code, "name": name})
     db.add(row)
     log_audit(db, user.username, "CREATE", "employee", row.emp_code)
     db.commit()
@@ -137,6 +140,9 @@ def update_employee(employee_id: str, payload: schemas.EmployeeUpdate, db: Sessi
     if row is None:
         raise HTTPException(404, "Employee not found")
     emp_code = payload.emp_code.strip()
+    name = payload.name.strip()
+    if not emp_code or not name:
+        raise HTTPException(422, "Employee code and name are required")
     duplicate = db.query(models.Employee).filter(
         models.Employee.emp_code == emp_code,
         models.Employee.id != employee_id,
@@ -144,7 +150,7 @@ def update_employee(employee_id: str, payload: schemas.EmployeeUpdate, db: Sessi
     if duplicate:
         raise HTTPException(409, "Employee code already exists")
     row.emp_code = emp_code
-    row.name = payload.name.strip()
+    row.name = name
     row.employee_type = payload.employee_type
     row.department = payload.department.strip()
     row.designation = payload.designation.strip()
