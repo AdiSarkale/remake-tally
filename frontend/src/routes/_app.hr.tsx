@@ -3,7 +3,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { FormDialog, FormField } from "@/components/form-dialog";
@@ -34,42 +33,43 @@ function HrPage() {
   const orders = H.useProductionOrders();
   const create = H.useCreateEmployee();
   const update = H.useUpdateEmployee();
+  const setStatus = H.useSetEmployeeStatus();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState<T.EmployeeIn>({ emp_code: "", name: "", employee_type: "shop_floor", department: "Production", designation: "Operator", active: true });
+  const [f, setF] = useState<T.EmployeeIn>({ name: "", employee_type: "shop_floor", department: "Production", designation: "Operator" });
   const [sel, setSel] = useState<T.EmployeeOut | null>(null);
 
   const load = (id: string) =>
     (orders.data ?? []).flatMap((o) => o.operations.filter((op) => op.assigned_employee_id === id && op.completed_qty < op.planned_qty)).length;
 
   const submit = async () => {
-    if (!f.emp_code.trim() || !f.name.trim()) return;
+    if (!f.name.trim()) return;
     const saved = editingId
       ? await runMutation(update.mutateAsync({ ...f, id: editingId }), "Employee updated")
       : await runMutation(create.mutateAsync(f), "Employee created");
     if (saved) {
       setOpen(false);
       setEditingId(null);
-      if (sel && editingId) setSel({ ...f, id: editingId });
+      if (sel && editingId) setSel({ ...sel, ...f });
     }
   };
 
   const startNew = () => {
     setEditingId(null);
-    setF({ emp_code: "", name: "", employee_type: "shop_floor", department: "Production", designation: "Operator", active: true });
+    setF({ name: "", employee_type: "shop_floor", department: "Production", designation: "Operator" });
     setOpen(true);
   };
 
   const startEdit = () => {
     if (!sel) return;
-    setF({ emp_code: sel.emp_code, name: sel.name, employee_type: sel.employee_type, department: sel.department, designation: sel.designation, active: sel.active });
+    setF({ name: sel.name, employee_type: sel.employee_type, department: sel.department, designation: sel.designation });
     setEditingId(sel.id);
     setOpen(true);
   };
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Employees" description="Skills drive automatic operation assignment on production orders." />
+      <PageHeader title="Employees" description="Employee codes are assigned by the system and cannot be changed. Skills drive automatic operation assignment on production orders." />
       <QueryTable
         query={query}
         rowKey={(r) => r.id}
@@ -89,25 +89,30 @@ function HrPage() {
       />
       <FormDialog open={open} onOpenChange={(value) => { setOpen(value); if (!value) setEditingId(null); }} title={editingId ? "Edit employee" : "New employee"} onSubmit={() => void submit()} pending={create.isPending || update.isPending}>
         <div className="grid gap-3 sm:grid-cols-2">
-          <FormField label="Employee code *"><Input value={f.emp_code} onChange={(e) => setF({ ...f, emp_code: e.target.value })} className="font-mono" placeholder="EMP-002" /></FormField>
+          <FormField label="Employee code"><p className="text-sm text-muted-foreground">Assigned automatically after saving (EMP-001, EMP-002, …).</p></FormField>
           <FormField label="Name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></FormField>
           <FormField label="Employee type"><select className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={f.employee_type} onChange={(e) => setF({ ...f, employee_type: e.target.value as T.EmployeeType, department: e.target.value === "shop_floor" ? "Production" : "" })}><option value="shop_floor">Shop floor</option><option value="staff">Staff</option></select></FormField>
           <FormField label="Department"><Input value={f.department} onChange={(e) => setF({ ...f, department: e.target.value })} /></FormField>
           <FormField label="Designation"><Input value={f.designation} onChange={(e) => setF({ ...f, designation: e.target.value })} /></FormField>
-          {editingId && canManageEmployees ? (
-            <FormField label="Employee active">
-              <div className="flex h-9 items-center gap-2">
-                <Switch checked={f.active} onCheckedChange={(active) => setF({ ...f, active })} />
-                <span className="text-sm">{f.active ? "Active" : "Inactive"}</span>
-              </div>
-            </FormField>
-          ) : null}
+
         </div>
       </FormDialog>
       <DetailSheet open={sel !== null} onOpenChange={(o) => !o && setSel(null)} title={sel?.name ?? ""} description={sel?.emp_code ?? ""}>
         {sel ? (
           <>
-            {canManageEmployees ? <Button variant="outline" size="sm" className="mb-4" onClick={startEdit}>Edit employee</Button> : null}
+            {canManageEmployees ? (
+              <div className="mb-4 flex flex-wrap gap-2">
+                <Button variant="outline" size="sm" onClick={startEdit}>Edit employee</Button>
+                <Button
+                  variant={sel.active ? "destructive" : "default"}
+                  size="sm"
+                  disabled={setStatus.isPending}
+                  onClick={() => void runMutation(setStatus.mutateAsync({ id: sel.id, active: !sel.active }), sel.active ? "Employee deactivated" : "Employee reactivated").then((saved) => { if (saved) setSel(saved); })}
+                >
+                  {sel.active ? "Deactivate employee" : "Reactivate employee"}
+                </Button>
+              </div>
+            ) : null}
             <EmployeeDetail emp={sel} canEdit={canEdit} />
           </>
         ) : null}

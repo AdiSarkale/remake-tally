@@ -791,14 +791,15 @@ export interface RoutingOut {
 }
 export type EmployeeType = "shop_floor" | "staff";
 export interface EmployeeIn {
-  emp_code: string;
   name: string;
   employee_type: EmployeeType;
   department: string;
   designation: string;
-  active: boolean;
 }
 export type EmployeeUpdate = EmployeeIn;
+export interface EmployeeStatusUpdate {
+  active: boolean;
+}
 export interface EmployeeSkillIn {
   skill: string;
   level: number;
