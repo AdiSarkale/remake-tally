@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api.deps import require_area
+from app.api.deps import require_any_area, require_area
 from app.db.session import get_db
 from app.services.inventory import log_audit, next_batch_no
 
@@ -109,16 +109,20 @@ def create_routing(payload: schemas.RoutingIn, db: Session = Depends(get_db), us
             "operations": db.query(models.RoutingOperation).filter_by(routing_id=r.id).order_by(models.RoutingOperation.sequence).all()}
 
 
+employee_access = Depends(require_any_area("production", "hr"))
+
+
 @router.get("/employees", response_model=list[schemas.EmployeeOut])
-def list_employees(db: Session = Depends(get_db), user: models.User = guard):
+def list_employees(db: Session = Depends(get_db), user: models.User = employee_access):
     return db.query(models.Employee).order_by(models.Employee.emp_code).all()
 
 
 @router.post("/employees", response_model=schemas.EmployeeOut, status_code=201)
-def create_employee(payload: schemas.EmployeeIn, db: Session = Depends(get_db), user: models.User = guard):
-    if db.query(models.Employee).filter(models.Employee.emp_code == payload.emp_code).first():
-        raise HTTPException(400, "Employee code already exists")
-    row = models.Employee(**payload.model_dump())
+def create_employee(payload: schemas.EmployeeIn, db: Session = Depends(get_db), user: models.User = employee_access):
+    emp_code = payload.emp_code.strip()
+    if db.query(models.Employee).filter(models.Employee.emp_code == emp_code).first():
+        raise HTTPException(409, "Employee code already exists")
+    row = models.Employee(**{**payload.model_dump(), "emp_code": emp_code, "name": payload.name.strip()})
     db.add(row)
     log_audit(db, user.username, "CREATE", "employee", row.emp_code)
     db.commit()
@@ -126,15 +130,39 @@ def create_employee(payload: schemas.EmployeeIn, db: Session = Depends(get_db), 
     return row
 
 
+@router.put("/employees/{employee_id}", response_model=schemas.EmployeeOut)
+def update_employee(employee_id: str, payload: schemas.EmployeeUpdate, db: Session = Depends(get_db), user: models.User = employee_access):
+    row = db.get(models.Employee, employee_id)
+    if row is None:
+        raise HTTPException(404, "Employee not found")
+    emp_code = payload.emp_code.strip()
+    duplicate = db.query(models.Employee).filter(
+        models.Employee.emp_code == emp_code,
+        models.Employee.id != employee_id,
+    ).first()
+    if duplicate:
+        raise HTTPException(409, "Employee code already exists")
+    row.emp_code = emp_code
+    row.name = payload.name.strip()
+    row.employee_type = payload.employee_type
+    row.department = payload.department.strip()
+    row.designation = payload.designation.strip()
+    row.active = payload.active
+    log_audit(db, user.username, "UPDATE", "employee", f"{row.emp_code}; active={row.active}")
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 @router.get("/employees/{employee_id}/skills", response_model=list[schemas.EmployeeSkillOut])
-def list_employee_skills(employee_id: str, db: Session = Depends(get_db), user: models.User = guard):
+def list_employee_skills(employee_id: str, db: Session = Depends(get_db), user: models.User = employee_access):
     if not db.get(models.Employee, employee_id):
         raise HTTPException(404, "Employee not found")
     return db.query(models.EmployeeSkill).filter_by(employee_id=employee_id).order_by(models.EmployeeSkill.skill).all()
 
 
 @router.post("/employees/{employee_id}/skills", response_model=schemas.EmployeeSkillOut, status_code=201)
-def add_employee_skill(employee_id: str, payload: schemas.EmployeeSkillIn, db: Session = Depends(get_db), user: models.User = guard):
+def add_employee_skill(employee_id: str, payload: schemas.EmployeeSkillIn, db: Session = Depends(get_db), user: models.User = employee_access):
     if not db.get(models.Employee, employee_id):
         raise HTTPException(404, "Employee not found")
     if db.query(models.EmployeeSkill).filter_by(employee_id=employee_id, skill=payload.skill).first():
