@@ -971,6 +971,14 @@ class EmployeeIn(BaseModel):
     designation: str = ""
     active: bool = True
 
+class EmployeeUpdate(BaseModel):
+    emp_code: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=120)
+    employee_type: EmployeeType = EmployeeType.staff
+    department: str = Field(default="", max_length=120)
+    designation: str = Field(default="", max_length=120)
+    active: bool = True
+
 class EmployeeSkillIn(BaseModel):
     skill: str
     level: int = Field(default=1, ge=1, le=5)
