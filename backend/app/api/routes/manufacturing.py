@@ -132,7 +132,7 @@ def create_employee(payload: schemas.EmployeeIn, db: Session = Depends(get_db), 
 
 
 @router.put("/employees/{employee_id}", response_model=schemas.EmployeeOut)
-def update_employee(employee_id: str, payload: schemas.EmployeeUpdate, db: Session = Depends(get_db), user: models.User = employee_access):
+def update_employee(employee_id: str, payload: schemas.EmployeeUpdate, db: Session = Depends(get_db), user: models.User = hr_employee_access):
     row = db.get(models.Employee, employee_id)
     if row is None:
         raise HTTPException(404, "Employee not found")
