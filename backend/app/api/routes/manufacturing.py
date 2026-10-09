@@ -1,6 +1,9 @@
 """Manufacturing master data, routing, workcenter and production-order execution APIs."""
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -118,20 +121,44 @@ def list_employees(db: Session = Depends(get_db), user: models.User = employee_a
     return db.query(models.Employee).order_by(models.Employee.emp_code).all()
 
 
+def _next_employee_code(db: Session) -> str:
+    """Allocate the next EMP-NNN code; codes are never accepted from clients."""
+    codes = db.query(models.Employee.emp_code).all()
+    highest = 0
+    for (code,) in codes:
+        match = re.fullmatch(r"EMP-(\d+)", code or "", flags=re.IGNORECASE)
+        if match:
+            highest = max(highest, int(match.group(1)))
+    return f"EMP-{highest + 1:03d}"
+
+
 @router.post("/employees", response_model=schemas.EmployeeOut, status_code=201)
 def create_employee(payload: schemas.EmployeeIn, db: Session = Depends(get_db), user: models.User = hr_employee_access):
-    emp_code = payload.emp_code.strip()
     name = payload.name.strip()
-    if not emp_code or not name:
-        raise HTTPException(422, "Employee code and name are required")
-    if db.query(models.Employee).filter(models.Employee.emp_code == emp_code).first():
-        raise HTTPException(409, "Employee code already exists")
-    row = models.Employee(**{**payload.model_dump(), "emp_code": emp_code, "name": name})
-    db.add(row)
-    log_audit(db, user.username, "CREATE", "employee", row.emp_code)
-    db.commit()
-    db.refresh(row)
-    return row
+    if not name:
+        raise HTTPException(422, "Employee name is required")
+
+    # The unique database constraint is the final concurrency guard. If another
+    # request allocates the same code at the same time, retry after rollback.
+    for _attempt in range(5):
+        row = models.Employee(
+            emp_code=_next_employee_code(db),
+            name=name,
+            employee_type=payload.employee_type,
+            department=payload.department.strip(),
+            designation=payload.designation.strip(),
+            active=True,
+        )
+        db.add(row)
+        try:
+            db.flush()
+            log_audit(db, user.username, "CREATE", "employee", row.emp_code)
+            db.commit()
+            db.refresh(row)
+            return row
+        except IntegrityError:
+            db.rollback()
+    raise HTTPException(409, "Could not allocate a unique employee code; please retry")
 
 
 @router.put("/employees/{employee_id}", response_model=schemas.EmployeeOut)
@@ -139,23 +166,29 @@ def update_employee(employee_id: str, payload: schemas.EmployeeUpdate, db: Sessi
     row = db.get(models.Employee, employee_id)
     if row is None:
         raise HTTPException(404, "Employee not found")
-    emp_code = payload.emp_code.strip()
     name = payload.name.strip()
-    if not emp_code or not name:
-        raise HTTPException(422, "Employee code and name are required")
-    duplicate = db.query(models.Employee).filter(
-        models.Employee.emp_code == emp_code,
-        models.Employee.id != employee_id,
-    ).first()
-    if duplicate:
-        raise HTTPException(409, "Employee code already exists")
-    row.emp_code = emp_code
+    if not name:
+        raise HTTPException(422, "Employee name is required")
     row.name = name
     row.employee_type = payload.employee_type
     row.department = payload.department.strip()
     row.designation = payload.designation.strip()
+    log_audit(db, user.username, "UPDATE", "employee", f"{row.emp_code}; details updated")
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.patch("/employees/{employee_id}/status", response_model=schemas.EmployeeOut)
+def set_employee_status(employee_id: str, payload: schemas.EmployeeStatusUpdate, db: Session = Depends(get_db), user: models.User = hr_employee_access):
+    row = db.get(models.Employee, employee_id)
+    if row is None:
+        raise HTTPException(404, "Employee not found")
+    if row.active == payload.active:
+        return row
     row.active = payload.active
-    log_audit(db, user.username, "UPDATE", "employee", f"{row.emp_code}; active={row.active}")
+    action = "REACTIVATE" if row.active else "DEACTIVATE"
+    log_audit(db, user.username, action, "employee", row.emp_code)
     db.commit()
     db.refresh(row)
     return row
