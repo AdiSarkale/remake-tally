@@ -964,20 +964,21 @@ class RoutingOut(ORMModel):
     operations: list[RoutingOperationOut]
 
 class EmployeeIn(BaseModel):
-    emp_code: str = Field(min_length=1, max_length=32)
+    """Editable employee fields. Employee code and lifecycle state are server-managed."""
     name: str = Field(min_length=1, max_length=120)
     employee_type: EmployeeType = EmployeeType.staff
     department: str = Field(default="", max_length=120)
     designation: str = Field(default="", max_length=120)
-    active: bool = True
 
 class EmployeeUpdate(BaseModel):
-    emp_code: str = Field(min_length=1, max_length=32)
+    """Employee details only; employee code and active state cannot be changed here."""
     name: str = Field(min_length=1, max_length=120)
     employee_type: EmployeeType = EmployeeType.staff
     department: str = Field(default="", max_length=120)
     designation: str = Field(default="", max_length=120)
-    active: bool = True
+
+class EmployeeStatusUpdate(BaseModel):
+    active: bool
 
 class EmployeeSkillIn(BaseModel):
     skill: str
