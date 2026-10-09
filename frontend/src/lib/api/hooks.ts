@@ -306,6 +306,17 @@ export function useUpdateEmployee() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["employees"] }),
   });
 }
+export function useSetEmployeeStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: T.EmployeeStatusUpdate & { id: string }) =>
+      api.patch<T.EmployeeOut>(`/manufacturing/employees/${id}/status`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employees"] });
+      qc.invalidateQueries({ queryKey: ["production-orders"] });
+    },
+  });
+}
 export function useEmployeeSkills(employeeId: string | null) {
   return useQuery({
     queryKey: ["employee-skills", employeeId],
