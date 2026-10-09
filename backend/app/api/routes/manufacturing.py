@@ -110,6 +110,7 @@ def create_routing(payload: schemas.RoutingIn, db: Session = Depends(get_db), us
 
 
 employee_access = Depends(require_any_area("production", "hr"))
+hr_employee_access = Depends(require_area("hr"))
 
 
 @router.get("/employees", response_model=list[schemas.EmployeeOut])
