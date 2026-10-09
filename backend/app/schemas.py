@@ -964,11 +964,19 @@ class RoutingOut(ORMModel):
     operations: list[RoutingOperationOut]
 
 class EmployeeIn(BaseModel):
-    emp_code: str
-    name: str
+    emp_code: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=120)
     employee_type: EmployeeType = EmployeeType.staff
-    department: str = ""
-    designation: str = ""
+    department: str = Field(default="", max_length=120)
+    designation: str = Field(default="", max_length=120)
+    active: bool = True
+
+class EmployeeUpdate(BaseModel):
+    emp_code: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=120)
+    employee_type: EmployeeType = EmployeeType.staff
+    department: str = Field(default="", max_length=120)
+    designation: str = Field(default="", max_length=120)
     active: bool = True
 
 class EmployeeSkillIn(BaseModel):

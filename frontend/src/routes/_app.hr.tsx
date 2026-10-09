@@ -28,10 +28,13 @@ export const Route = createFileRoute("/_app/hr")({
 
 function HrPage() {
   const { can } = useAuth();
-  const canEdit = can("production") || can("masters");
+  const canEdit = can("hr");
+  const canManageEmployees = can("hr");
   const query = H.useEmployees();
   const orders = H.useProductionOrders();
   const create = H.useCreateEmployee();
+  const update = H.useUpdateEmployee();
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [f, setF] = useState<T.EmployeeIn>({ emp_code: "", name: "", employee_type: "shop_floor", department: "Production", designation: "Operator", active: true });
   const [sel, setSel] = useState<T.EmployeeOut | null>(null);
@@ -40,8 +43,28 @@ function HrPage() {
     (orders.data ?? []).flatMap((o) => o.operations.filter((op) => op.assigned_employee_id === id && op.completed_qty < op.planned_qty)).length;
 
   const submit = async () => {
-    if (!f.emp_code || !f.name) return;
-    if (await runMutation(create.mutateAsync(f), "Employee created")) setOpen(false);
+    if (!f.emp_code.trim() || !f.name.trim()) return;
+    const saved = editingId
+      ? await runMutation(update.mutateAsync({ ...f, id: editingId }), "Employee updated")
+      : await runMutation(create.mutateAsync(f), "Employee created");
+    if (saved) {
+      setOpen(false);
+      setEditingId(null);
+      if (sel && editingId) setSel({ ...f, id: editingId });
+    }
+  };
+
+  const startNew = () => {
+    setEditingId(null);
+    setF({ emp_code: "", name: "", employee_type: "shop_floor", department: "Production", designation: "Operator", active: true });
+    setOpen(true);
+  };
+
+  const startEdit = () => {
+    if (!sel) return;
+    setF({ emp_code: sel.emp_code, name: sel.name, employee_type: sel.employee_type, department: sel.department, designation: sel.designation, active: sel.active });
+    setEditingId(sel.id);
+    setOpen(true);
   };
 
   return (
@@ -53,7 +76,7 @@ function HrPage() {
         exportName="employees"
         emptyTitle="No employees"
         onRowClick={setSel}
-        toolbar={canEdit ? <Button size="sm" onClick={() => setOpen(true)}><Plus className="mr-1 h-4 w-4" /> New employee</Button> : null}
+        toolbar={canEdit ? <Button size="sm" onClick={startNew}><Plus className="mr-1 h-4 w-4" /> New employee</Button> : null}
         columns={[
           { key: "code", header: "Code", render: (r) => <span className="font-mono text-xs">{r.emp_code}</span>, searchValue: (r) => r.emp_code, sortValue: (r) => r.emp_code },
           { key: "name", header: "Name", render: (r) => r.name, searchValue: (r) => r.name, sortValue: (r) => r.name },
@@ -64,19 +87,32 @@ function HrPage() {
           { key: "status", header: "Availability", render: (r) => <StatusBadge status={!r.active ? "Inactive" : load(r.id) > 0 ? "Assigned" : "Available"} /> },
         ]}
       />
-      <FormDialog open={open} onOpenChange={setOpen} title="New employee" onSubmit={() => void submit()} pending={create.isPending}>
+      <FormDialog open={open} onOpenChange={(value) => { setOpen(value); if (!value) setEditingId(null); }} title={editingId ? "Edit employee" : "New employee"} onSubmit={() => void submit()} pending={create.isPending || update.isPending}>
         <div className="grid gap-3 sm:grid-cols-2">
           <FormField label="Employee code *"><Input value={f.emp_code} onChange={(e) => setF({ ...f, emp_code: e.target.value })} className="font-mono" placeholder="EMP-002" /></FormField>
           <FormField label="Name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></FormField>
           <FormField label="Employee type"><select className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={f.employee_type} onChange={(e) => setF({ ...f, employee_type: e.target.value as T.EmployeeType, department: e.target.value === "shop_floor" ? "Production" : "" })}><option value="shop_floor">Shop floor</option><option value="staff">Staff</option></select></FormField>
           <FormField label="Department"><Input value={f.department} onChange={(e) => setF({ ...f, department: e.target.value })} /></FormField>
           <FormField label="Designation"><Input value={f.designation} onChange={(e) => setF({ ...f, designation: e.target.value })} /></FormField>
+          {editingId && canManageEmployees ? (
+            <FormField label="Employee active">
+              <div className="flex h-9 items-center gap-2">
+                <Switch checked={f.active} onCheckedChange={(active) => setF({ ...f, active })} />
+                <span className="text-sm">{f.active ? "Active" : "Inactive"}</span>
+              </div>
+            </FormField>
+          ) : null}
         </div>
       </FormDialog>
       <DetailSheet open={sel !== null} onOpenChange={(o) => !o && setSel(null)} title={sel?.name ?? ""} description={sel?.emp_code ?? ""}>
-        {sel ? <EmployeeDetail emp={sel} canEdit={canEdit} /> : null}
+        {sel ? (
+          <>
+            {canManageEmployees ? <Button variant="outline" size="sm" className="mb-4" onClick={startEdit}>Edit employee</Button> : null}
+            <EmployeeDetail emp={sel} canEdit={canEdit} />
+          </>
+        ) : null}
       </DetailSheet>
-      <BackendGap>editing or deactivating employees, shift rosters and attendance are not exposed by the backend yet.</BackendGap>
+      <BackendGap>Shift rosters and attendance are not part of HR Foundation v1 and remain unimplemented.</BackendGap>
     </div>
   );
 }

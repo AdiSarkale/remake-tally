@@ -461,3 +461,109 @@ def test_operator_and_accountant_have_inventory_and_purchase_request_access(isol
 def test_control_schema_is_not_created_by_application_startup():
     import app.main as main_module
     assert not hasattr(main_module, "ControlBase")
+
+
+def test_production_can_read_employees_but_cannot_manage_employee_records(isolated_tenants):
+    client = isolated_tenants["client"]
+    TenantASession = isolated_tenants["sessions"][0]
+
+    db = TenantASession()
+    employee = models.Employee(
+        id="employee-production-permissions",
+        emp_code="SF-001",
+        name="Shop Floor Employee",
+        employee_type=models.EmployeeType.shop_floor,
+        department="Production",
+        designation="Operator",
+        active=True,
+    )
+    db.add(employee)
+    db.add(models.User(
+        username="production-user",
+        full_name="Production User",
+        password_hash=hash_password("Production@123"),
+        role=models.Role.operator,
+        active=True,
+        must_change_password=False,
+    ))
+    db.commit()
+    db.close()
+
+    login = client.post("/api/v1/auth/login", json={
+        "company_code": "AA",
+        "username": "production-user",
+        "password": "Production@123",
+    })
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    employees = client.get("/api/v1/manufacturing/employees", headers=headers)
+    assert employees.status_code == 200, employees.text
+    assert any(row["id"] == "employee-production-permissions" for row in employees.json())
+
+    # Production still needs these endpoints for the manufacturing workflow.
+    assert client.get("/api/v1/manufacturing/workcenters", headers=headers).status_code == 200
+    assert client.get("/api/v1/manufacturing/production-orders", headers=headers).status_code == 200
+
+    create_employee = client.post(
+        "/api/v1/manufacturing/employees",
+        headers=headers,
+        json={
+            "emp_code": "SF-002",
+            "name": "Another Employee",
+            "employee_type": "shop_floor",
+            "department": "Production",
+            "designation": "Operator",
+            "active": True,
+        },
+    )
+    assert create_employee.status_code == 403
+
+    update_employee = client.put(
+        "/api/v1/manufacturing/employees/employee-production-permissions",
+        headers=headers,
+        json={
+            "emp_code": "SF-001",
+            "name": "Changed Name",
+            "employee_type": "shop_floor",
+            "department": "Production",
+            "designation": "Operator",
+            "active": True,
+        },
+    )
+    assert update_employee.status_code == 403
+
+    add_skill = client.post(
+        "/api/v1/manufacturing/employees/employee-production-permissions/skills",
+        headers=headers,
+        json={"skill": "Welding", "level": 2, "certified": False, "active": True},
+    )
+    assert add_skill.status_code == 403
+
+
+def test_admin_can_create_employees_and_manage_employee_skills(isolated_tenants):
+    client = isolated_tenants["client"]
+    admin = _login(client, "AA")
+    headers = {"Authorization": f"Bearer {admin['access_token']}"}
+
+    created = client.post(
+        "/api/v1/manufacturing/employees",
+        headers=headers,
+        json={
+            "emp_code": "HR-001",
+            "name": "HR Managed Employee",
+            "employee_type": "shop_floor",
+            "department": "Production",
+            "designation": "Operator",
+            "active": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    employee_id = created.json()["id"]
+
+    skill = client.post(
+        f"/api/v1/manufacturing/employees/{employee_id}/skills",
+        headers=headers,
+        json={"skill": "Welding", "level": 3, "certified": True, "active": True},
+    )
+    assert skill.status_code == 201, skill.text
