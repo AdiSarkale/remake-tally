@@ -28,7 +28,7 @@ export const Route = createFileRoute("/_app/hr")({
 
 function HrPage() {
   const { can } = useAuth();
-  const canEdit = can("production") || can("masters");
+  const canEdit = can("hr");
   const canManageEmployees = can("hr");
   const query = H.useEmployees();
   const orders = H.useProductionOrders();
