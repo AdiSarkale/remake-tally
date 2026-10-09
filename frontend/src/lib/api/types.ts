@@ -798,6 +798,7 @@ export interface EmployeeIn {
   designation: string;
   active: boolean;
 }
+export type EmployeeUpdate = EmployeeIn;
 export interface EmployeeSkillIn {
   skill: string;
   level: number;
