@@ -28,7 +28,8 @@ export const Route = createFileRoute("/_app/hr")({
 
 function HrPage() {
   const { can } = useAuth();
-  const canEdit = can("production") || can("masters") || can("hr");
+  const canEdit = can("production") || can("masters");
+  const canManageEmployees = can("hr");
   const query = H.useEmployees();
   const orders = H.useProductionOrders();
   const create = H.useCreateEmployee();
@@ -93,18 +94,20 @@ function HrPage() {
           <FormField label="Employee type"><select className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={f.employee_type} onChange={(e) => setF({ ...f, employee_type: e.target.value as T.EmployeeType, department: e.target.value === "shop_floor" ? "Production" : "" })}><option value="shop_floor">Shop floor</option><option value="staff">Staff</option></select></FormField>
           <FormField label="Department"><Input value={f.department} onChange={(e) => setF({ ...f, department: e.target.value })} /></FormField>
           <FormField label="Designation"><Input value={f.designation} onChange={(e) => setF({ ...f, designation: e.target.value })} /></FormField>
-          <FormField label="Employee active">
-            <div className="flex h-9 items-center gap-2">
-              <Switch checked={f.active} onCheckedChange={(active) => setF({ ...f, active })} />
-              <span className="text-sm">{f.active ? "Active" : "Inactive"}</span>
-            </div>
-          </FormField>
+          {editingId && canManageEmployees ? (
+            <FormField label="Employee active">
+              <div className="flex h-9 items-center gap-2">
+                <Switch checked={f.active} onCheckedChange={(active) => setF({ ...f, active })} />
+                <span className="text-sm">{f.active ? "Active" : "Inactive"}</span>
+              </div>
+            </FormField>
+          ) : null}
         </div>
       </FormDialog>
       <DetailSheet open={sel !== null} onOpenChange={(o) => !o && setSel(null)} title={sel?.name ?? ""} description={sel?.emp_code ?? ""}>
         {sel ? (
           <>
-            {canEdit ? <Button variant="outline" size="sm" className="mb-4" onClick={startEdit}>Edit employee</Button> : null}
+            {canManageEmployees ? <Button variant="outline" size="sm" className="mb-4" onClick={startEdit}>Edit employee</Button> : null}
             <EmployeeDetail emp={sel} canEdit={canEdit} />
           </>
         ) : null}
