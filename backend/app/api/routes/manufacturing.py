@@ -119,7 +119,7 @@ def list_employees(db: Session = Depends(get_db), user: models.User = employee_a
 
 
 @router.post("/employees", response_model=schemas.EmployeeOut, status_code=201)
-def create_employee(payload: schemas.EmployeeIn, db: Session = Depends(get_db), user: models.User = employee_access):
+def create_employee(payload: schemas.EmployeeIn, db: Session = Depends(get_db), user: models.User = hr_employee_access):
     emp_code = payload.emp_code.strip()
     if db.query(models.Employee).filter(models.Employee.emp_code == emp_code).first():
         raise HTTPException(409, "Employee code already exists")
@@ -163,7 +163,7 @@ def list_employee_skills(employee_id: str, db: Session = Depends(get_db), user: 
 
 
 @router.post("/employees/{employee_id}/skills", response_model=schemas.EmployeeSkillOut, status_code=201)
-def add_employee_skill(employee_id: str, payload: schemas.EmployeeSkillIn, db: Session = Depends(get_db), user: models.User = employee_access):
+def add_employee_skill(employee_id: str, payload: schemas.EmployeeSkillIn, db: Session = Depends(get_db), user: models.User = hr_employee_access):
     if not db.get(models.Employee, employee_id):
         raise HTTPException(404, "Employee not found")
     if db.query(models.EmployeeSkill).filter_by(employee_id=employee_id, skill=payload.skill).first():
