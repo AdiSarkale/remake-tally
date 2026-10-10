@@ -9,10 +9,15 @@ from app import models
 from app.api.deps import ROLE_PERMISSIONS, require_area
 
 
-def test_only_admin_has_hr_management_permission():
+def test_admin_and_hr_have_hr_management_permission():
     assert "hr" in ROLE_PERMISSIONS[models.Role.admin]
+    assert "hr" in ROLE_PERMISSIONS[models.Role.hr]
     assert "hr" not in ROLE_PERMISSIONS[models.Role.accountant]
     assert "hr" not in ROLE_PERMISSIONS[models.Role.operator]
+
+
+def test_hr_role_is_isolated_from_finance_and_system_administration():
+    assert ROLE_PERMISSIONS[models.Role.hr] == {"hr"}
 
 
 def test_hr_guard_allows_admin():
