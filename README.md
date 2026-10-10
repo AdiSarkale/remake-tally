@@ -91,6 +91,15 @@ Current known gaps:
 - Reports and Settings are placeholders.
 - Full Payroll, Attendance and Leave are intentionally out of current scope.
 
+## Documentation
+
+- [Documentation index](docs/README.md)
+- [Reports module plan](docs/reports-plan.md)
+- [Audit reports plan](docs/audit-reports-plan.md)
+- [Multi-company production deployment](docs/multi-company-production.md)
+
+The reports and audit documents are implementation plans. They do not indicate that the planned endpoints or screens already exist.
+
 ## CI
 
 GitHub Actions validates backend compilation/tests and the frontend typecheck/build.
