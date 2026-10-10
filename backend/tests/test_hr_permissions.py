@@ -43,14 +43,17 @@ def test_production_users_retain_production_access_without_hr_management():
     assert "hr" not in ROLE_PERMISSIONS[models.Role.operator]
 
 
-def test_employee_create_schema_rejects_empty_and_oversized_fields():
+def test_employee_create_schema_validates_name_and_ignores_client_employee_code():
     from pydantic import ValidationError
 
     from app.schemas import EmployeeIn
 
+    # Employee codes are server-generated and are not accepted as editable fields.
+    payload = EmployeeIn(name="Valid name", emp_code="CLIENT-SUPPLIED")
+    assert payload.name == "Valid name"
+    assert not hasattr(payload, "emp_code")
+
     with pytest.raises(ValidationError):
-        EmployeeIn(emp_code="", name="Valid name")
+        EmployeeIn(name="")
     with pytest.raises(ValidationError):
-        EmployeeIn(emp_code="E" * 33, name="Valid name")
-    with pytest.raises(ValidationError):
-        EmployeeIn(emp_code="EMP-1", name="N" * 121)
+        EmployeeIn(name="N" * 121)
