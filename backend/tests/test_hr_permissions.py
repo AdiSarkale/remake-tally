@@ -9,10 +9,15 @@ from app import models
 from app.api.deps import ROLE_PERMISSIONS, require_area
 
 
-def test_only_admin_has_hr_management_permission():
+def test_admin_and_hr_have_hr_management_permission():
     assert "hr" in ROLE_PERMISSIONS[models.Role.admin]
+    assert "hr" in ROLE_PERMISSIONS[models.Role.hr]
     assert "hr" not in ROLE_PERMISSIONS[models.Role.accountant]
     assert "hr" not in ROLE_PERMISSIONS[models.Role.operator]
+
+
+def test_hr_role_is_isolated_from_finance_and_system_administration():
+    assert ROLE_PERMISSIONS[models.Role.hr] == {"hr"}
 
 
 def test_hr_guard_allows_admin():
@@ -38,14 +43,17 @@ def test_production_users_retain_production_access_without_hr_management():
     assert "hr" not in ROLE_PERMISSIONS[models.Role.operator]
 
 
-def test_employee_create_schema_rejects_empty_and_oversized_fields():
+def test_employee_create_schema_validates_name_and_ignores_client_employee_code():
     from pydantic import ValidationError
 
     from app.schemas import EmployeeIn
 
+    # Employee codes are server-generated and are not accepted as editable fields.
+    payload = EmployeeIn(name="Valid name", emp_code="CLIENT-SUPPLIED")
+    assert payload.name == "Valid name"
+    assert not hasattr(payload, "emp_code")
+
     with pytest.raises(ValidationError):
-        EmployeeIn(emp_code="", name="Valid name")
+        EmployeeIn(name="")
     with pytest.raises(ValidationError):
-        EmployeeIn(emp_code="E" * 33, name="Valid name")
-    with pytest.raises(ValidationError):
-        EmployeeIn(emp_code="EMP-1", name="N" * 121)
+        EmployeeIn(name="N" * 121)

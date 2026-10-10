@@ -191,7 +191,7 @@ def test_existing_tenant_upgrades_from_previous_head_to_current_head():
                     text("SELECT version_num FROM alembic_version")
                 ).scalar_one()
 
-            assert revision == "employee_type_001"
+            assert revision == "hr_role_001"
         finally:
             engine.dispose()
     finally:
@@ -247,7 +247,7 @@ def test_postgres_company_provisioning_and_fleet_migration():
             assert len(events) == 2
             assert {event.operation for event in events} == {"provision"}
             assert all(event.status == "succeeded" for event in events)
-            assert all(event.to_revision == "employee_type_001" for event in events)
+            assert all(event.to_revision == "hr_role_001" for event in events)
 
             with psycopg.connect(_psycopg_url(control_url)) as control_connection:
                 columns = {
