@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Plus, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -30,7 +30,8 @@ function HrPage() {
   const { can } = useAuth();
   const canEdit = can("hr");
   const canManageEmployees = can("hr");
-  const query = H.useEmployees();
+  const [showInactive, setShowInactive] = useState(false);
+  const query = H.useEmployees(showInactive);
   const employeeTypes = H.useEmployeeTypes();
   const possibleDuplicates = H.useEmployeeDuplicates(f.name, canEdit && open);
   const [activeTab, setActiveTab] = useState<"employees" | "types" | "codes">("employees");
@@ -80,7 +81,7 @@ function HrPage() {
         <Button size="sm" variant={activeTab === "codes" ? "default" : "outline"} role="tab" aria-selected={activeTab === "codes"} onClick={() => setActiveTab("codes")}>Employee Code Rules</Button>
       </div>
       {activeTab === "types" ? <EmployeeTypesPanel canEdit={canEdit} /> : activeTab === "codes" ? <EmployeeCodeConfigPanel canEdit={canEdit} /> : <>
-      <PageHeader title="Employees" description="Employee codes are assigned by the system and cannot be changed. Skills drive automatic operation assignment on production orders." />
+      <div className="flex flex-wrap items-start justify-between gap-3"><PageHeader title="Employees" description="Employee codes are system-generated. Skills drive automatic operation assignment on production orders." />{canEdit ? <Button size="sm" variant="outline" onClick={() => setShowInactive((value) => !value)}>{showInactive ? "Hide inactive" : "Show historical employees"}</Button> : null}</div>
       <QueryTable
         query={query}
         rowKey={(r) => r.id}
@@ -148,14 +149,12 @@ function EmployeeCodeConfigPanel({ canEdit }: { canEdit: boolean }) {
   const [pattern, setPattern] = useState("EMP-{SEQ:03}");
   const [sequenceStart, setSequenceStart] = useState(1);
   const [incrementBy, setIncrementBy] = useState(1);
-  const [loaded, setLoaded] = useState(false);
-
-  if (query.data && !loaded) {
+  useEffect(() => {
+    if (!query.data) return;
     setPattern(query.data.pattern);
     setSequenceStart(query.data.sequence_start);
     setIncrementBy(query.data.increment_by);
-    setLoaded(true);
-  }
+  }, [query.data]);
   const save = async () => {
     const result = await runMutation(update.mutateAsync({ pattern, sequence_start: sequenceStart, increment_by: incrementBy }), "Employee code rules saved");
     if (result) {
@@ -172,7 +171,7 @@ function EmployeeCodeConfigPanel({ canEdit }: { canEdit: boolean }) {
       </div>
       {query.data ? <div className="rounded-md border p-3 text-sm">
         <p><span className="font-medium">Next sequence:</span> {query.data.next_sequence}</p>
-        <p className="mt-1"><span className="font-medium">Example:</span> {pattern.replace("{SEQ:03}", String(Math.max(sequenceStart, query.data.next_sequence)).padStart(3, "0")).replace("{SEQ}", String(Math.max(sequenceStart, query.data.next_sequence))).replace("{YEAR}", String(new Date().getFullYear())).replace("{TYPE}", "STAFF").replace("{DEPT}", "GENERAL")}</p>
+        <p className="mt-1"><span className="font-medium">Example:</span> {pattern.replace(/\\{SEQ(?::(\\d{1,2}))?\\}/g, (_token, width) => String(Math.max(sequenceStart, query.data!.next_sequence)).padStart(Number(width) || 1, "0")).replace("{YEAR}", String(new Date().getFullYear())).replace("{TYPE}", "STAFF").replace("{DEPT}", "GENERAL")}</p>
       </div> : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <FormField label="Code pattern *"><Input value={pattern} disabled={!canEdit} onChange={(e) => setPattern(e.target.value)} placeholder="EMP-{SEQ:03}" /></FormField>
