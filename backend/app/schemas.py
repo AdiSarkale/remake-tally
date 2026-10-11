@@ -963,10 +963,25 @@ class RoutingOut(ORMModel):
     active: bool
     operations: list[RoutingOperationOut]
 
+class EmployeeTypeIn(BaseModel):
+    code: str = Field(min_length=2, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
+    name: str = Field(min_length=1, max_length=80)
+    payout_classification: str = Field(default="", max_length=80)
+    active: bool = True
+
+
+class EmployeeTypeOut(ORMModel):
+    id: str
+    code: str
+    name: str
+    payout_classification: str
+    active: bool
+
+
 class EmployeeIn(BaseModel):
     """Editable employee fields. Employee code and lifecycle state are server-managed."""
     name: str = Field(min_length=1, max_length=120)
-    employee_type: EmployeeType = EmployeeType.staff
+    employee_type: str = Field(default="staff", min_length=2, max_length=32)
     department: str = Field(default="", max_length=120)
     designation: str = Field(default="", max_length=120)
 
@@ -990,7 +1005,7 @@ class EmployeeOut(ORMModel):
     id: str
     emp_code: str
     name: str
-    employee_type: EmployeeType
+    employee_type: str
     department: str
     designation: str
     active: bool
