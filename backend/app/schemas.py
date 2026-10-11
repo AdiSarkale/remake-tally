@@ -1003,7 +1003,7 @@ class EmployeeIn(BaseModel):
 class EmployeeUpdate(BaseModel):
     """Employee details only; employee code and active state cannot be changed here."""
     name: str = Field(min_length=1, max_length=120)
-    employee_type: EmployeeType = EmployeeType.staff
+    employee_type: str = Field(default="staff", min_length=2, max_length=32)
     department: str = Field(default="", max_length=120)
     designation: str = Field(default="", max_length=120)
 
