@@ -1243,6 +1243,19 @@ class Employee(Base):
     designation: Mapped[str] = mapped_column(String(120), default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+class EmployeeCodeConfig(Base):
+    """Per-tenant employee-code pattern and sequence configuration."""
+
+    __tablename__ = "employee_code_configs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    pattern: Mapped[str] = mapped_column(String(120), default="EMP-{SEQ:03}")
+    sequence_start: Mapped[int] = mapped_column(Integer, default=1)
+    next_sequence: Mapped[int] = mapped_column(Integer, default=1)
+    increment_by: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class EmployeeTypeDefinition(Base):
     """Tenant-local employee type and payout-classification mapping."""
 
