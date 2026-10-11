@@ -288,6 +288,24 @@ export function useCreateRouting() {
   });
 }
 
+export function useEmployeeTypes() {
+  return useQuery({ queryKey: ["hr", "employee-types"], queryFn: () => api.get<T.EmployeeTypeOut[]>("/hr/employee-types") });
+}
+export function useCreateEmployeeType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: T.EmployeeTypeIn) => api.post<T.EmployeeTypeOut>("/hr/employee-types", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["hr", "employee-types"] }),
+  });
+}
+export function useUpdateEmployeeType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: T.EmployeeTypeIn & { id: string }) => api.patch<T.EmployeeTypeOut>(`/hr/employee-types/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["hr", "employee-types"] }),
+  });
+}
+
 export function useEmployees() {
   return useQuery({ queryKey: ["employees"], queryFn: () => api.get<T.EmployeeOut[]>("/manufacturing/employees") });
 }
