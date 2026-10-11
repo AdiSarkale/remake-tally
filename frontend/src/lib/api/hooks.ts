@@ -288,6 +288,16 @@ export function useCreateRouting() {
   });
 }
 
+export function useEmployeeCodeConfig() {
+  return useQuery({ queryKey: ["hr", "employee-code-config"], queryFn: () => api.get<T.EmployeeCodeConfigOut>("/hr/employee-code-config") });
+}
+export function useUpdateEmployeeCodeConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: T.EmployeeCodeConfigIn) => api.put<T.EmployeeCodeConfigOut>("/hr/employee-code-config", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["hr", "employee-code-config"] }),
+  });
+}
 export function useEmployeeTypes() {
   return useQuery({ queryKey: ["hr", "employee-types"], queryFn: () => api.get<T.EmployeeTypeOut[]>("/hr/employee-types") });
 }
