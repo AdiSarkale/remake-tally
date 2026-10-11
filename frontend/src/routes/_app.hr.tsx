@@ -89,7 +89,7 @@ function HrPage() {
         columns={[
           { key: "code", header: "Code", render: (r) => <span className="font-mono text-xs">{r.emp_code}</span>, searchValue: (r) => r.emp_code, sortValue: (r) => r.emp_code },
           { key: "name", header: "Name", render: (r) => r.name, searchValue: (r) => r.name, sortValue: (r) => r.name },
-          { key: "type", header: "Type", render: (r) => lookup(employeeTypes.data, r.employee_type, (type) => type.name, r.employee_type), searchValue: (r) => r.employee_type },
+          { key: "type", header: "Type", render: (r) => ((employeeTypes.data ?? []).find((type) => type.code === r.employee_type)?.name ?? r.employee_type), searchValue: (r) => r.employee_type },
           { key: "dept", header: "Department", render: (r) => r.department, searchValue: (r) => r.department },
           { key: "desig", header: "Designation", render: (r) => r.designation },
           { key: "load", header: "Open operations", className: "text-right", render: (r) => <span className="tabular-nums">{load(r.id)}</span>, sortValue: (r) => load(r.id) },
