@@ -3,6 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { FormDialog, FormField } from "@/components/form-dialog";
@@ -177,3 +178,4 @@ function EmployeeDetail({ emp, canEdit }: { emp: T.EmployeeOut; canEdit: boolean
     </>
   );
 }
+
