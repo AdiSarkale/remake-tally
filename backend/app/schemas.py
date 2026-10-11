@@ -963,6 +963,21 @@ class RoutingOut(ORMModel):
     active: bool
     operations: list[RoutingOperationOut]
 
+class EmployeeCodeConfigIn(BaseModel):
+    pattern: str = Field(min_length=1, max_length=120)
+    sequence_start: int = Field(ge=1, le=999999999)
+    increment_by: int = Field(ge=1, le=1000000)
+
+
+class EmployeeCodeConfigOut(ORMModel):
+    id: int
+    pattern: str
+    sequence_start: int
+    next_sequence: int
+    increment_by: int
+    updated_at: datetime
+
+
 class EmployeeTypeIn(BaseModel):
     code: str = Field(min_length=2, max_length=32, pattern=r"^[A-Za-z0-9_-]+$")
     name: str = Field(min_length=1, max_length=80)
