@@ -331,7 +331,7 @@ def test_postgres_company_provisioning_and_fleet_migration():
             )
             assert len(retry_events) == 1
             assert retry_events[0].status == "succeeded"
-            assert retry_events[0].to_revision == "employee_type_001"
+            assert retry_events[0].to_revision == "hr_role_001"
         finally:
             control.close()
 
