@@ -32,7 +32,7 @@ function HrPage() {
   const canManageEmployees = can("hr");
   const query = H.useEmployees();
   const employeeTypes = H.useEmployeeTypes();
-  const [activeTab, setActiveTab] = useState<"employees" | "types">("employees");
+  const [activeTab, setActiveTab] = useState<"employees" | "types" | "codes">("employees");
   const orders = H.useProductionOrders();
   const create = H.useCreateEmployee();
   const update = H.useUpdateEmployee();
@@ -76,8 +76,9 @@ function HrPage() {
       <div className="flex flex-wrap gap-2 border-b pb-3" role="tablist" aria-label="HR sections">
         <Button size="sm" variant={activeTab === "employees" ? "default" : "outline"} role="tab" aria-selected={activeTab === "employees"} onClick={() => setActiveTab("employees")}>Employees</Button>
         <Button size="sm" variant={activeTab === "types" ? "default" : "outline"} role="tab" aria-selected={activeTab === "types"} onClick={() => setActiveTab("types")}>Employee Types</Button>
+        <Button size="sm" variant={activeTab === "codes" ? "default" : "outline"} role="tab" aria-selected={activeTab === "codes"} onClick={() => setActiveTab("codes")}>Employee Code Rules</Button>
       </div>
-      {activeTab === "types" ? <EmployeeTypesPanel canEdit={canEdit} /> : <>
+      {activeTab === "types" ? <EmployeeTypesPanel canEdit={canEdit} /> : activeTab === "codes" ? <EmployeeCodeConfigPanel canEdit={canEdit} /> : <>
       <PageHeader title="Employees" description="Employee codes are assigned by the system and cannot be changed. Skills drive automatic operation assignment on production orders." />
       <QueryTable
         query={query}
@@ -132,6 +133,54 @@ function HrPage() {
   );
 }
 
+
+
+function EmployeeCodeConfigPanel({ canEdit }: { canEdit: boolean }) {
+  const query = H.useEmployeeCodeConfig();
+  const update = H.useUpdateEmployeeCodeConfig();
+  const [pattern, setPattern] = useState("EMP-{SEQ:03}");
+  const [sequenceStart, setSequenceStart] = useState(1);
+  const [incrementBy, setIncrementBy] = useState(1);
+  const [loaded, setLoaded] = useState(false);
+
+  if (query.data && !loaded) {
+    setPattern(query.data.pattern);
+    setSequenceStart(query.data.sequence_start);
+    setIncrementBy(query.data.increment_by);
+    setLoaded(true);
+  }
+  const save = async () => {
+    const result = await runMutation(update.mutateAsync({ pattern, sequence_start: sequenceStart, increment_by: incrementBy }), "Employee code rules saved");
+    if (result) {
+      setPattern(result.pattern);
+      setSequenceStart(result.sequence_start);
+      setIncrementBy(result.increment_by);
+    }
+  };
+  return (
+    <div className="max-w-3xl space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold">Employee Code Rules</h2>
+        <p className="text-sm text-muted-foreground">Configure how new employee codes are generated for this tenant. Existing codes never change.</p>
+      </div>
+      {query.data ? <div className="rounded-md border p-3 text-sm">
+        <p><span className="font-medium">Next sequence:</span> {query.data.next_sequence}</p>
+        <p className="mt-1"><span className="font-medium">Example:</span> {pattern.replace("{SEQ:03}", String(Math.max(sequenceStart, query.data.next_sequence)).padStart(3, "0")).replace("{SEQ}", String(Math.max(sequenceStart, query.data.next_sequence))).replace("{YEAR}", String(new Date().getFullYear())).replace("{TYPE}", "STAFF").replace("{DEPT}", "GENERAL")}</p>
+      </div> : null}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormField label="Code pattern *"><Input value={pattern} disabled={!canEdit} onChange={(e) => setPattern(e.target.value)} placeholder="EMP-{SEQ:03}" /></FormField>
+        <FormField label="Starting sequence"><NumInput step="1" value={sequenceStart} onChange={setSequenceStart} /></FormField>
+        <FormField label="Increment"><NumInput step="1" value={incrementBy} onChange={setIncrementBy} /></FormField>
+      </div>
+      <div className="rounded-md bg-muted/40 p-3 text-sm">
+        <p className="font-medium">Supported placeholders</p>
+        <p className="mt-1 font-mono text-xs">{'{SEQ}'} · {'{SEQ:03}'} · {'{YEAR}'} · {'{TYPE}'} · {'{DEPT}'}</p>
+        <p className="mt-2 text-muted-foreground">A sequence placeholder is required. Codes are limited to 32 safe characters, unique within the tenant, and never recycled. Changing a pattern affects future employees only.</p>
+      </div>
+      {canEdit ? <Button onClick={() => void save()} disabled={update.isPending || !pattern.trim()}>Save code rules</Button> : null}
+    </div>
+  );
+}
 
 function EmployeeTypesPanel({ canEdit }: { canEdit: boolean }) {
   const query = H.useEmployeeTypes();
