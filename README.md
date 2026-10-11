@@ -87,7 +87,8 @@ Scrap / Finished Goods
 Current known gaps:
 
 - Purchase Requisition is a stored manual document with draft/submitted/approved workflow; MRP-generated PRs are reserved through the source field for future planning.
-- Employee edit/deactivate is not implemented.
+- Employee codes are assigned by the backend and immutable; employee details can be edited without changing codes.
+- HR users can deactivate/reactivate employees; lifecycle changes are audited and employee records are preserved.
 - Reports and Settings are placeholders.
 - Full Payroll, Attendance and Leave are intentionally out of current scope.
 

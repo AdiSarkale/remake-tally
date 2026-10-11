@@ -7,9 +7,10 @@ import type { Role } from "./api/types";
 // Mirrors backend ROLE_PERMISSIONS in app/api/deps.py — used only for
 // navigation visibility; the backend enforces the real permissions.
 const ROLE_AREAS: Record<Role, Set<string>> = {
-  Admin: new Set(["masters", "inventory", "production", "scrap", "sales", "finance", "settings", "reports", "purchase_requests"]),
+  Admin: new Set(["masters", "inventory", "production", "scrap", "sales", "finance", "settings", "reports", "purchase_requests", "hr"]),
   Accountant: new Set(["masters", "inventory", "sales", "reports", "purchase_requests"]),
   Operator: new Set(["production", "scrap", "inventory", "purchase_requests"]),
+  HR: new Set(["hr"]),
 };
 
 interface AuthState {

@@ -16,9 +16,11 @@ from app.services.company_context import resolve_company_from_token
 bearer = HTTPBearer(auto_error=False)
 
 ROLE_PERMISSIONS: dict[models.Role, set[str]] = {
-    models.Role.admin: {"masters", "inventory", "production", "scrap", "sales", "finance", "settings", "reports", "approvals", "purchase_requests"},
+    models.Role.admin: {"masters", "inventory", "production", "scrap", "sales", "finance", "settings", "reports", "approvals", "purchase_requests", "hr"},
     models.Role.accountant: {"masters", "inventory", "sales", "reports", "approvals", "purchase_requests"},
     models.Role.operator: {"production", "scrap", "inventory", "approvals", "purchase_requests"},
+    # HR is intentionally isolated from finance, settings, and system administration.
+    models.Role.hr: {"hr"},
 }
 
 

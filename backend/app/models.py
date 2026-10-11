@@ -20,6 +20,7 @@ class Role(str, enum.Enum):
     admin = "Admin"
     accountant = "Accountant"
     operator = "Operator"
+    hr = "HR"
 
 
 class ItemKind(str, enum.Enum):

@@ -1,6 +1,6 @@
 // TypeScript mirror of the MiniTally FastAPI backend schemas (app/schemas.py).
 
-export type Role = "Admin" | "Accountant" | "Operator";
+export type Role = "Admin" | "Accountant" | "Operator" | "HR";
 export type ItemKind = "product" | "material" | "scrap";
 export type MovementType = "IN" | "OUT" | "ADJUST";
 export type InvoiceStatus = "Unpaid" | "Paid" | "Cancelled" | "Partial";
@@ -791,11 +791,13 @@ export interface RoutingOut {
 }
 export type EmployeeType = "shop_floor" | "staff";
 export interface EmployeeIn {
-  emp_code: string;
   name: string;
   employee_type: EmployeeType;
   department: string;
   designation: string;
+}
+export type EmployeeUpdate = EmployeeIn;
+export interface EmployeeStatusUpdate {
   active: boolean;
 }
 export interface EmployeeSkillIn {
