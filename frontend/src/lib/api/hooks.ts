@@ -298,6 +298,15 @@ export function useUpdateEmployeeCodeConfig() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["hr", "employee-code-config"] }),
   });
 }
+export function useEmployeeDuplicates(name: string, enabled = true) {
+  const normalized = name.trim();
+  return useQuery({
+    queryKey: ["hr", "employee-duplicates", normalized],
+    queryFn: () => api.get<T.EmployeeOut[]>(`/hr/employee-duplicates?name=${encodeURIComponent(normalized)}`),
+    enabled: enabled && normalized.length >= 3,
+    staleTime: 5_000,
+  });
+}
 export function useEmployeeTypes() {
   return useQuery({ queryKey: ["hr", "employee-types"], queryFn: () => api.get<T.EmployeeTypeOut[]>("/hr/employee-types") });
 }
