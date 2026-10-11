@@ -171,7 +171,7 @@ function EmployeeCodeConfigPanel({ canEdit }: { canEdit: boolean }) {
       </div>
       {query.data ? <div className="rounded-md border p-3 text-sm">
         <p><span className="font-medium">Next sequence:</span> {query.data.next_sequence}</p>
-        <p className="mt-1"><span className="font-medium">Example:</span> {pattern.replace(/\\{SEQ(?::(\\d{1,2}))?\\}/g, (_token, width) => String(Math.max(sequenceStart, query.data!.next_sequence)).padStart(Number(width) || 1, "0")).replace("{YEAR}", String(new Date().getFullYear())).replace("{TYPE}", "STAFF").replace("{DEPT}", "GENERAL")}</p>
+        <p className="mt-1"><span className="font-medium">Example:</span> {pattern.replace(/\{SEQ(?::(\d{1,2}))?\}/g, (_token, width) => String(Math.max(sequenceStart, query.data!.next_sequence)).padStart(Number(width) || 1, "0")).replace(/\{YEAR\}/g, String(new Date().getFullYear())).replace(/\{TYPE\}/g, "STAFF").replace(/\{DEPT\}/g, "GENERAL")}</p>
       </div> : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <FormField label="Code pattern *"><Input value={pattern} disabled={!canEdit} onChange={(e) => setPattern(e.target.value)} placeholder="EMP-{SEQ:03}" /></FormField>
