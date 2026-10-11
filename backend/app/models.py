@@ -1236,7 +1236,7 @@ class Employee(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     emp_code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
-    employee_type: Mapped[EmployeeType] = mapped_column(
+    employee_type: Mapped[str] = mapped_column(
         String(20), default=EmployeeType.staff, nullable=False, index=True
     )
     department: Mapped[str] = mapped_column(String(120), default="")
