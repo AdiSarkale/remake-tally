@@ -5,6 +5,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -86,6 +87,21 @@ def update_employee_code_config(
     db.commit()
     db.refresh(row)
     return row
+
+
+@router.get("/employee-duplicates", response_model=list[schemas.EmployeeOut])
+def find_possible_employee_duplicates(
+    name: str,
+    db: Session = Depends(get_db),
+    user: models.User = hr_access,
+):
+    """Advisory exact-name matching only; this endpoint never blocks creation."""
+    normalized = " ".join(name.split()).casefold()
+    if len(normalized) < 3:
+        return []
+    return db.query(models.Employee).filter(
+        func.lower(func.trim(models.Employee.name)) == normalized,
+    ).order_by(models.Employee.emp_code).limit(20).all()
 
 
 @router.get("/employee-types", response_model=list[schemas.EmployeeTypeOut])
