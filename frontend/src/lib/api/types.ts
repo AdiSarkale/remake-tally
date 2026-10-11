@@ -790,6 +790,16 @@ export interface RoutingOut {
   operations: RoutingOperationOut[];
 }
 export type EmployeeType = string;
+export interface EmployeeCodeConfigIn {
+  pattern: string;
+  sequence_start: number;
+  increment_by: number;
+}
+export interface EmployeeCodeConfigOut extends EmployeeCodeConfigIn {
+  id: number;
+  next_sequence: number;
+  updated_at: string;
+}
 export interface EmployeeTypeIn {
   code: string;
   name: string;
