@@ -117,8 +117,28 @@ hr_employee_access = Depends(require_area("hr"))
 
 
 @router.get("/employees", response_model=list[schemas.EmployeeOut])
-def list_employees(db: Session = Depends(get_db), user: models.User = employee_access):
-    return db.query(models.Employee).order_by(models.Employee.emp_code).all()
+def list_employees(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    user: models.User = employee_access,
+):
+    query = db.query(models.Employee)
+    if include_inactive:
+        if user.role not in (models.Role.admin, models.Role.hr):
+            raise HTTPException(403, "Historical employee access requires Admin or HR authorization")
+    else:
+        query = query.filter(models.Employee.active.is_(True))
+    return query.order_by(models.Employee.emp_code).all()
+
+
+def _validate_employee_type(db: Session, code: str, *, allow_inactive_existing: bool = False) -> models.EmployeeTypeDefinition:
+    normalized = code.strip().lower()
+    row = db.query(models.EmployeeTypeDefinition).filter_by(code=normalized).first()
+    if row is None:
+        raise HTTPException(422, "Select a valid employee type")
+    if not row.active and not allow_inactive_existing:
+        raise HTTPException(409, "This employee type is inactive. Reassign the employee to an active type first.")
+    return row
 
 
 def _next_employee_code(db: Session) -> str:
@@ -137,6 +157,8 @@ def create_employee(payload: schemas.EmployeeIn, db: Session = Depends(get_db), 
     name = payload.name.strip()
     if not name:
         raise HTTPException(422, "Employee name is required")
+
+    _validate_employee_type(db, payload.employee_type)
 
     # The unique database constraint is the final concurrency guard. If another
     # request allocates the same code at the same time, retry after rollback.
@@ -169,8 +191,10 @@ def update_employee(employee_id: str, payload: schemas.EmployeeUpdate, db: Sessi
     name = payload.name.strip()
     if not name:
         raise HTTPException(422, "Employee name is required")
+    if payload.employee_type.strip().lower() != row.employee_type:
+        _validate_employee_type(db, payload.employee_type)
     row.name = name
-    row.employee_type = payload.employee_type
+    row.employee_type = payload.employee_type.strip().lower()
     row.department = payload.department.strip()
     row.designation = payload.designation.strip()
     log_audit(db, user.username, "UPDATE", "employee", f"{row.emp_code}; details updated")
@@ -186,6 +210,8 @@ def set_employee_status(employee_id: str, payload: schemas.EmployeeStatusUpdate,
         raise HTTPException(404, "Employee not found")
     if row.active == payload.active:
         return row
+    if payload.active:
+        _validate_employee_type(db, row.employee_type)
     row.active = payload.active
     action = "REACTIVATE" if row.active else "DEACTIVATE"
     log_audit(db, user.username, action, "employee", row.emp_code)
