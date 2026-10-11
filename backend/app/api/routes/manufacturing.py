@@ -141,15 +141,28 @@ def _validate_employee_type(db: Session, code: str, *, allow_inactive_existing: 
     return row
 
 
-def _next_employee_code(db: Session) -> str:
-    """Allocate the next EMP-NNN code; codes are never accepted from clients."""
-    codes = db.query(models.Employee.emp_code).all()
-    highest = 0
-    for (code,) in codes:
-        match = re.fullmatch(r"EMP-(\d+)", code or "", flags=re.IGNORECASE)
-        if match:
-            highest = max(highest, int(match.group(1)))
-    return f"EMP-{highest + 1:03d}"
+def _next_employee_code(db: Session, employee_type: str, department: str) -> str:
+    """Allocate a tenant-configured code under a row lock; clients never supply codes."""
+    config = db.query(models.EmployeeCodeConfig).filter_by(id=1).with_for_update().first()
+    if config is None:
+        codes = db.query(models.Employee.emp_code).all()
+        highest = 0
+        for (code,) in codes:
+            match = re.fullmatch(r"EMP-(\d+)", code or "", flags=re.IGNORECASE)
+            if match:
+                highest = max(highest, int(match.group(1)))
+        config = models.EmployeeCodeConfig(
+            id=1, pattern="EMP-{SEQ:03}", sequence_start=1,
+            next_sequence=max(highest + 1, 1), increment_by=1,
+        )
+        db.add(config)
+        db.flush()
+    sequence = max(config.next_sequence, config.sequence_start)
+    from app.api.routes.hr import _render_employee_code, _validate_code_pattern
+    pattern = _validate_code_pattern(config.pattern)
+    code = _render_employee_code(pattern, sequence, employee_type, department)
+    config.next_sequence = sequence + config.increment_by
+    return code
 
 
 @router.post("/employees", response_model=schemas.EmployeeOut, status_code=201)
@@ -164,7 +177,7 @@ def create_employee(payload: schemas.EmployeeIn, db: Session = Depends(get_db), 
     # request allocates the same code at the same time, retry after rollback.
     for _attempt in range(5):
         row = models.Employee(
-            emp_code=_next_employee_code(db),
+            emp_code=_next_employee_code(db, payload.employee_type.strip().lower(), payload.department.strip()),
             name=name,
             employee_type=payload.employee_type.strip().lower(),
             department=payload.department.strip(),
