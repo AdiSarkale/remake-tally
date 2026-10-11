@@ -33,7 +33,6 @@ function HrPage() {
   const [showInactive, setShowInactive] = useState(false);
   const query = H.useEmployees(showInactive);
   const employeeTypes = H.useEmployeeTypes();
-  const possibleDuplicates = H.useEmployeeDuplicates(f.name, canEdit && open);
   const [activeTab, setActiveTab] = useState<"employees" | "types" | "codes">("employees");
   const orders = H.useProductionOrders();
   const create = H.useCreateEmployee();
@@ -43,6 +42,7 @@ function HrPage() {
   const [open, setOpen] = useState(false);
   const [f, setF] = useState<T.EmployeeIn>({ name: "", employee_type: "shop_floor", department: "Production", designation: "Operator" });
   const [sel, setSel] = useState<T.EmployeeOut | null>(null);
+  const possibleDuplicates = H.useEmployeeDuplicates(f.name, canEdit && open);
 
   const load = (id: string) =>
     (orders.data ?? []).flatMap((o) => o.operations.filter((op) => op.assigned_employee_id === id && op.completed_qty < op.planned_qty)).length;
