@@ -789,7 +789,16 @@ export interface RoutingOut {
   active: boolean;
   operations: RoutingOperationOut[];
 }
-export type EmployeeType = "shop_floor" | "staff";
+export type EmployeeType = string;
+export interface EmployeeTypeIn {
+  code: string;
+  name: string;
+  payout_classification: string;
+  active: boolean;
+}
+export interface EmployeeTypeOut extends EmployeeTypeIn {
+  id: string;
+}
 export interface EmployeeIn {
   name: string;
   employee_type: EmployeeType;
