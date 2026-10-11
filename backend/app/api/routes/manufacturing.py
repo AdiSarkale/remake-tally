@@ -160,9 +160,16 @@ def _next_employee_code(db: Session, employee_type: str, department: str) -> str
     sequence = max(config.next_sequence, config.sequence_start)
     from app.api.routes.hr import _render_employee_code, _validate_code_pattern
     pattern = _validate_code_pattern(config.pattern)
-    code = _render_employee_code(pattern, sequence, employee_type, department)
-    config.next_sequence = sequence + config.increment_by
-    return code
+    # Pattern changes can collide with legacy codes. Advance monotonically until
+    # a free candidate is found; the database unique constraint remains final guard.
+    for _attempt in range(1000):
+        code = _render_employee_code(pattern, sequence, employee_type, department)
+        exists = db.query(models.Employee.id).filter(models.Employee.emp_code == code).first()
+        config.next_sequence = sequence + config.increment_by
+        if not exists:
+            return code
+        sequence += config.increment_by
+    raise HTTPException(409, "Could not allocate a unique employee code; review the configured pattern")
 
 
 @router.post("/employees", response_model=schemas.EmployeeOut, status_code=201)
