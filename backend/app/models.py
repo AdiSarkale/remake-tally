@@ -1243,6 +1243,22 @@ class Employee(Base):
     designation: Mapped[str] = mapped_column(String(120), default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+class EmployeeTypeDefinition(Base):
+    """Tenant-local employee type and payout-classification mapping."""
+
+    __tablename__ = "employee_types"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_employee_type_code"),
+        UniqueConstraint("name", name="uq_employee_type_name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    code: Mapped[str] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(80), index=True)
+    payout_classification: Mapped[str] = mapped_column(String(80), default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
 class EmployeeSkill(Base):
     __tablename__ = "employee_skills"
     __table_args__ = (UniqueConstraint("employee_id", "skill", name="uq_employee_skill"),)
