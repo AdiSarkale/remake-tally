@@ -325,8 +325,11 @@ export function useUpdateEmployeeType() {
   });
 }
 
-export function useEmployees() {
-  return useQuery({ queryKey: ["employees"], queryFn: () => api.get<T.EmployeeOut[]>("/manufacturing/employees") });
+export function useEmployees(includeInactive = false) {
+  return useQuery({
+    queryKey: ["employees", includeInactive],
+    queryFn: () => api.get<T.EmployeeOut[]>(`/manufacturing/employees${includeInactive ? "?include_inactive=true" : ""}`),
+  });
 }
 export function useCreateEmployee() {
   const qc = useQueryClient();
