@@ -32,6 +32,7 @@ function HrPage() {
   const canManageEmployees = can("hr");
   const query = H.useEmployees();
   const employeeTypes = H.useEmployeeTypes();
+  const possibleDuplicates = H.useEmployeeDuplicates(f.name, canEdit && open);
   const [activeTab, setActiveTab] = useState<"employees" | "types" | "codes">("employees");
   const orders = H.useProductionOrders();
   const create = H.useCreateEmployee();
@@ -100,7 +101,13 @@ function HrPage() {
       <FormDialog open={open} onOpenChange={(value) => { setOpen(value); if (!value) setEditingId(null); }} title={editingId ? "Edit employee" : "New employee"} onSubmit={() => void submit()} pending={create.isPending || update.isPending}>
         <div className="grid gap-3 sm:grid-cols-2">
           <FormField label="Employee code"><p className="text-sm text-muted-foreground">Assigned automatically after saving (EMP-001, EMP-002, …).</p></FormField>
-          <FormField label="Name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></FormField>
+          <FormField label="Name *"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+            {!editingId && (possibleDuplicates.data ?? []).length > 0 ? <div className="mt-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-xs" role="status">
+              <p className="font-medium">Possible duplicate — review before saving</p>
+              <ul className="mt-1 list-disc pl-4">{possibleDuplicates.data?.map((candidate) => <li key={candidate.id}>{candidate.emp_code} · {candidate.name}{candidate.active ? "" : " (inactive)"}</li>)}</ul>
+              <p className="mt-1 text-muted-foreground">This is a warning only. Matching names do not prevent employee creation.</p>
+            </div> : null}
+          </FormField>
           <FormField label="Employee type"><select className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={f.employee_type} onChange={(e) => setF({ ...f, employee_type: e.target.value as T.EmployeeType, department: e.target.value === "shop_floor" ? "Production" : "" })}>{(employeeTypes.data ?? []).filter((type) => type.active).map((type) => <option key={type.code} value={type.code}>{type.name}</option>)}</select></FormField>
           <FormField label="Department"><Input value={f.department} onChange={(e) => setF({ ...f, department: e.target.value })} /></FormField>
           <FormField label="Designation"><Input value={f.designation} onChange={(e) => setF({ ...f, designation: e.target.value })} /></FormField>
