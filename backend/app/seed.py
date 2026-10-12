@@ -15,6 +15,20 @@ from __future__ import annotations
 import argparse
 from datetime import date, timedelta
 
+from sqlalchemy.engine import make_url
+
+# This script uses synchronous SQLAlchemy sessions/engines. The application
+# may be configured with an asyncpg URL for async runtime connections, so
+# normalize that URL to the installed synchronous psycopg driver for seeding.
+from app.core.config import get_settings
+
+_settings = get_settings()
+_database_url = make_url(_settings.database_url)
+if _database_url.drivername == "postgresql+asyncpg":
+    _settings.database_url = _database_url.set(
+        drivername="postgresql+psycopg"
+    ).render_as_string(hide_password=False)
+
 from app import models
 from app.api.routes.approvals import ApprovalRequest, Department
 from app.core.security import hash_password
