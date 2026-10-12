@@ -3,6 +3,7 @@
 Define new ORM entities in app.modules.<domain>.models. Existing imports remain supported.
 """
 
+from app.db.session import Base
 from app.modules._base import _uuid, Role, ItemKind, EmployeeType, MovementType, InvoiceStatus, QuotationStatus, SalesOrderStatus, DispatchStatus, PurchaseRequisitionStatus, PurchaseRequisitionSource, PurchaseOrderStatus
 from app.modules.core.models import User, Party, Product, RawMaterial, ScrapType, AuditLog, CompanySettings
 from app.modules.inventory.models import InventoryMovement
@@ -13,4 +14,4 @@ from app.modules.purchasing.models import PurchaseRequisition, PurchaseRequisiti
 from app.modules.finance.models import CustomerPayment, SupplierPayment
 from app.modules.dispatch.models import Dispatch
 
-__all__ = ["_uuid","Role","ItemKind","EmployeeType","MovementType","InvoiceStatus","QuotationStatus","SalesOrderStatus","DispatchStatus","PurchaseRequisitionStatus","PurchaseRequisitionSource","PurchaseOrderStatus","User","Party","Product","RawMaterial","BillOfMaterials","BomLine","ScrapType","InventoryMovement","ProductionEntry","ProductionConsumption","ScrapEntry","AuditLog","CompanySettings","Invoice","CustomerPayment","SupplierPayment","InvoiceLine","Quotation","QuotationLine","SalesOrder","SalesOrderLine","DeliveryNote","DeliveryLine","Dispatch","PurchaseRequisition","PurchaseRequisitionLine","SupplierProduct","Plant","Warehouse","PurchaseOrder","PurchaseOrderLine","GRN","GRNLine","CustomerPO","CustomerPOLine","Workcenter","WorkcenterMaterial","Routing","RoutingOperation","Employee","EmployeeSkill","ProductionOrder","ProductionOrderOperation"]
+__all__ = ["Base", "_uuid","Role","ItemKind","EmployeeType","MovementType","InvoiceStatus","QuotationStatus","SalesOrderStatus","DispatchStatus","PurchaseRequisitionStatus","PurchaseRequisitionSource","PurchaseOrderStatus","User","Party","Product","RawMaterial","BillOfMaterials","BomLine","ScrapType","InventoryMovement","ProductionEntry","ProductionConsumption","ScrapEntry","AuditLog","CompanySettings","Invoice","CustomerPayment","SupplierPayment","InvoiceLine","Quotation","QuotationLine","SalesOrder","SalesOrderLine","DeliveryNote","DeliveryLine","Dispatch","PurchaseRequisition","PurchaseRequisitionLine","SupplierProduct","Plant","Warehouse","PurchaseOrder","PurchaseOrderLine","GRN","GRNLine","CustomerPO","CustomerPOLine","Workcenter","WorkcenterMaterial","Routing","RoutingOperation","Employee","EmployeeSkill","ProductionOrder","ProductionOrderOperation"]
