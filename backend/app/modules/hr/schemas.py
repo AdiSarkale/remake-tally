@@ -1,0 +1,40 @@
+"""Hr domain Pydantic schemas."""
+
+from __future__ import annotations
+from datetime import date, datetime
+from pydantic import BaseModel, ConfigDict, Field
+from app.modules._base import Role, ItemKind, MovementType, InvoiceStatus, QuotationStatus, SalesOrderStatus, DispatchStatus, PurchaseOrderStatus
+from app.modules.core.schemas import ORMModel
+
+
+class EmployeeIn(BaseModel):
+    emp_code: str
+    name: str
+    department: str = ""
+    designation: str = ""
+    active: bool = True
+
+class EmployeeSkillIn(BaseModel):
+    skill: str
+    level: int = Field(default=1, ge=1, le=5)
+    certified: bool = False
+    active: bool = True
+
+class EmployeeOut(ORMModel):
+    id: str
+    emp_code: str
+    name: str
+    department: str
+    designation: str
+    active: bool
+
+class EmployeeSkillOut(ORMModel):
+    id: str
+    employee_id: str
+    skill: str
+    level: int
+    certified: bool
+    active: bool
+
+class AssignEmployeeIn(BaseModel):
+    employee_id: str | None = None
