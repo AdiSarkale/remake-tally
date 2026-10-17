@@ -1,5 +1,6 @@
 """Tests for salary composition, calendar rules and payroll calculations."""
 from datetime import date
+from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -118,7 +119,7 @@ def test_absences_on_holidays_and_week_offs_do_not_create_salary_deductions():
     # The three absence records remain visible, but only the Tuesday workday
     # is deductible; October 3 is a default week-off and October 5 is a holiday.
     assert result["absent_days"] == 3
-    assert result["absence_deduction"] == 1923.08
+    assert result["absence_deduction"] == Decimal("1923.08")
 
 
 def test_absence_deduction_cannot_exceed_monthly_gross():
