@@ -57,7 +57,7 @@ def test_seed_uses_database_resolved_from_spw_tenant_secret(monkeypatch):
     try:
         assert tenant_code == "SPW"
         assert resolved_urls == ["SPW_LOCAL_DB"]
-        assert tenant_engine.url.drivername == "sqlite"
+        assert tenant_engine.url.drivername == "sqlite+pysqlite"
         assert session_factory.kw["bind"] is tenant_engine
         assert control_session.closed is True
     finally:
