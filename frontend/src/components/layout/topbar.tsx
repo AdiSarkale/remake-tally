@@ -105,7 +105,7 @@ export function Topbar({
       <Breadcrumb className="hidden md:block">
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="/">Minitally</BreadcrumbLink>
+            <BreadcrumbLink href="/">Nexora ERP</BreadcrumbLink>
           </BreadcrumbItem>
           {segments.map((seg, i) => (
             <span key={seg} className="contents">
