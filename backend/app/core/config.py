@@ -1,8 +1,9 @@
 """Application settings loaded from environment variables."""
 
 from functools import lru_cache
+from urllib.parse import parse_qs, urlparse
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -41,6 +42,19 @@ class Settings(BaseSettings):
         "http://localhost:8000",
     ]
 
+    @field_validator("database_url", "control_database_url", mode="before")
+    @classmethod
+    def normalize_postgres_driver(cls, value: str | None) -> str | None:
+        """Normalize Railway PostgreSQL URLs to use the installed psycopg 3 driver."""
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip()
+        if normalized.startswith("postgres://"):
+            normalized = "postgresql://" + normalized[len("postgres://"):]
+        if normalized.startswith("postgresql://"):
+            normalized = "postgresql+psycopg://" + normalized[len("postgresql://"):]
+        return normalized
+
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
         if self.secret_provider.lower() not in {"environment", "aws_secrets_manager"}:
@@ -60,8 +74,14 @@ class Settings(BaseSettings):
                 raise ValueError("JWT_SECRET must be a strong secret of at least 32 characters in production")
             if not self.control_database_url:
                 raise ValueError("CONTROL_DATABASE_URL must be configured in production")
-            if "sslmode=" not in self.control_database_url.lower():
-                raise ValueError("CONTROL_DATABASE_URL must explicitly configure PostgreSQL TLS via sslmode")
+            parsed_control_url = urlparse(self.control_database_url)
+            query_params = parse_qs(parsed_control_url.query)
+            sslmodes = [value.lower() for value in query_params.get("sslmode", [])]
+            if not any(mode in {"require", "verify-ca", "verify-full"} for mode in sslmodes):
+                raise ValueError(
+                    "CONTROL_DATABASE_URL must configure PostgreSQL TLS "
+                    "with sslmode=require, verify-ca, or verify-full"
+                )
             if self.access_token_expire_minutes > 60:
                 raise ValueError("ACCESS_TOKEN_EXPIRE_MINUTES must not exceed 60 in production")
             if not self.cors_origins:
