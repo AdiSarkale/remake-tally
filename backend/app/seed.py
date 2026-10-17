@@ -1042,6 +1042,52 @@ def _delete_demo_transactions(db):
     db.commit()
 
 
+
+
+def _delete_demo_hr_records(db):
+    """Reset tenant HR/payroll test data while retaining the two seeded shop-floor employees.
+
+    Employees referenced by remaining non-demo production records are preserved but
+    deactivated; deleting them would break production history via foreign keys.
+    """
+    db.query(models.HRPayrollItem).delete(synchronize_session=False)
+    db.query(models.HRPayrollRun).delete(synchronize_session=False)
+    db.query(models.EmployeeAttendance).delete(synchronize_session=False)
+    db.query(models.EmployeeSalaryProfile).delete(synchronize_session=False)
+    db.query(models.HRCalendarDay).delete(synchronize_session=False)
+
+    payroll_settings = db.get(models.HRPayrollSettings, 1)
+    if payroll_settings is not None:
+        payroll_settings.salary_count_mode = "working_days"
+        payroll_settings.monthly_salary_days = 26
+        payroll_settings.week_off_days = "5,6"
+
+    seeded_employee_codes = {DEMO["employee_1"], DEMO["employee_2"]}
+    employees = db.query(models.Employee).all()
+    for employee in employees:
+        if employee.emp_code in seeded_employee_codes:
+            employee.active = True
+            continue
+
+        used_in_entry = db.query(models.ProductionEntry.id).filter(
+            models.ProductionEntry.employee_id == employee.id
+        ).first()
+        assigned_to_operation = db.query(models.ProductionOrderOperation.id).filter(
+            models.ProductionOrderOperation.assigned_employee_id == employee.id
+        ).first()
+        if used_in_entry is not None or assigned_to_operation is not None:
+            # Preserve historical production references; these employees won't
+            # appear in active-only payroll previews.
+            employee.active = False
+            continue
+
+        db.query(models.EmployeeSkill).filter_by(
+            employee_id=employee.id
+        ).delete(synchronize_session=False)
+        db.delete(employee)
+
+    db.flush()
+
 def _ensure_demo_tenant() -> None:
     """Ensure the demo company exists in the control plane for tenant-aware login."""
     from sqlalchemy import text
@@ -1072,6 +1118,7 @@ def run(reset_demo: bool = False) -> None:
     try:
         if reset_demo:
             _delete_demo_transactions(db)
+            _delete_demo_hr_records(db)
 
         for username, full_name, password, role in DEMO_USERS:
             user = _first(db, models.User, username=username)
