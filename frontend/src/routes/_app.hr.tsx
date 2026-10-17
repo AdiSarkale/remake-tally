@@ -80,7 +80,7 @@ function HrPage() {
         <Button size="sm" variant={activeTab === "employees" ? "default" : "outline"} role="tab" aria-selected={activeTab === "employees"} onClick={() => setActiveTab("employees")}>Employees</Button>
         <Button size="sm" variant={activeTab === "types" ? "default" : "outline"} role="tab" aria-selected={activeTab === "types"} onClick={() => setActiveTab("types")}>Employee Types</Button>
         <Button size="sm" variant={activeTab === "codes" ? "default" : "outline"} role="tab" aria-selected={activeTab === "codes"} onClick={() => setActiveTab("codes")}>Employee Code Rules</Button>
-        <Button size="sm" variant={activeTab === "payroll" ? "default" : "outline"} role="tab" aria-selected={activeTab === "payroll"} onClick={() => setActiveTab("payroll")}>Payroll</Button>
+        {canEdit ? <Button size="sm" variant={activeTab === "payroll" ? "default" : "outline"} role="tab" aria-selected={activeTab === "payroll"} onClick={() => setActiveTab("payroll")}>Payroll</Button> : null}
       </div>
       {activeTab === "types" ? <EmployeeTypesPanel canEdit={canEdit} /> : activeTab === "codes" ? <EmployeeCodeConfigPanel canEdit={canEdit} /> : activeTab === "payroll" ? <PayrollPanel canEdit={canEdit} /> : <>
       <div className="flex flex-wrap items-start justify-between gap-3"><PageHeader title="Employees" description="Employee codes are system-generated. Skills drive automatic operation assignment on production orders." />{canEdit ? <Button size="sm" variant="outline" onClick={() => setShowInactive((value) => !value)}>{showInactive ? "Hide inactive" : "Show historical employees"}</Button> : null}</div>
