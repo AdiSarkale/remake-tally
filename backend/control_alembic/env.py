@@ -19,6 +19,7 @@ def run_migrations_offline():
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        version_table="control_alembic_version",
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -38,7 +39,11 @@ def run_migrations_online():
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            version_table="control_alembic_version",
+        )
         with context.begin_transaction():
             context.run_migrations()
 
