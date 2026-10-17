@@ -12,7 +12,7 @@ import { useAuth } from "@/lib/auth";
 const DEFAULT_INITIAL_PASSWORD = "Minitally@123";
 
 export const Route = createFileRoute("/_app/settings")({
-  head: () => ({ meta: [{ title: "Settings — Minitally ERP" }] }),
+  head: () => ({ meta: [{ title: "Settings — Nexora ERP" }] }),
   component: SettingsPage,
 });
 
