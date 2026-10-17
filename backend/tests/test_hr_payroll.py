@@ -59,9 +59,9 @@ def test_absence_half_day_leave_and_overtime_affect_net_pay():
     assert result["paid_leave_days"] == 1
     assert result["unpaid_leave_days"] == 1
     assert result["overtime_minutes"] == 120
-    assert result["absence_deduction"] == 4166.67
-    assert result["overtime_pay"] == 416.67
-    assert result["net_pay"] == 42550.00
+    assert float(result["absence_deduction"]) == 4166.67
+    assert float(result["overtime_pay"]) == 416.67
+    assert float(result["net_pay"]) == 42550.00
 
 
 def test_calendar_overrides_take_precedence_over_week_off_defaults():
