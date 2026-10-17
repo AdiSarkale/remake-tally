@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Download, Pencil, Save, Trash2 } from "lucide-react";
+import { Download, Pencil, Save, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api, BASE_URL, getToken } from "@/lib/api/client";
@@ -51,6 +51,7 @@ export function PayrollPanel({ canEdit }: { canEdit: boolean }) {
   const [settings, setSettings] = useState<PayrollSettings | null>(null);
   const [calendar, setCalendar] = useState<CalendarDay[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRow[]>([]);
+  const [attendanceFile, setAttendanceFile] = useState<File | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState("");
   const [editingEmployee, setEditingEmployee] = useState<string | null>(null);
   const [salaryForm, setSalaryForm] = useState<SalaryInput>(emptySalary);
@@ -140,6 +141,58 @@ export function PayrollPanel({ canEdit }: { canEdit: boolean }) {
       toast.success("Attendance saved for " + row.work_date); await loadAttendance();
     } catch (err) { fail(err); } finally { setBusy(false); }
   };
+
+  const downloadAttendanceTemplate = async () => {
+    setBusy(true);
+    try {
+      const token = getToken();
+      const response = await fetch(
+        BASE_URL + "/api/v1/hr/attendance/template?year=" + year + "&month=" + month,
+        { headers: token ? { Authorization: "Bearer " + token } : {} },
+      );
+      if (!response.ok) {
+        let detail = "Attendance template download failed";
+        try { const body = await response.json() as { detail?: string }; detail = body.detail ?? detail; } catch { /* API may return a non-JSON error */ }
+        throw new Error(detail);
+      }
+      const objectUrl = URL.createObjectURL(await response.blob());
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = "minitally-attendance-template-" + year + "-" + String(month).padStart(2, "0") + ".xlsx";
+      document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(objectUrl);
+      toast.success("Attendance template downloaded");
+    } catch (err) { fail(err); } finally { setBusy(false); }
+  };
+  const importAttendanceWorkbook = async () => {
+    if (!attendanceFile) {
+      toast.error("Choose an .xlsx attendance workbook first");
+      return;
+    }
+    setBusy(true);
+    try {
+      const token = getToken();
+      const formData = new FormData();
+      formData.append("file", attendanceFile);
+      const response = await fetch(
+        BASE_URL + "/api/v1/hr/attendance/import?year=" + year + "&month=" + month,
+        { method: "POST", headers: token ? { Authorization: "Bearer " + token } : {}, body: formData },
+      );
+      if (!response.ok) {
+        let detail = "Attendance import failed";
+        try {
+          const body = await response.json() as { detail?: string | Array<{ msg?: string }> };
+          if (typeof body.detail === "string") detail = body.detail;
+          else if (Array.isArray(body.detail)) detail = body.detail.map((item) => item.msg ?? "Invalid attendance workbook").join(", ");
+        } catch { /* API may return a non-JSON error */ }
+        throw new Error(detail);
+      }
+      const result = await response.json() as { rows_processed: number; created: number; updated: number; cleared: number };
+      toast.success("Attendance import complete: " + result.created + " added, " + result.updated + " updated, " + result.cleared + " cleared (" + result.rows_processed + " rows).");
+      setAttendanceFile(null);
+      await Promise.all([loadAttendance(), loadPreview()]);
+    } catch (err) { fail(err); } finally { setBusy(false); }
+  };
+
   const finalizePayroll = async () => {
     setBusy(true);
     try {
@@ -235,7 +288,16 @@ export function PayrollPanel({ canEdit }: { canEdit: boolean }) {
     </div> : null}
 
     {tab === "attendance" ? <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-3"><label className="text-sm font-medium" htmlFor="attendance-employee">Employee</label><select id="attendance-employee" className="h-9 min-w-[240px] rounded-md border bg-background px-3 text-sm" value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)}>{employees.map((row) => <option key={row.employee_id} value={row.employee_id}>{row.employee_code} — {row.employee_name}</option>)}</select><Button size="sm" variant="outline" onClick={() => void loadAttendance()}>Refresh month</Button></div>
+      <div className="flex flex-wrap items-center gap-3"><label className="text-sm font-medium" htmlFor="attendance-employee">Employee</label><select id="attendance-employee" className="h-9 min-w-[240px] rounded-md border bg-background px-3 text-sm" value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)}>{employees.map((row) => <option key={row.employee_id} value={row.employee_id}>{row.employee_code} — {row.employee_name}</option>)}</select><Button size="sm" variant="outline" disabled={busy} onClick={() => void loadAttendance()}>Refresh month</Button></div>
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border p-3">
+        <div className="min-w-0 flex-1"><h3 className="font-medium">Bulk attendance import</h3><p className="text-xs text-muted-foreground">Download the template for {monthName(year, month)}. The import validates the entire workbook and changes no rows if any validation error is found.</p></div>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void downloadAttendanceTemplate()}><Download className="mr-1 size-3.5" />Download Excel template</Button>
+        {canEdit ? <>
+          <label className="text-sm"><span className="sr-only">Choose attendance workbook</span><input key={attendanceFile ? attendanceFile.name + ":" + attendanceFile.size : "attendance-empty"} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={busy} className="max-w-[260px] text-sm file:mr-2 file:rounded-md file:border file:bg-background file:px-2 file:py-1" onChange={(event) => setAttendanceFile(event.target.files?.[0] ?? null)} /></label>
+          <Button size="sm" disabled={busy || !attendanceFile} onClick={() => void importAttendanceWorkbook()}><Upload className="mr-1 size-3.5" />Import attendance</Button>
+        </> : null}
+      </div>
+      <p className="text-sm text-muted-foreground">The fixed format is: Employee Code, Work Date, Status, Overtime Minutes, Punch In, Punch Out, Note. Use one row per employee per date; the Work Date must be within the selected month. Accepted statuses are present, half_day, absent, paid_leave, unpaid_leave, and unmarked (clears that date).</p>
       <p className="text-sm text-muted-foreground">Attendance is tracked for each calendar day of the selected month. A holiday/week-off may still be marked present when worked.</p>
       <div className="overflow-x-auto rounded-lg border"><table className="w-full min-w-[900px] text-sm"><thead className="bg-muted/50 text-left"><tr>{["Date", "Calendar", "Attendance", "OT minutes", "Note", "Action"].map((title) => <th key={title} className="px-3 py-2 font-medium">{title}</th>)}</tr></thead>
         <tbody>{attendance.map((row) => <tr key={row.work_date} className="border-t"><td className="px-3 py-2">{dayLabel(row.work_date)}</td>
