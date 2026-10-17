@@ -29,7 +29,7 @@ const NAV: NavItem[] = [
   { to: "/inventory", label: "Inventory", icon: Boxes, area: "inventory" },
   { to: "/production", label: "Production", icon: Factory, area: "production" },
   { to: "/finance", label: "Finance", icon: Wallet, area: "finance" },
-  { to: "/hr", label: "HR", icon: Users, area: "production" },
+  { to: "/hr", label: "HR", icon: Users, area: "hr" },
   { to: "/reports", label: "Reports", icon: FileBarChart, area: "reports" },
   { to: "/settings", label: "Settings", icon: Settings, area: "settings" },
 ];
