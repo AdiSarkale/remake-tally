@@ -3,14 +3,20 @@ from __future__ import annotations
 
 import calendar
 import io
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time as time_type, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.utils.datetime import from_excel
+from openpyxl.utils.exceptions import InvalidFileException
+from zipfile import BadZipFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -281,6 +287,242 @@ def _attendance_output(
     }
 
 
+
+_ATTENDANCE_EXCEL_HEADERS = [
+    "Employee Code", "Work Date", "Status", "Overtime Minutes", "Punch In", "Punch Out", "Note",
+]
+_ATTENDANCE_EXCEL_STATUSES = {"present", "half_day", "absent", "paid_leave", "unpaid_leave", "unmarked"}
+_MAX_ATTENDANCE_IMPORT_BYTES = 5 * 1024 * 1024
+_MAX_ATTENDANCE_IMPORT_ROWS = 10000
+
+
+def _attendance_template_workbook(year: int, month: int) -> io.BytesIO:
+    """Build a blank, validated workbook. Example data is kept off the import sheet."""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Attendance"
+    sheet.append(_ATTENDANCE_EXCEL_HEADERS)
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = f"A1:G1"
+    widths = [20, 16, 20, 20, 14, 14, 36]
+    for column, width in enumerate(widths, start=1):
+        sheet.column_dimensions[chr(64 + column)].width = width
+        cell = sheet.cell(row=1, column=column)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="244062")
+    for row_number in range(2, 1002):
+        sheet.cell(row=row_number, column=2).number_format = "yyyy-mm-dd"
+        sheet.cell(row=row_number, column=4).number_format = "0"
+        sheet.cell(row=row_number, column=5).number_format = "hh:mm"
+        sheet.cell(row=row_number, column=6).number_format = "hh:mm"
+    status_validation = DataValidation(
+        type="list",
+        formula1='"present,half_day,absent,paid_leave,unpaid_leave,unmarked"',
+        allow_blank=False,
+    )
+    status_validation.errorTitle = "Invalid attendance status"
+    status_validation.error = "Choose a status from the dropdown list."
+    status_validation.promptTitle = "Attendance status"
+    status_validation.prompt = "Choose one of the supported lowercase status values."
+    sheet.add_data_validation(status_validation)
+    status_validation.add("C2:C1001")
+
+    instructions = workbook.create_sheet("Instructions")
+    lines = [
+        ["MiniTally Attendance Import Template"],
+        [f"Selected import period: {calendar.month_name[month]} {year}"],
+        ["Only the Attendance worksheet is imported. The Instructions worksheet is ignored."],
+        ["Keep the seven column headers on row 1 of Attendance exactly as provided."],
+        ["Use one row per employee per work date. Do not upload duplicate employee/date pairs."],
+        ["Employee Code: exact code of an active employee, for example EMP-001."],
+        ["Work Date: an Excel date or YYYY-MM-DD; every date must belong to the selected period."],
+        ["Status: present, half_day, absent, paid_leave, unpaid_leave, or unmarked."],
+        ["Overtime Minutes: whole number from 0 to 1440; leave blank or enter 0 if none."],
+        ["Punch In / Punch Out: optional Excel times (HH:MM). Punch Out must be after Punch In."],
+        ["Note: optional text describing the attendance entry."],
+        ["Use unmarked to clear any existing attendance entry for that employee/date."],
+        ["The import validates every row first. If any row is invalid, nothing is imported."],
+        [""],
+        ["Example (documentation only; this row is NOT imported):"],
+        _ATTENDANCE_EXCEL_HEADERS,
+        ["EMP-001", date(year, month, 1), "present", 0, time_type(8, 30), time_type(17, 0), "Example only"],
+    ]
+    for row in lines:
+        instructions.append(row)
+    instructions["A1"].font = Font(bold=True, size=15, color="244062")
+    instructions.column_dimensions["A"].width = 110
+    for cell in instructions[16]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="244062")
+    instructions["B17"].number_format = "yyyy-mm-dd"
+    instructions["E17"].number_format = "hh:mm"
+    instructions["F17"].number_format = "hh:mm"
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    workbook.close()
+    buffer.seek(0)
+    return buffer
+
+
+def _parse_attendance_excel_date(value: Any) -> date:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        raw = value.strip()
+        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(raw, fmt).date()
+            except ValueError:
+                continue
+    raise ValueError("Work Date must be an Excel date or YYYY-MM-DD")
+
+
+def _parse_attendance_excel_time(value: Any) -> time_type | None:
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if isinstance(value, datetime):
+        return value.time().replace(tzinfo=None)
+    if isinstance(value, time_type):
+        return value.replace(tzinfo=None)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        converted = from_excel(value)
+        if isinstance(converted, datetime):
+            return converted.time().replace(tzinfo=None)
+        if isinstance(converted, time_type):
+            return converted.replace(tzinfo=None)
+    if isinstance(value, str):
+        raw = value.strip()
+        try:
+            return time_type.fromisoformat(raw)
+        except ValueError:
+            for fmt in ("%H:%M", "%H:%M:%S"):
+                try:
+                    return datetime.strptime(raw, fmt).time()
+                except ValueError:
+                    continue
+    raise ValueError("time must be in HH:MM or HH:MM:SS format")
+
+
+def _parse_attendance_workbook(
+    content: bytes,
+    year: int,
+    month: int,
+    employees_by_code: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Validate the entire workbook before the caller makes any database changes."""
+    _validate_period(year, month)
+    try:
+        workbook = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
+    except (InvalidFileException, BadZipFile, OSError, ValueError) as exc:
+        raise ValueError("The file is not a readable Excel .xlsx workbook. Download the MiniTally template and try again.") from exc
+    try:
+        if "Attendance" not in workbook.sheetnames:
+            raise ValueError('Workbook must contain a worksheet named "Attendance".')
+        sheet = workbook["Attendance"]
+        header_row = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), None)
+        headers = [str(value).strip() if value is not None else "" for value in (header_row or ())]
+        while headers and not headers[-1]:
+            headers.pop()
+        if headers != _ATTENDANCE_EXCEL_HEADERS:
+            expected = ", ".join(_ATTENDANCE_EXCEL_HEADERS)
+            raise ValueError(f"Attendance worksheet headers must match the template exactly: {expected}.")
+
+        parsed: list[dict[str, Any]] = []
+        errors: list[str] = []
+        seen: set[tuple[str, date]] = set()
+        nonempty_count = 0
+        for row_number, values in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+            cells = list(values[:len(_ATTENDANCE_EXCEL_HEADERS)])
+            cells.extend([None] * (len(_ATTENDANCE_EXCEL_HEADERS) - len(cells)))
+            if not any(value is not None and (not isinstance(value, str) or value.strip()) for value in cells):
+                continue
+            nonempty_count += 1
+            if nonempty_count > _MAX_ATTENDANCE_IMPORT_ROWS:
+                errors.append(f"More than {_MAX_ATTENDANCE_IMPORT_ROWS} attendance rows were supplied.")
+                break
+            row_error_start = len(errors)
+            raw_code, raw_date, raw_status, raw_overtime, raw_punch_in, raw_punch_out, raw_note = cells
+            code = str(raw_code).strip().upper() if raw_code is not None else ""
+            employee = employees_by_code.get(code)
+            if not code:
+                errors.append(f"Row {row_number}: Employee Code is required.")
+            elif employee is None:
+                errors.append(f"Row {row_number}: employee code {code!r} was not found or is inactive.")
+
+            work_date = None
+            try:
+                work_date = _parse_attendance_excel_date(raw_date)
+                if work_date.year != year or work_date.month != month:
+                    errors.append(f"Row {row_number}: Work Date must be in {year}-{month:02d}.")
+            except ValueError as exc:
+                errors.append(f"Row {row_number}: {exc}.")
+
+            status = str(raw_status).strip().lower().replace("-", "_").replace(" ", "_") if raw_status is not None else ""
+            if status not in _ATTENDANCE_EXCEL_STATUSES:
+                errors.append(f"Row {row_number}: Status must be one of {', '.join(sorted(_ATTENDANCE_EXCEL_STATUSES))}.")
+
+            overtime_minutes = 0
+            if raw_overtime is not None and str(raw_overtime).strip():
+                try:
+                    overtime_number = float(raw_overtime)
+                    if isinstance(raw_overtime, bool) or not overtime_number.is_integer() or not 0 <= overtime_number <= 1440:
+                        raise ValueError
+                    overtime_minutes = int(overtime_number)
+                except (TypeError, ValueError):
+                    errors.append(f"Row {row_number}: Overtime Minutes must be a whole number from 0 to 1440.")
+
+            punch_in = punch_out = None
+            try:
+                parsed_time = _parse_attendance_excel_time(raw_punch_in)
+                if parsed_time is not None and work_date is not None:
+                    punch_in = datetime.combine(work_date, parsed_time).replace(tzinfo=timezone.utc)
+            except ValueError as exc:
+                errors.append(f"Row {row_number}: Punch In {exc}.")
+            try:
+                parsed_time = _parse_attendance_excel_time(raw_punch_out)
+                if parsed_time is not None and work_date is not None:
+                    punch_out = datetime.combine(work_date, parsed_time).replace(tzinfo=timezone.utc)
+            except ValueError as exc:
+                errors.append(f"Row {row_number}: Punch Out {exc}.")
+            if punch_in is not None and punch_out is not None and punch_out <= punch_in:
+                errors.append(f"Row {row_number}: Punch Out must be after Punch In.")
+
+            note = str(raw_note).strip() if raw_note is not None else ""
+            if len(note) > 4000:
+                errors.append(f"Row {row_number}: Note must be 4000 characters or fewer.")
+
+            if work_date is not None and code:
+                key = (code, work_date)
+                if key in seen:
+                    errors.append(f"Row {row_number}: duplicate Employee Code and Work Date pair ({code}, {work_date}).")
+                seen.add(key)
+
+            if len(errors) == row_error_start and employee is not None and work_date is not None:
+                parsed.append({
+                    "employee_id": employee.id,
+                    "employee_code": code,
+                    "work_date": work_date,
+                    "status": status,
+                    "overtime_minutes": overtime_minutes,
+                    "punch_in": punch_in,
+                    "punch_out": punch_out,
+                    "note": note,
+                })
+
+        if nonempty_count == 0:
+            errors.append("Attendance worksheet has no attendance rows.")
+        if errors:
+            shown = errors[:30]
+            suffix = f"\n…and {len(errors) - len(shown)} additional issue(s)." if len(errors) > len(shown) else ""
+            raise ValueError("Attendance import validation failed:\n" + "\n".join(shown) + suffix)
+        return parsed
+    finally:
+        workbook.close()
+
+
 @router.get("/payroll/settings", response_model=schemas.PayrollSettingsOut)
 def get_payroll_settings(db: Session = Depends(get_db), user: models.User = hr_access):
     return _settings_output(_ensure_settings(db))
@@ -435,6 +677,90 @@ def get_monthly_attendance(
         _attendance_output(employee, day, by_date.get(day), _calendar_type(day, week_off_days, overrides), descriptions.get(day, ""))
         for day in (date(year, month, number) for number in range(1, end.day + 1))
     ]
+
+
+
+@router.get("/attendance/template")
+def download_attendance_template(
+    year: int = Query(ge=2000, le=2100),
+    month: int = Query(ge=1, le=12),
+    db: Session = Depends(get_db),
+    user: models.User = hr_access,
+):
+    _validate_period(year, month)
+    workbook = _attendance_template_workbook(year, month)
+    filename = f"minitally-attendance-template-{year}-{month:02d}.xlsx"
+    return StreamingResponse(
+        workbook,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/attendance/import")
+async def import_attendance_from_excel(
+    year: int = Query(ge=2000, le=2100),
+    month: int = Query(ge=1, le=12),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: models.User = hr_access,
+):
+    _validate_period(year, month)
+    if not file.filename or not file.filename.lower().endswith(".xlsx"):
+        raise HTTPException(status_code=415, detail="Upload an .xlsx Excel workbook using the MiniTally attendance template.")
+    content = await file.read(_MAX_ATTENDANCE_IMPORT_BYTES + 1)
+    await file.close()
+    if len(content) > _MAX_ATTENDANCE_IMPORT_BYTES:
+        raise HTTPException(status_code=413, detail="Attendance workbook must be 5 MB or smaller.")
+
+    employees_by_code = {
+        row.emp_code.strip().upper(): row
+        for row in db.query(models.Employee).filter(models.Employee.active.is_(True)).all()
+    }
+    try:
+        rows = _parse_attendance_workbook(content, year, month, employees_by_code)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    created = updated = cleared = 0
+    try:
+        for item in rows:
+            existing = db.query(models.EmployeeAttendance).filter_by(
+                employee_id=item["employee_id"], work_date=item["work_date"]
+            ).first()
+            if item["status"] == "unmarked":
+                if existing is not None:
+                    db.delete(existing)
+                    cleared += 1
+                continue
+            if existing is None:
+                existing = models.EmployeeAttendance(
+                    employee_id=item["employee_id"], work_date=item["work_date"],
+                    status=item["status"], overtime_minutes=item["overtime_minutes"],
+                    punch_in=item["punch_in"], punch_out=item["punch_out"], note=item["note"],
+                )
+                db.add(existing)
+                created += 1
+            else:
+                existing.status = item["status"]
+                existing.overtime_minutes = item["overtime_minutes"]
+                existing.punch_in = item["punch_in"]
+                existing.punch_out = item["punch_out"]
+                existing.note = item["note"]
+                updated += 1
+        log_audit(
+            db, user.username, "IMPORT", "employee_attendance",
+            f"{year}-{month:02d}: rows={len(rows)}, created={created}, updated={updated}, cleared={cleared}",
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Attendance changed concurrently. Refresh the month and import again.") from exc
+
+    return {
+        "year": year, "month": month, "rows_processed": len(rows),
+        "created": created, "updated": updated, "cleared": cleared,
+    }
 
 
 @router.put("/attendance", response_model=schemas.EmployeeAttendanceOut)
