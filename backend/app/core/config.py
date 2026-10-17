@@ -1,7 +1,7 @@
 """Application settings loaded from environment variables."""
 
 from functools import lru_cache
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
@@ -53,6 +53,17 @@ class Settings(BaseSettings):
             normalized = "postgresql://" + normalized[len("postgres://"):]
         if normalized.startswith("postgresql://"):
             normalized = "postgresql+psycopg://" + normalized[len("postgresql://"):]
+
+        # Railway's UI may expose TLS as ssl_mode; libpq/psycopg expects sslmode.
+        parts = urlsplit(normalized)
+        query_items = parse_qsl(parts.query, keep_blank_values=True)
+        query_items = [
+            ("sslmode" if key.lower() == "ssl_mode" else key, value)
+            for key, value in query_items
+        ]
+        normalized = urlunsplit(
+            (parts.scheme, parts.netloc, parts.path, urlencode(query_items), parts.fragment)
+        )
         return normalized
 
     @model_validator(mode="after")
@@ -76,7 +87,12 @@ class Settings(BaseSettings):
                 raise ValueError("CONTROL_DATABASE_URL must be configured in production")
             parsed_control_url = urlparse(self.control_database_url)
             query_params = parse_qs(parsed_control_url.query)
-            sslmodes = [value.lower() for value in query_params.get("sslmode", [])]
+            # Accept Railway's ssl_mode spelling as well as PostgreSQL's sslmode.
+            sslmodes = [
+                value.lower()
+                for key in ("sslmode", "ssl_mode")
+                for value in query_params.get(key, [])
+            ]
             if not any(mode in {"require", "verify-ca", "verify-full"} for mode in sslmodes):
                 raise ValueError(
                     "CONTROL_DATABASE_URL must configure PostgreSQL TLS "
