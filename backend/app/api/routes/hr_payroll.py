@@ -128,23 +128,43 @@ def _calculate_employee_monthly_payroll(
         year, month, salary_count_mode, monthly_salary_days, week_off_days, calendar_overrides
     )
     present_days = half_days = absent_days = paid_leave_days = unpaid_leave_days = Decimal("0")
+    unpaid_equivalent_days = Decimal("0")
     overtime_minutes = 0
     for row in attendance_rows:
+        # Attendance on an overridden holiday or configured week-off is not a
+        # scheduled absence. Still show the recorded attendance in the summary.
+        work_date = getattr(row, "work_date", None)
+        scheduled_workday = (
+            _calendar_type(work_date, week_off_days, calendar_overrides) == "working_day"
+            if work_date is not None
+            else True
+        )
         if row.status == "present":
             present_days += Decimal("1")
         elif row.status == "half_day":
             half_days += Decimal("1")
+            if scheduled_workday:
+                unpaid_equivalent_days += Decimal("0.5")
         elif row.status == "absent":
             absent_days += Decimal("1")
+            if scheduled_workday:
+                unpaid_equivalent_days += Decimal("1")
         elif row.status == "paid_leave":
             paid_leave_days += Decimal("1")
         elif row.status == "unpaid_leave":
             unpaid_leave_days += Decimal("1")
-        overtime_minutes += max(0, int(row.overtime_minutes or 0))
+            if scheduled_workday:
+                unpaid_equivalent_days += Decimal("1")
+        # Rejecting or ignoring overtime for absence/leave rows avoids paying
+        # overtime that cannot be reconciled to actual attendance.
+        if row.status in {"present", "half_day"}:
+            overtime_minutes += max(0, int(row.overtime_minutes or 0))
 
     daily_rate = components["monthly_gross"] / Decimal(divisor)
-    unpaid_equivalent_days = absent_days + (half_days / Decimal("2")) + unpaid_leave_days
-    absence_deduction = _money(daily_rate * unpaid_equivalent_days)
+    absence_deduction = min(
+        components["monthly_gross"],
+        _money(daily_rate * unpaid_equivalent_days),
+    )
     overtime_pay = _money((daily_rate / Decimal("8")) * Decimal(overtime_minutes) / Decimal("60"))
     net_pay = max(
         Decimal("0.00"),
@@ -164,11 +184,18 @@ def _calculate_employee_monthly_payroll(
     }
 
 
+def _validate_period(year: int, month: int) -> None:
+    if month < 1 or month > 12 or year < 2000 or year > 2100:
+        raise HTTPException(
+            status_code=422,
+            detail="Payroll period must use a valid month and year from 2000 to 2100",
+        )
+
+
 def _period_data(
     db: Session, year: int, month: int
 ) -> tuple[date, date, models.HRPayrollSettings, dict[date, str], list[models.Employee]]:
-    if month < 1 or month > 12 or year < 2000 or year > 2100:
-        raise HTTPException(status_code=422, detail="Payroll period must use a valid month and year from 2000 to 2100")
+    _validate_period(year, month)
     start = date(year, month, 1)
     end = date(year, month, calendar.monthrange(year, month)[1])
     settings = _ensure_settings(db)
@@ -482,6 +509,7 @@ def list_payroll_runs(db: Session = Depends(get_db), user: models.User = hr_acce
 def get_payroll_run(
     year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
 ):
+    _validate_period(year, month)
     run = db.query(models.HRPayrollRun).filter_by(year=year, month=month).first()
     if run is None:
         raise HTTPException(status_code=404, detail="Finalized payroll run not found")
@@ -492,6 +520,7 @@ def get_payroll_run(
 def finalize_monthly_payroll(
     year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
 ):
+    _validate_period(year, month)
     existing = db.query(models.HRPayrollRun).filter_by(year=year, month=month).first()
     if existing is not None and existing.status == "finalized":
         return _run_output(db, existing)
@@ -535,8 +564,7 @@ def finalize_monthly_payroll(
 def download_salary_slip(
     employee_id: str, year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
 ):
-    if month < 1 or month > 12:
-        raise HTTPException(status_code=422, detail="Month must be between 1 and 12")
+    _validate_period(year, month)
     run = db.query(models.HRPayrollRun).filter_by(year=year, month=month, status="finalized").first()
     if run is None:
         raise HTTPException(status_code=404, detail="Finalize payroll for this month before downloading salary slips")
@@ -583,5 +611,13 @@ def download_salary_slip(
     pdf.drawString(48, 35, "System-generated salary slip. Verify payroll values with your HR/payroll administrator.")
     pdf.save()
     buffer.seek(0)
+    log_audit(
+        db,
+        user.username,
+        "DOWNLOAD",
+        "hr_salary_slip",
+        f"{year}-{month:02d}:{item.employee_code}",
+    )
+    db.commit()
     filename = f"salary-slip-{item.employee_code}-{year}-{month:02d}.pdf"
     return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
