@@ -35,7 +35,7 @@ function ReportsPage() {
       ["Material variance", data.material_variance],
       [],
     ];
-    const columns = [...new Set(data.by_workcenter.flatMap((row) => Object.keys(row)))];
+    const columns = [...new Set(data.by_workcenter.flatMap((row) => Object.keys(row ?? {})))];
     if (columns.length) {
       rows.push(columns);
       for (const row of data.by_workcenter) rows.push(columns.map((column) => row[column]));
