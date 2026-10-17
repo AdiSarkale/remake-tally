@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { ChevronsLeft, ChevronsRight, Command, LogOut, Moon, Search, Sun, UserRound } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, Command, LogOut, Menu, Moon, Search, Sun, UserRound, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Breadcrumb,
@@ -72,9 +72,11 @@ function useTheme() {
 export function Topbar({
   collapsed,
   onToggleSidebar,
+  mobileMenuOpen,
 }: {
   collapsed: boolean;
   onToggleSidebar: () => void;
+  mobileMenuOpen: boolean;
 }) {
   const { profile, logout } = useAuth();
   const { data: settings } = useSettings();
@@ -99,7 +101,7 @@ export function Topbar({
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background px-3">
       <Button variant="ghost" size="icon" className="size-8" onClick={onToggleSidebar} aria-label="Toggle sidebar">
-        {collapsed ? <ChevronsRight className="size-4" /> : <ChevronsLeft className="size-4" />}
+        {mobileMenuOpen ? <X className="size-4 md:hidden" /> : <Menu className="size-4 md:hidden" />}{collapsed ? <ChevronsRight className="hidden size-4 md:block" /> : <ChevronsLeft className="hidden size-4 md:block" />}
       </Button>
 
       <Breadcrumb className="hidden md:block">
