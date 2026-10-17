@@ -543,6 +543,7 @@ def test_production_can_read_employees_but_cannot_manage_employee_records(isolat
 
 def test_admin_can_create_employees_and_manage_employee_skills(isolated_tenants):
     client = isolated_tenants["client"]
+    _ensure_hr_reference_data(isolated_tenants["sessions"][0])
     admin = _login(client, "AA")
     headers = {"Authorization": f"Bearer {admin['access_token']}"}
 
