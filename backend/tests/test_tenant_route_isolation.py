@@ -987,7 +987,7 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
     assert preview.status_code == 200, preview.text
     item = next(row for row in preview.json()["items"] if row["employee_id"] == employee_id)
     assert item["absence_deduction"] == 1923.08
-    assert item["net_pay"] == 45876.92
+    assert item["net_pay"] == 44376.92
 
     finalized = client.post("/api/v1/hr/payroll/runs/2026/10/finalize", headers=headers)
     assert finalized.status_code == 200, finalized.text
