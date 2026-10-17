@@ -114,7 +114,7 @@ function ReportsPage() {
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50 text-left">
                     <tr>
-                      {Object.keys(data.by_workcenter[0]).map((key) => (
+                      {Object.keys(data.by_workcenter[0] ?? {}).map((key) => (
                         <th key={key} className={`whitespace-nowrap px-4 py-3 font-medium capitalize ${key === "workcenter_id" ? "" : "text-right"}`}>
                           {key === "workcenter_id" ? "Work center" : key.replace(/_/g, " ")}
                         </th>
@@ -123,7 +123,7 @@ function ReportsPage() {
                   </thead>
                   <tbody>
                     {data.by_workcenter.map((row, index) => (
-                      <tr key={String(row.workcenter_id ?? index)} className="border-t">
+                      <tr key={String(row["workcenter_id"] ?? index)} className="border-t">
                         {Object.entries(row).map(([key, value]) => {
                           const center = workcenters.data?.find((item) => item.id === String(value));
                           const display = key === "workcenter_id"
