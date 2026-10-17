@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -40,6 +40,20 @@ class Settings(BaseSettings):
         "http://localhost:5174",
         "http://localhost:8000",
     ]
+
+
+    @field_validator("database_url", "control_database_url", mode="before")
+    @classmethod
+    def normalize_postgres_driver(cls, value: str | None) -> str | None:
+        """Use psycopg 3 for Railway's default PostgreSQL connection URLs."""
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip()
+        if normalized.startswith("postgres://"):
+            normalized = "postgresql://" + normalized[len("postgres://"):]
+        if normalized.startswith("postgresql://"):
+            normalized = "postgresql+psycopg://" + normalized[len("postgresql://"):]
+        return normalized
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
