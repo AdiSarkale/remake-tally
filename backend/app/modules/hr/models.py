@@ -18,7 +18,7 @@ class Employee(Base):
     emp_code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
     employee_type: Mapped[str] = mapped_column(
-        String(20), default=EmployeeType.staff, nullable=False, index=True
+        String(32), default=EmployeeType.staff, nullable=False, index=True
     )
     department: Mapped[str] = mapped_column(String(120), default="")
     designation: Mapped[str] = mapped_column(String(120), default="")

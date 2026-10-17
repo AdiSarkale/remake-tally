@@ -789,7 +789,7 @@ export interface RoutingOut {
   active: boolean;
   operations: RoutingOperationOut[];
 }
-export type EmployeeType = string;
+export type EmployeeType = string; // Tenant-managed employee type codes are data, not a fixed union.
 export interface EmployeeCodeConfigIn {
   pattern: string;
   sequence_start: number;
