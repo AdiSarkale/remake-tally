@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.routes import approvals, auth, customer_pos, dashboard, delivery, dispatches, finance, inventory, masters, production, purchasing, quotations, sales, sales_orders, scrap, users, bom, manufacturing, hr
+from app.api.routes import approvals, auth, customer_pos, dashboard, delivery, dispatches, finance, inventory, masters, production, purchasing, quotations, sales, sales_orders, scrap, users, bom, manufacturing, hr, hr_payroll
 from app.core.config import get_settings
 from app.db.control import dispose_control_engine, get_control_db
 from app.db.control_models import TenantCompany
@@ -26,7 +26,7 @@ app.add_middleware(
 )
 
 for router in (auth.router, masters.router, inventory.router, production.router, scrap.router, sales.router, dashboard.router, users.router, quotations.router, sales_orders.router,
-               delivery.router, dispatches.router, purchasing.router, customer_pos.router, bom.router, finance.router, manufacturing.router, approvals.router, hr.router):
+               delivery.router, dispatches.router, purchasing.router, customer_pos.router, bom.router, finance.router, manufacturing.router, approvals.router, hr.router, hr_payroll.router):
     app.include_router(router, prefix=settings.api_v1_prefix)
 
 
