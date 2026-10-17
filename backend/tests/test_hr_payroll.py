@@ -93,3 +93,58 @@ def test_week_off_days_validate_and_normalize():
         PayrollSettingsIn(week_off_days=[7])
     with pytest.raises(ValidationError):
         PayrollSettingsIn(week_off_days=[6, 6])
+
+
+def test_absences_on_holidays_and_week_offs_do_not_create_salary_deductions():
+    from app.api.routes.hr_payroll import _calculate_employee_monthly_payroll
+
+    attendance = [
+        SimpleNamespace(status="absent", work_date=date(2026, 10, 3), overtime_minutes=0),
+        SimpleNamespace(status="absent", work_date=date(2026, 10, 5), overtime_minutes=0),
+        SimpleNamespace(status="absent", work_date=date(2026, 10, 6), overtime_minutes=0),
+    ]
+    result = _calculate_employee_monthly_payroll(
+        _employee(),
+        _profile(),
+        attendance,
+        2026,
+        10,
+        "fixed_days",
+        26,
+        [5, 6],
+        {date(2026, 10, 5): "holiday"},
+    )
+
+    # The three absence records remain visible, but only the Tuesday workday
+    # is deductible; October 3 is a default week-off and October 5 is a holiday.
+    assert result["absent_days"] == 3
+    assert result["absence_deduction"] == 1923.08
+
+
+def test_absence_deduction_cannot_exceed_monthly_gross():
+    attendance = [
+        SimpleNamespace(
+            status="absent",
+            work_date=date(2026, 10, day),
+            overtime_minutes=0,
+        )
+        for day in range(1, 32)
+    ]
+    result = _calculate_employee_monthly_payroll(
+        _employee(), _profile(), attendance, 2026, 10, "fixed_days", 1, [5, 6], {}
+    )
+
+    assert result["absence_deduction"] == result["monthly_gross"] == 50000
+    assert result["net_pay"] == 0
+
+
+@pytest.mark.parametrize(("year", "month"), [(1999, 12), (2101, 1), (2026, 0), (2026, 13)])
+def test_payroll_period_validation_rejects_out_of_range_values(year, month):
+    from fastapi import HTTPException
+
+    from app.api.routes.hr_payroll import _validate_period
+
+    with pytest.raises(HTTPException) as exc:
+        _validate_period(year, month)
+
+    assert exc.value.status_code == 422
