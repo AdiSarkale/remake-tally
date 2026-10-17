@@ -891,3 +891,88 @@ def test_payroll_endpoints_remain_inside_hr_role_boundary():
     for route in app.routes:
         if isinstance(route, APIRoute) and route.path.startswith("/api/v1/hr/"):
             assert any(dep.call is session_module.get_db for dep in _dependency_calls(route.dependant)), route.path
+
+
+def test_salary_attendance_payroll_finalization_and_pdf_slip(isolated_tenants):
+    client = isolated_tenants["client"]
+    tenant_session = isolated_tenants["sessions"][0]
+    _ensure_hr_reference_data(tenant_session)
+    headers = _hr_api_headers(client, "AA", "admin", "Password@123")
+
+    created = client.post(
+        "/api/v1/manufacturing/employees",
+        headers=headers,
+        json={
+            "name": "Payroll Test Worker",
+            "employee_type": "shop_floor",
+            "department": "Production",
+            "designation": "Operator",
+        },
+    )
+    assert created.status_code == 201, created.text
+    employee_id = created.json()["id"]
+    employee_code = created.json()["emp_code"]
+
+    salary = client.put(
+        "/api/v1/hr/employees/" + employee_id + "/salary",
+        headers=headers,
+        json={
+            "annual_salary": 600000,
+            "basic_pct": 50,
+            "hra_pct": 40,
+            "da_pct": 0,
+            "conveyance_monthly": 1000,
+            "medical_allowance_monthly": 1000,
+            "pf_pct": 12,
+            "professional_tax_monthly": 200,
+            "tds_monthly": 500,
+        },
+    )
+    assert salary.status_code == 200, salary.text
+    assert salary.json()["annual_salary"] == 600000
+    assert salary.json()["monthly_gross"] == 50000
+    assert salary.json()["special_allowance"] == 13000
+
+    settings = client.put(
+        "/api/v1/hr/payroll/settings",
+        headers=headers,
+        json={"salary_count_mode": "fixed_days", "monthly_salary_days": 30, "week_off_days": [5, 6]},
+    )
+    assert settings.status_code == 200, settings.text
+
+    holiday = client.put(
+        "/api/v1/hr/calendar/2026-10-05",
+        headers=headers,
+        json={"day_type": "holiday", "description": "Test holiday"},
+    )
+    assert holiday.status_code == 200, holiday.text
+    attendance = client.put(
+        "/api/v1/hr/attendance",
+        headers=headers,
+        json={
+            "employee_id": employee_id,
+            "work_date": "2026-10-01",
+            "status": "absent",
+            "overtime_minutes": 0,
+            "note": "Integration test absence",
+        },
+    )
+    assert attendance.status_code == 200, attendance.text
+
+    preview = client.get("/api/v1/hr/payroll/preview?year=2026&month=10", headers=headers)
+    assert preview.status_code == 200, preview.text
+    item = next(row for row in preview.json()["items"] if row["employee_id"] == employee_id)
+    assert item["absence_deduction"] == 1666.67
+    assert item["net_pay"] == 44633.33
+
+    finalized = client.post("/api/v1/hr/payroll/runs/2026/10/finalize", headers=headers)
+    assert finalized.status_code == 200, finalized.text
+    assert finalized.json()["employee_count"] == 1
+    slip = client.get(
+        "/api/v1/hr/payroll/slips/" + employee_id + "/2026/10",
+        headers=headers,
+    )
+    assert slip.status_code == 200, slip.text
+    assert slip.headers["content-type"].startswith("application/pdf")
+    assert slip.content.startswith(b"%PDF")
+    assert employee_code.encode("ascii") in slip.content or b"MINITALLY" in slip.content
