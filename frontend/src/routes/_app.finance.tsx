@@ -14,9 +14,9 @@ import { formatCurrency, formatDate, todayIso } from "@/lib/format";
 export const Route = createFileRoute("/_app/finance")({
   head: () => ({
     meta: [
-      { title: "Finance — Minitally ERP" },
+      { title: "Finance — Nexora ERP" },
       { name: "description", content: "Receivables, payables, customer receipts and supplier payments." },
-      { property: "og:title", content: "Finance — Minitally ERP" },
+      { property: "og:title", content: "Finance — Nexora ERP" },
       { property: "og:description", content: "Receivables, payables, customer receipts and supplier payments." },
     ],
   }),

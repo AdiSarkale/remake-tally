@@ -4,6 +4,7 @@ import { AppSidebar } from "@/components/layout/app-sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { getToken } from "@/lib/api/client";
 import { Skeleton } from "@/components/ui/skeleton";
+import { BrandMark } from "@/components/brand/brand-logo";
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
@@ -27,9 +28,7 @@ function AppLayout() {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-md bg-primary font-mono text-lg font-bold text-primary-foreground">
-            M
-          </div>
+          <BrandMark className="size-10" />
           <Skeleton className="h-3 w-28" />
         </div>
       </div>

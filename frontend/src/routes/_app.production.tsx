@@ -18,9 +18,9 @@ import { formatDate, formatNumber, todayIso } from "@/lib/format";
 export const Route = createFileRoute("/_app/production")({
   head: () => ({
     meta: [
-      { title: "Production — Minitally ERP" },
+      { title: "Production — Nexora ERP" },
       { name: "description", content: "BOMs, routings, work centers, production orders, execution, batches and scrap." },
-      { property: "og:title", content: "Production — Minitally ERP" },
+      { property: "og:title", content: "Production — Nexora ERP" },
       { property: "og:description", content: "BOMs, routings, work centers, production orders, execution, batches and scrap." },
     ],
   }),

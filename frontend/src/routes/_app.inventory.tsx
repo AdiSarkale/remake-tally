@@ -18,9 +18,9 @@ import { Trash2 } from "lucide-react";
 export const Route = createFileRoute("/_app/inventory")({
   head: () => ({
     meta: [
-      { title: "Inventory — Minitally ERP" },
+      { title: "Inventory — Nexora ERP" },
       { name: "description", content: "Item masters, stock overview, movement ledger and storage locations." },
-      { property: "og:title", content: "Inventory — Minitally ERP" },
+      { property: "og:title", content: "Inventory — Nexora ERP" },
       { property: "og:description", content: "Item masters, stock overview, movement ledger and storage locations." },
     ],
   }),

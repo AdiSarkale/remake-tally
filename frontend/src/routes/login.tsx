@@ -10,12 +10,13 @@ import { Label } from "@/components/ui/label";
 import { useChangePassword, useLogin } from "@/lib/api/hooks";
 import { storeSession } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/client";
+import { BrandLockup } from "@/components/brand/brand-logo";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [
-      { title: "Sign in — Minitally ERP" },
-      { name: "description", content: "Sign in to the Minitally ERP platform." },
+      { title: "Sign in — Nexora ERP" },
+      { name: "description", content: "Sign in to the Nexora ERP platform." },
       { property: "og:title", content: "Sign in — Minitally ERP" },
       { property: "og:description", content: "Sign in to the Minitally ERP platform." },
     ],
@@ -68,19 +69,14 @@ function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="flex size-11 items-center justify-center rounded-lg bg-primary font-mono text-xl font-bold text-primary-foreground">
-            M
-          </div>
-          <h1 className="mt-4 text-lg font-bold tracking-[0.22em]">MINITALLY</h1>
-          <p className="mt-1 text-xs uppercase tracking-widest text-muted-foreground">
-            Intelligent ERP Platform
-          </p>
+          <BrandLockup />
+          <p className="mt-3 text-xs uppercase tracking-widest text-muted-foreground">Structure. Connect. Grow.</p>
         </div>
 
         {forcePasswordChange ? (
           <div className="space-y-4 rounded-lg border bg-card p-6 shadow-sm">
             <h2 className="text-base font-semibold">Set your password</h2>
-            <p className="text-xs text-muted-foreground">First login detected. Set a new password before entering Minitally.</p>
+            <p className="text-xs text-muted-foreground">First login detected. Set a new password before entering Nexora ERP.</p>
             <div className="space-y-1.5"><Label>Current / default password</Label><Input type="password" value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)} /></div>
             <div className="space-y-1.5"><Label>New password</Label><Input type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} /></div>
             <div className="space-y-1.5"><Label>Confirm new password</Label><Input type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} /></div>

@@ -18,9 +18,9 @@ import { PayrollPanel } from "@/components/hr-payroll-panel";
 export const Route = createFileRoute("/_app/hr")({
   head: () => ({
     meta: [
-      { title: "Employees — Minitally ERP" },
+      { title: "Employees — Nexora ERP" },
       { name: "description", content: "Shop-floor employees, skills and work-center assignments." },
-      { property: "og:title", content: "Employees — Minitally ERP" },
+      { property: "og:title", content: "Employees — Nexora ERP" },
       { property: "og:description", content: "Shop-floor employees, skills and work-center assignments." },
     ],
   }),

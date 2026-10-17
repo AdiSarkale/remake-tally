@@ -35,9 +35,9 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/_app/")({
   head: () => ({
     meta: [
-      { title: "Dashboard — Minitally ERP" },
+      { title: "Dashboard — Nexora ERP" },
       { name: "description", content: "Live overview of production, inventory, scrap and stock health." },
-      { property: "og:title", content: "Dashboard — Minitally ERP" },
+      { property: "og:title", content: "Dashboard — Nexora ERP" },
       { property: "og:description", content: "Live overview of production, inventory, scrap and stock health." },
     ],
   }),
