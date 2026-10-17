@@ -851,3 +851,43 @@ def test_hr_type_codes_are_immutable_and_code_patterns_are_validated(isolated_te
     )
     assert employee.status_code == 201, employee.text
     assert employee.json()["emp_code"] == "NEX-CONTRACTOR-004-FIELD-OPS"
+
+
+def test_payroll_settings_and_data_are_tenant_scoped(isolated_tenants):
+    client = isolated_tenants["client"]
+    a = _login(client, "AA")
+    b = _login(client, "BB")
+    a_headers = {"Authorization": f"Bearer {a['access_token']}"}
+    b_headers = {"Authorization": f"Bearer {b['access_token']}"}
+
+    defaults = client.get("/api/v1/hr/payroll/settings", headers=b_headers)
+    changed = client.put(
+        "/api/v1/hr/payroll/settings",
+        headers=a_headers,
+        json={"salary_count_mode": "fixed_days", "monthly_salary_days": 27, "week_off_days": [4, 5]},
+    )
+    assert defaults.status_code == 200, defaults.text
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["monthly_salary_days"] == 27
+    assert changed.json()["week_off_days"] == [4, 5]
+
+    a_result = client.get("/api/v1/hr/payroll/settings", headers=a_headers)
+    b_result = client.get("/api/v1/hr/payroll/settings", headers=b_headers)
+    assert a_result.json()["salary_count_mode"] == "fixed_days"
+    assert a_result.json()["monthly_salary_days"] == 27
+    assert b_result.json()["salary_count_mode"] == "working_days"
+    assert b_result.json()["monthly_salary_days"] == 26
+
+
+def test_payroll_endpoints_remain_inside_hr_role_boundary():
+    from fastapi.routing import APIRoute
+
+    from app import models
+    from app.api.deps import ROLE_PERMISSIONS
+    from app.main import app
+
+    assert "hr" in ROLE_PERMISSIONS[models.Role.admin]
+    assert "hr" in ROLE_PERMISSIONS[models.Role.hr]
+    for route in app.routes:
+        if isinstance(route, APIRoute) and route.path.startswith("/api/v1/hr/"):
+            assert any(dep.call is session_module.get_db for dep in _dependency_calls(route.dependant)), route.path
