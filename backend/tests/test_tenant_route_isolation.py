@@ -891,3 +891,158 @@ def test_payroll_endpoints_remain_inside_hr_role_boundary():
     for route in app.routes:
         if isinstance(route, APIRoute) and route.path.startswith("/api/v1/hr/"):
             assert any(dep.call is session_module.get_db for dep in _dependency_calls(route.dependant)), route.path
+
+
+def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_tenants):
+    client = isolated_tenants["client"]
+    token = _login(client, "AA")
+    headers = {"Authorization": f"Bearer {token['access_token']}"}
+    tenant_a_session, _ = isolated_tenants["sessions"]
+
+    employee_id = "payroll-employee-a"
+    tenant_a = tenant_a_session()
+    try:
+        tenant_a.add(
+            models.Employee(
+                id=employee_id,
+                emp_code="PAY-A-001",
+                name="Payroll Employee",
+                employee_type="staff",
+                department="Production",
+                designation="Operator",
+                active=True,
+            )
+        )
+        tenant_a.commit()
+    finally:
+        tenant_a.close()
+
+    settings = client.put(
+        "/api/v1/hr/payroll/settings",
+        headers=headers,
+        json={
+            "salary_count_mode": "fixed_days",
+            "monthly_salary_days": 26,
+            "week_off_days": [5, 6],
+        },
+    )
+    assert settings.status_code == 200, settings.text
+
+    holiday = client.put(
+        "/api/v1/hr/calendar/2026-10-05",
+        headers=headers,
+        json={"day_type": "holiday", "description": "Company holiday"},
+    )
+    assert holiday.status_code == 200, holiday.text
+
+    salary = client.put(
+        f"/api/v1/hr/employees/{employee_id}/salary",
+        headers=headers,
+        json={
+            "annual_salary": 600000,
+            "basic_pct": 50,
+            "hra_pct": 40,
+            "da_pct": 0,
+            "conveyance_monthly": 1000,
+            "medical_allowance_monthly": 1000,
+            "pf_pct": 12,
+            "professional_tax_monthly": 200,
+            "tds_monthly": 500,
+        },
+    )
+    assert salary.status_code == 200, salary.text
+    assert salary.json()["annual_salary"] == 600000
+    assert salary.json()["monthly_gross"] == 50000
+
+    for work_date in ("2026-10-05", "2026-10-06"):
+        response = client.put(
+            "/api/v1/hr/attendance",
+            headers=headers,
+            json={
+                "employee_id": employee_id,
+                "work_date": work_date,
+                "status": "absent",
+                "overtime_minutes": 0,
+                "note": "Payroll regression test",
+            },
+        )
+        assert response.status_code == 200, response.text
+
+    attendance = client.get(
+        "/api/v1/hr/attendance/monthly",
+        headers=headers,
+        params={"employee_id": employee_id, "year": 2026, "month": 10},
+    )
+    assert attendance.status_code == 200, attendance.text
+    assert len(attendance.json()) == 31
+    holiday_attendance = next(row for row in attendance.json() if row["work_date"] == "2026-10-05")
+    assert holiday_attendance["calendar_type"] == "holiday"
+    assert holiday_attendance["status"] == "absent"
+
+    preview = client.get(
+        "/api/v1/hr/payroll/preview",
+        headers=headers,
+        params={"year": 2026, "month": 10},
+    )
+    assert preview.status_code == 200, preview.text
+    item = next(row for row in preview.json()["items"] if row["employee_id"] == employee_id)
+    assert item["absence_deduction"] == 1923.08
+    assert item["net_pay"] == 45876.92
+
+    finalized = client.post("/api/v1/hr/payroll/runs/2026/10/finalize", headers=headers)
+    assert finalized.status_code == 200, finalized.text
+    assert finalized.json()["status"] == "finalized"
+    frozen_run_id = finalized.json()["id"]
+    assert finalized.json()["items"][0]["monthly_gross"] == 50000
+
+    # A finalization is a snapshot: later salary-profile edits do not rewrite it.
+    changed_salary = client.put(
+        f"/api/v1/hr/employees/{employee_id}/salary",
+        headers=headers,
+        json={
+            "annual_salary": 1200000,
+            "basic_pct": 50,
+            "hra_pct": 40,
+            "da_pct": 0,
+            "conveyance_monthly": 1000,
+            "medical_allowance_monthly": 1000,
+            "pf_pct": 12,
+            "professional_tax_monthly": 200,
+            "tds_monthly": 500,
+        },
+    )
+    assert changed_salary.status_code == 200, changed_salary.text
+    finalized_again = client.post("/api/v1/hr/payroll/runs/2026/10/finalize", headers=headers)
+    assert finalized_again.status_code == 200, finalized_again.text
+    assert finalized_again.json()["id"] == frozen_run_id
+    assert finalized_again.json()["items"][0]["monthly_gross"] == 50000
+
+    slip = client.get(f"/api/v1/hr/payroll/slips/{employee_id}/2026/10", headers=headers)
+    assert slip.status_code == 200, slip.text
+    assert slip.headers["content-type"].startswith("application/pdf")
+    assert slip.content.startswith(b"%PDF-")
+
+    # Company B cannot see Company A's employees or salary profiles.
+    token_b = _login(client, "BB")
+    b_headers = {"Authorization": f"Bearer {token_b['access_token']}"}
+    b_salaries = client.get("/api/v1/hr/salaries", headers=b_headers)
+    assert b_salaries.status_code == 200, b_salaries.text
+    assert b_salaries.json() == []
+    b_attendance = client.get(
+        "/api/v1/hr/attendance/monthly",
+        headers=b_headers,
+        params={"employee_id": employee_id, "year": 2026, "month": 10},
+    )
+    assert b_attendance.status_code == 404
+
+
+def test_payroll_run_and_salary_slip_validate_period_before_lookup(isolated_tenants):
+    client = isolated_tenants["client"]
+    token = _login(client, "AA")
+    headers = {"Authorization": f"Bearer {token['access_token']}"}
+
+    run = client.get("/api/v1/hr/payroll/runs/2026/13", headers=headers)
+    slip = client.get("/api/v1/hr/payroll/slips/unknown-employee/1999/10", headers=headers)
+
+    assert run.status_code == 422
+    assert slip.status_code == 422
