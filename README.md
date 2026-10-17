@@ -90,7 +90,8 @@ Current known gaps:
 - Employee codes are assigned by the backend and immutable; employee details can be edited without changing codes.
 - HR users can deactivate/reactivate employees; lifecycle changes are audited and employee records are preserved.
 - Reports and Settings are placeholders.
-- Full Payroll, Attendance and Leave are intentionally out of current scope.
+- HR Payroll supports annual salary profiles, salary break-ups, configurable monthly salary-day counting, editable holidays/week-offs, month-wise daily attendance, finalized payroll runs and downloadable PDF salary slips.
+- Leave approvals and employee self-service attendance capture remain future scope.
 
 ## CI
 

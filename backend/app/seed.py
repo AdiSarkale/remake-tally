@@ -17,7 +17,9 @@ from datetime import date, timedelta
 
 # This script uses synchronous SQLAlchemy sessions and engines. Normalize a
 # runtime asyncpg URL before app.db.session constructs its synchronous engine.
+from sqlalchemy import create_engine
 from sqlalchemy.engine import make_url
+from sqlalchemy.orm import sessionmaker
 
 from app.core.config import get_settings
 
@@ -31,7 +33,7 @@ if _database_url.drivername == "postgresql+asyncpg":
 from app import models
 from app.api.routes.approvals import ApprovalRequest, Department
 from app.core.security import hash_password
-from app.db.session import Base, SessionLocal, engine
+from app.db.session import Base
 from app.models import ItemKind, MovementType
 from app.services.gst import compute_line, round_off
 from app.services.inventory import apply_movement
@@ -1042,6 +1044,52 @@ def _delete_demo_transactions(db):
     db.commit()
 
 
+
+
+def _delete_demo_hr_records(db):
+    """Reset tenant HR/payroll test data while retaining the two seeded shop-floor employees.
+
+    Employees referenced by remaining non-demo production records are preserved but
+    deactivated; deleting them would break production history via foreign keys.
+    """
+    db.query(models.HRPayrollItem).delete(synchronize_session=False)
+    db.query(models.HRPayrollRun).delete(synchronize_session=False)
+    db.query(models.EmployeeAttendance).delete(synchronize_session=False)
+    db.query(models.EmployeeSalaryProfile).delete(synchronize_session=False)
+    db.query(models.HRCalendarDay).delete(synchronize_session=False)
+
+    payroll_settings = db.get(models.HRPayrollSettings, 1)
+    if payroll_settings is not None:
+        payroll_settings.salary_count_mode = "working_days"
+        payroll_settings.monthly_salary_days = 26
+        payroll_settings.week_off_days = "5,6"
+
+    seeded_employee_codes = {DEMO["employee_1"], DEMO["employee_2"]}
+    employees = db.query(models.Employee).all()
+    for employee in employees:
+        if employee.emp_code in seeded_employee_codes:
+            employee.active = True
+            continue
+
+        used_in_entry = db.query(models.ProductionEntry.id).filter(
+            models.ProductionEntry.employee_id == employee.id
+        ).first()
+        assigned_to_operation = db.query(models.ProductionOrderOperation.id).filter(
+            models.ProductionOrderOperation.assigned_employee_id == employee.id
+        ).first()
+        if used_in_entry is not None or assigned_to_operation is not None:
+            # Preserve historical production references; these employees won't
+            # appear in active-only payroll previews.
+            employee.active = False
+            continue
+
+        db.query(models.EmployeeSkill).filter_by(
+            employee_id=employee.id
+        ).delete(synchronize_session=False)
+        db.delete(employee)
+
+    db.flush()
+
 def _ensure_demo_tenant() -> None:
     """Ensure the demo company exists in the control plane for tenant-aware login."""
     from sqlalchemy import text
@@ -1064,14 +1112,54 @@ def _ensure_demo_tenant() -> None:
     )
 
 
-def run(reset_demo: bool = False) -> None:
+def _demo_tenant_database():
+    """Resolve the SPW demo company's actual tenant database for seeding.
+
+    Runtime API traffic is tenant-routed from the control plane. Seeding against
+    the default DATABASE_URL directly can modify the wrong database when the
+    SPW company's secret reference points elsewhere.
+    """
+    from app.db.control import get_control_session_factory
+    from app.db.control_models import TenantCompany
+    from app.services.tenant_credentials import resolve_tenant_database_url
+
     _ensure_demo_tenant()
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
+    control_db = get_control_session_factory()()
+    try:
+        company = control_db.query(TenantCompany).filter_by(code="SPW").first()
+        if company is None:
+            raise RuntimeError("SPW demo company is missing from the control database.")
+        if not company.active or company.provisioning_status != "ready":
+            raise RuntimeError(
+                "SPW demo company is not ready; check tenant provisioning before seeding."
+            )
+        company_code = company.code
+        database_secret_ref = company.database_secret_ref
+    finally:
+        control_db.close()
+
+    database_url = make_url(resolve_tenant_database_url(database_secret_ref))
+    if database_url.drivername == "postgresql+asyncpg":
+        database_url = database_url.set(drivername="postgresql+psycopg")
+    target_engine = create_engine(
+        database_url.render_as_string(hide_password=False),
+        pool_pre_ping=True,
+    )
+    target_sessions = sessionmaker(
+        bind=target_engine, autoflush=False, autocommit=False
+    )
+    return company_code, target_engine, target_sessions
+
+
+def run(reset_demo: bool = False) -> None:
+    tenant_code, tenant_engine, tenant_session_factory = _demo_tenant_database()
+    db = tenant_session_factory()
 
     try:
+        Base.metadata.create_all(bind=tenant_engine)
         if reset_demo:
             _delete_demo_transactions(db)
+            _delete_demo_hr_records(db)
 
         for username, full_name, password, role in DEMO_USERS:
             user = _first(db, models.User, username=username)
@@ -1295,7 +1383,7 @@ def run(reset_demo: bool = False) -> None:
 
         db.commit()
 
-        print("Demo data ready.")
+        print(f"Demo data ready for tenant {tenant_code}.")
         print("Admin:    admin / admin123")
         print("Accounts: accounts / accounts123")
         print("Operator: operator / operator123")
@@ -1307,6 +1395,7 @@ def run(reset_demo: bool = False) -> None:
         print("  PO-DEMO-001 -> SPAY-DEMO-0001")
     finally:
         db.close()
+        tenant_engine.dispose()
 
 
 if __name__ == "__main__":
