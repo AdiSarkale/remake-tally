@@ -1,6 +1,6 @@
 // TypeScript mirror of the MiniTally FastAPI backend schemas (app/schemas.py).
 
-export type Role = "Admin" | "Accountant" | "Operator";
+export type Role = "Admin" | "Accountant" | "Operator" | "HR";
 export type ItemKind = "product" | "material" | "scrap";
 export type MovementType = "IN" | "OUT" | "ADJUST";
 export type InvoiceStatus = "Unpaid" | "Paid" | "Cancelled" | "Partial";
@@ -789,13 +789,34 @@ export interface RoutingOut {
   active: boolean;
   operations: RoutingOperationOut[];
 }
-export type EmployeeType = "shop_floor" | "staff";
+export type EmployeeType = string; // Tenant-managed employee type codes are data, not a fixed union.
+export interface EmployeeCodeConfigIn {
+  pattern: string;
+  sequence_start: number;
+  increment_by: number;
+}
+export interface EmployeeCodeConfigOut extends EmployeeCodeConfigIn {
+  id: number;
+  next_sequence: number;
+  updated_at: string;
+}
+export interface EmployeeTypeIn {
+  code: string;
+  name: string;
+  payout_classification: string;
+  active: boolean;
+}
+export interface EmployeeTypeOut extends EmployeeTypeIn {
+  id: string;
+}
 export interface EmployeeIn {
-  emp_code: string;
   name: string;
   employee_type: EmployeeType;
   department: string;
   designation: string;
+}
+export type EmployeeUpdate = EmployeeIn;
+export interface EmployeeStatusUpdate {
   active: boolean;
 }
 export interface EmployeeSkillIn {

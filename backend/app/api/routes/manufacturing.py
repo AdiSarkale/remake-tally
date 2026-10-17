@@ -1,10 +1,13 @@
 """Manufacturing master data, routing, workcenter and production-order execution APIs."""
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api.deps import require_area
+from app.api.deps import require_any_area, require_area
 from app.db.session import get_db
 from app.services.inventory import log_audit, next_batch_no
 
@@ -109,32 +112,143 @@ def create_routing(payload: schemas.RoutingIn, db: Session = Depends(get_db), us
             "operations": db.query(models.RoutingOperation).filter_by(routing_id=r.id).order_by(models.RoutingOperation.sequence).all()}
 
 
+employee_access = Depends(require_any_area("production", "hr"))
+hr_employee_access = Depends(require_area("hr"))
+
+
 @router.get("/employees", response_model=list[schemas.EmployeeOut])
-def list_employees(db: Session = Depends(get_db), user: models.User = guard):
-    return db.query(models.Employee).order_by(models.Employee.emp_code).all()
+def list_employees(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    user: models.User = employee_access,
+):
+    query = db.query(models.Employee)
+    if include_inactive:
+        if user.role not in (models.Role.admin, models.Role.hr):
+            raise HTTPException(403, "Historical employee access requires Admin or HR authorization")
+    else:
+        query = query.filter(models.Employee.active.is_(True))
+    return query.order_by(models.Employee.emp_code).all()
+
+
+def _validate_employee_type(db: Session, code: str, *, allow_inactive_existing: bool = False) -> models.EmployeeTypeDefinition:
+    normalized = code.strip().lower()
+    row = db.query(models.EmployeeTypeDefinition).filter_by(code=normalized).first()
+    if row is None:
+        raise HTTPException(422, "Select a valid employee type")
+    if not row.active and not allow_inactive_existing:
+        raise HTTPException(409, "This employee type is inactive. Reassign the employee to an active type first.")
+    return row
+
+
+def _next_employee_code(db: Session, employee_type: str, department: str) -> str:
+    """Allocate a tenant-configured code under a row lock; clients never supply codes."""
+    config = db.query(models.EmployeeCodeConfig).filter_by(id=1).with_for_update().first()
+    if config is None:
+        codes = db.query(models.Employee.emp_code).all()
+        highest = 0
+        for (code,) in codes:
+            match = re.fullmatch(r"EMP-(\d+)", code or "", flags=re.IGNORECASE)
+            if match:
+                highest = max(highest, int(match.group(1)))
+        config = models.EmployeeCodeConfig(
+            id=1, pattern="EMP-{SEQ:03}", sequence_start=1,
+            next_sequence=max(highest + 1, 1), increment_by=1,
+        )
+        db.add(config)
+        db.flush()
+    sequence = max(config.next_sequence, config.sequence_start)
+    from app.api.routes.hr import _render_employee_code, _validate_code_pattern
+    pattern = _validate_code_pattern(config.pattern)
+    # Pattern changes can collide with legacy codes. Advance monotonically until
+    # a free candidate is found; the database unique constraint remains final guard.
+    for _attempt in range(1000):
+        code = _render_employee_code(pattern, sequence, employee_type, department)
+        exists = db.query(models.Employee.id).filter(models.Employee.emp_code == code).first()
+        config.next_sequence = sequence + config.increment_by
+        if not exists:
+            return code
+        sequence += config.increment_by
+    raise HTTPException(409, "Could not allocate a unique employee code; review the configured pattern")
 
 
 @router.post("/employees", response_model=schemas.EmployeeOut, status_code=201)
-def create_employee(payload: schemas.EmployeeIn, db: Session = Depends(get_db), user: models.User = guard):
-    if db.query(models.Employee).filter(models.Employee.emp_code == payload.emp_code).first():
-        raise HTTPException(400, "Employee code already exists")
-    row = models.Employee(**payload.model_dump())
-    db.add(row)
-    log_audit(db, user.username, "CREATE", "employee", row.emp_code)
+def create_employee(payload: schemas.EmployeeIn, db: Session = Depends(get_db), user: models.User = hr_employee_access):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(422, "Employee name is required")
+
+    _validate_employee_type(db, payload.employee_type)
+
+    # The unique database constraint is the final concurrency guard. If another
+    # request allocates the same code at the same time, retry after rollback.
+    for _attempt in range(5):
+        row = models.Employee(
+            emp_code=_next_employee_code(db, payload.employee_type.strip().lower(), payload.department.strip()),
+            name=name,
+            employee_type=payload.employee_type.strip().lower(),
+            department=payload.department.strip(),
+            designation=payload.designation.strip(),
+            active=True,
+        )
+        db.add(row)
+        try:
+            db.flush()
+            log_audit(db, user.username, "CREATE", "employee", row.emp_code)
+            db.commit()
+            db.refresh(row)
+            return row
+        except IntegrityError:
+            db.rollback()
+    raise HTTPException(409, "Could not allocate a unique employee code; please retry")
+
+
+@router.put("/employees/{employee_id}", response_model=schemas.EmployeeOut)
+def update_employee(employee_id: str, payload: schemas.EmployeeUpdate, db: Session = Depends(get_db), user: models.User = hr_employee_access):
+    row = db.get(models.Employee, employee_id)
+    if row is None:
+        raise HTTPException(404, "Employee not found")
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(422, "Employee name is required")
+    if payload.employee_type.strip().lower() != row.employee_type:
+        _validate_employee_type(db, payload.employee_type)
+    row.name = name
+    row.employee_type = payload.employee_type.strip().lower()
+    row.department = payload.department.strip()
+    row.designation = payload.designation.strip()
+    log_audit(db, user.username, "UPDATE", "employee", f"{row.emp_code}; details updated")
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.patch("/employees/{employee_id}/status", response_model=schemas.EmployeeOut)
+def set_employee_status(employee_id: str, payload: schemas.EmployeeStatusUpdate, db: Session = Depends(get_db), user: models.User = hr_employee_access):
+    row = db.get(models.Employee, employee_id)
+    if row is None:
+        raise HTTPException(404, "Employee not found")
+    if row.active == payload.active:
+        return row
+    if payload.active:
+        _validate_employee_type(db, row.employee_type)
+    row.active = payload.active
+    action = "REACTIVATE" if row.active else "DEACTIVATE"
+    log_audit(db, user.username, action, "employee", row.emp_code)
     db.commit()
     db.refresh(row)
     return row
 
 
 @router.get("/employees/{employee_id}/skills", response_model=list[schemas.EmployeeSkillOut])
-def list_employee_skills(employee_id: str, db: Session = Depends(get_db), user: models.User = guard):
+def list_employee_skills(employee_id: str, db: Session = Depends(get_db), user: models.User = employee_access):
     if not db.get(models.Employee, employee_id):
         raise HTTPException(404, "Employee not found")
     return db.query(models.EmployeeSkill).filter_by(employee_id=employee_id).order_by(models.EmployeeSkill.skill).all()
 
 
 @router.post("/employees/{employee_id}/skills", response_model=schemas.EmployeeSkillOut, status_code=201)
-def add_employee_skill(employee_id: str, payload: schemas.EmployeeSkillIn, db: Session = Depends(get_db), user: models.User = guard):
+def add_employee_skill(employee_id: str, payload: schemas.EmployeeSkillIn, db: Session = Depends(get_db), user: models.User = hr_employee_access):
     if not db.get(models.Employee, employee_id):
         raise HTTPException(404, "Employee not found")
     if db.query(models.EmployeeSkill).filter_by(employee_id=employee_id, skill=payload.skill).first():

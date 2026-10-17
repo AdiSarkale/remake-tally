@@ -461,3 +461,393 @@ def test_operator_and_accountant_have_inventory_and_purchase_request_access(isol
 def test_control_schema_is_not_created_by_application_startup():
     import app.main as main_module
     assert not hasattr(main_module, "ControlBase")
+
+
+def test_production_can_read_employees_but_cannot_manage_employee_records(isolated_tenants):
+    client = isolated_tenants["client"]
+    TenantASession = isolated_tenants["sessions"][0]
+
+    db = TenantASession()
+    employee = models.Employee(
+        id="employee-production-permissions",
+        emp_code="SF-001",
+        name="Shop Floor Employee",
+        employee_type=models.EmployeeType.shop_floor,
+        department="Production",
+        designation="Operator",
+        active=True,
+    )
+    db.add(employee)
+    db.add(models.User(
+        username="production-user",
+        full_name="Production User",
+        password_hash=hash_password("Production@123"),
+        role=models.Role.operator,
+        active=True,
+        must_change_password=False,
+    ))
+    db.commit()
+    db.close()
+
+    login = client.post("/api/v1/auth/login", json={
+        "company_code": "AA",
+        "username": "production-user",
+        "password": "Production@123",
+    })
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    employees = client.get("/api/v1/manufacturing/employees", headers=headers)
+    assert employees.status_code == 200, employees.text
+    assert any(row["id"] == "employee-production-permissions" for row in employees.json())
+
+    # Production still needs these endpoints for the manufacturing workflow.
+    assert client.get("/api/v1/manufacturing/workcenters", headers=headers).status_code == 200
+    assert client.get("/api/v1/manufacturing/production-orders", headers=headers).status_code == 200
+
+    create_employee = client.post(
+        "/api/v1/manufacturing/employees",
+        headers=headers,
+        json={
+            "emp_code": "SF-002",
+            "name": "Another Employee",
+            "employee_type": "shop_floor",
+            "department": "Production",
+            "designation": "Operator",
+            "active": True,
+        },
+    )
+    assert create_employee.status_code == 403
+
+    update_employee = client.put(
+        "/api/v1/manufacturing/employees/employee-production-permissions",
+        headers=headers,
+        json={
+            "emp_code": "SF-001",
+            "name": "Changed Name",
+            "employee_type": "shop_floor",
+            "department": "Production",
+            "designation": "Operator",
+            "active": True,
+        },
+    )
+    assert update_employee.status_code == 403
+
+    add_skill = client.post(
+        "/api/v1/manufacturing/employees/employee-production-permissions/skills",
+        headers=headers,
+        json={"skill": "Welding", "level": 2, "certified": False, "active": True},
+    )
+    assert add_skill.status_code == 403
+
+
+def test_admin_can_create_employees_and_manage_employee_skills(isolated_tenants):
+    client = isolated_tenants["client"]
+    _ensure_hr_reference_data(isolated_tenants["sessions"][0])
+    admin = _login(client, "AA")
+    headers = {"Authorization": f"Bearer {admin['access_token']}"}
+
+    created = client.post(
+        "/api/v1/manufacturing/employees",
+        headers=headers,
+        json={
+            "emp_code": "HR-001",
+            "name": "HR Managed Employee",
+            "employee_type": "shop_floor",
+            "department": "Production",
+            "designation": "Operator",
+            "active": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    employee_id = created.json()["id"]
+
+    skill = client.post(
+        f"/api/v1/manufacturing/employees/{employee_id}/skills",
+        headers=headers,
+        json={"skill": "Welding", "level": 3, "certified": True, "active": True},
+    )
+    assert skill.status_code == 201, skill.text
+
+
+
+def _ensure_hr_reference_data(session_factory):
+    """Seed the tenant-managed types needed by the employee API tests."""
+    db = session_factory()
+    try:
+        definitions = (
+            ("shop_floor", "Shop floor", "shop_floor"),
+            ("staff", "Staff", "staff"),
+        )
+        for code, name, payout_classification in definitions:
+            if db.query(models.EmployeeTypeDefinition).filter_by(code=code).first() is None:
+                db.add(models.EmployeeTypeDefinition(
+                    code=code,
+                    name=name,
+                    payout_classification=payout_classification,
+                    active=True,
+                ))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _add_hr_api_user(session_factory, username, role, password):
+    db = session_factory()
+    try:
+        db.add(models.User(
+            username=username,
+            full_name=username,
+            password_hash=hash_password(password),
+            role=role,
+            active=True,
+            must_change_password=False,
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+
+def _hr_api_headers(client, company_code, username, password):
+    response = client.post("/api/v1/auth/login", json={
+        "company_code": company_code,
+        "username": username,
+        "password": password,
+    })
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+def test_hr_employee_api_generates_immutable_codes_and_handles_lifecycle(isolated_tenants):
+    client = isolated_tenants["client"]
+    tenant_session = isolated_tenants["sessions"][0]
+    _ensure_hr_reference_data(tenant_session)
+    headers = _hr_api_headers(client, "AA", "admin", "Password@123")
+
+    config = client.put(
+        "/api/v1/hr/employee-code-config",
+        headers=headers,
+        json={"pattern": "EMP-{SEQ:03}", "sequence_start": 17, "increment_by": 2},
+    )
+    assert config.status_code == 200, config.text
+
+    created = client.post(
+        "/api/v1/manufacturing/employees",
+        headers=headers,
+        json={
+            "name": "  Alice Worker  ",
+            "employee_type": "shop_floor",
+            "department": "Production",
+            "designation": "Operator",
+            # These extra fields must not let clients control codes or status.
+            "emp_code": "CLIENT-OVERRIDE",
+            "active": False,
+        },
+    )
+    assert created.status_code == 201, created.text
+    employee = created.json()
+    employee_id = employee["id"]
+    assert employee["name"] == "Alice Worker"
+    assert employee["emp_code"] == "EMP-017"
+    assert employee["active"] is True
+
+    updated = client.put(
+        f"/api/v1/manufacturing/employees/{employee_id}",
+        headers=headers,
+        json={
+            "name": "Alice Cooper",
+            "employee_type": "shop_floor",
+            "department": "Production",
+            "designation": "Senior Operator",
+            "emp_code": "CLIENT-CHANGED",
+            "active": False,
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["name"] == "Alice Cooper"
+    assert updated.json()["emp_code"] == "EMP-017"
+    assert updated.json()["active"] is True
+
+    skill_payload = {"skill": "Welding", "level": 4, "certified": True, "active": True}
+    skill = client.post(
+        f"/api/v1/manufacturing/employees/{employee_id}/skills",
+        headers=headers,
+        json=skill_payload,
+    )
+    assert skill.status_code == 201, skill.text
+    assert skill.json()["skill"] == "Welding"
+    duplicate_skill = client.post(
+        f"/api/v1/manufacturing/employees/{employee_id}/skills",
+        headers=headers,
+        json=skill_payload,
+    )
+    assert duplicate_skill.status_code == 400
+    skills = client.get(
+        f"/api/v1/manufacturing/employees/{employee_id}/skills",
+        headers=headers,
+    )
+    assert skills.status_code == 200
+    assert [row["skill"] for row in skills.json()] == ["Welding"]
+
+    deactivated = client.patch(
+        f"/api/v1/manufacturing/employees/{employee_id}/status",
+        headers=headers,
+        json={"active": False},
+    )
+    assert deactivated.status_code == 200, deactivated.text
+    assert deactivated.json()["active"] is False
+
+    active_rows = client.get("/api/v1/manufacturing/employees", headers=headers)
+    assert active_rows.status_code == 200
+    assert employee_id not in {row["id"] for row in active_rows.json()}
+
+    history = client.get(
+        "/api/v1/manufacturing/employees",
+        headers=headers,
+        params={"include_inactive": "true"},
+    )
+    assert history.status_code == 200
+    assert employee_id in {row["id"] for row in history.json()}
+
+    reactivated = client.patch(
+        f"/api/v1/manufacturing/employees/{employee_id}/status",
+        headers=headers,
+        json={"active": True},
+    )
+    assert reactivated.status_code == 200, reactivated.text
+    assert reactivated.json()["active"] is True
+
+    second = client.post(
+        "/api/v1/manufacturing/employees",
+        headers=headers,
+        json={
+            "name": "Bob Worker",
+            "employee_type": "staff",
+            "department": "Office",
+            "designation": "Coordinator",
+        },
+    )
+    assert second.status_code == 201, second.text
+    assert second.json()["emp_code"] == "EMP-019"
+
+
+def test_hr_api_authorization_separates_hr_management_from_production(isolated_tenants):
+    client = isolated_tenants["client"]
+    tenant_session = isolated_tenants["sessions"][0]
+    _ensure_hr_reference_data(tenant_session)
+    _add_hr_api_user(tenant_session, "hruser", models.Role.hr, "HR@Password123")
+    _add_hr_api_user(tenant_session, "flooruser", models.Role.operator, "Floor@Password123")
+
+    hr_headers = _hr_api_headers(client, "AA", "hruser", "HR@Password123")
+    operator_headers = _hr_api_headers(client, "AA", "flooruser", "Floor@Password123")
+
+    assert client.get("/api/v1/hr/employee-code-config", headers=hr_headers).status_code == 200
+    assert client.get("/api/v1/hr/employee-types", headers=hr_headers).status_code == 200
+    assert client.get("/api/v1/manufacturing/production-orders", headers=hr_headers).status_code == 403
+
+    created = client.post(
+        "/api/v1/manufacturing/employees",
+        headers=hr_headers,
+        json={
+            "name": "HR Created Employee",
+            "employee_type": "shop_floor",
+            "department": "Production",
+            "designation": "Operator",
+        },
+    )
+    assert created.status_code == 201, created.text
+    employee_id = created.json()["id"]
+
+    visible = client.get("/api/v1/manufacturing/employees", headers=operator_headers)
+    assert visible.status_code == 200
+    assert employee_id in {row["id"] for row in visible.json()}
+
+    denied_create = client.post(
+        "/api/v1/manufacturing/employees",
+        headers=operator_headers,
+        json={"name": "Unauthorized Employee", "employee_type": "shop_floor"},
+    )
+    assert denied_create.status_code == 403
+
+    denied_status_change = client.patch(
+        f"/api/v1/manufacturing/employees/{employee_id}/status",
+        headers=operator_headers,
+        json={"active": False},
+    )
+    assert denied_status_change.status_code == 403
+
+    denied_settings = client.get(
+        "/api/v1/hr/employee-code-config",
+        headers=operator_headers,
+    )
+    assert denied_settings.status_code == 403
+
+    denied_history = client.get(
+        "/api/v1/manufacturing/employees",
+        headers=operator_headers,
+        params={"include_inactive": "true"},
+    )
+    assert denied_history.status_code == 403
+
+
+def test_hr_type_codes_are_immutable_and_code_patterns_are_validated(isolated_tenants):
+    client = isolated_tenants["client"]
+    tenant_session = isolated_tenants["sessions"][0]
+    _ensure_hr_reference_data(tenant_session)
+    headers = _hr_api_headers(client, "AA", "admin", "Password@123")
+
+    created_type = client.post(
+        "/api/v1/hr/employee-types",
+        headers=headers,
+        json={
+            "code": "contractor",
+            "name": "Contractor",
+            "payout_classification": "contractor",
+            "active": True,
+        },
+    )
+    assert created_type.status_code == 201, created_type.text
+    type_id = created_type.json()["id"]
+
+    changed_code = client.patch(
+        f"/api/v1/hr/employee-types/{type_id}",
+        headers=headers,
+        json={
+            "code": "vendor",
+            "name": "Contractor",
+            "payout_classification": "contractor",
+            "active": True,
+        },
+    )
+    assert changed_code.status_code == 422
+
+    invalid_pattern = client.put(
+        "/api/v1/hr/employee-code-config",
+        headers=headers,
+        json={"pattern": "EMP-{YEAR}", "sequence_start": 4, "increment_by": 2},
+    )
+    assert invalid_pattern.status_code == 422
+
+    valid_pattern = client.put(
+        "/api/v1/hr/employee-code-config",
+        headers=headers,
+        json={
+            "pattern": "NEX-{TYPE}-{SEQ:03}-{DEPT}",
+            "sequence_start": 4,
+            "increment_by": 2,
+        },
+    )
+    assert valid_pattern.status_code == 200, valid_pattern.text
+
+    employee = client.post(
+        "/api/v1/manufacturing/employees",
+        headers=headers,
+        json={
+            "name": "Contractor One",
+            "employee_type": "contractor",
+            "department": "Field Ops",
+            "designation": "Technician",
+        },
+    )
+    assert employee.status_code == 201, employee.text
+    assert employee.json()["emp_code"] == "NEX-CONTRACTOR-004-FIELD-OPS"

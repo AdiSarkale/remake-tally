@@ -288,14 +288,73 @@ export function useCreateRouting() {
   });
 }
 
-export function useEmployees() {
-  return useQuery({ queryKey: ["employees"], queryFn: () => api.get<T.EmployeeOut[]>("/manufacturing/employees") });
+export function useEmployeeCodeConfig() {
+  return useQuery({ queryKey: ["hr", "employee-code-config"], queryFn: () => api.get<T.EmployeeCodeConfigOut>("/hr/employee-code-config") });
+}
+export function useUpdateEmployeeCodeConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: T.EmployeeCodeConfigIn) => api.put<T.EmployeeCodeConfigOut>("/hr/employee-code-config", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["hr", "employee-code-config"] }),
+  });
+}
+export function useEmployeeDuplicates(name: string, enabled = true) {
+  const normalized = name.trim();
+  return useQuery({
+    queryKey: ["hr", "employee-duplicates", normalized],
+    queryFn: () => api.get<T.EmployeeOut[]>(`/hr/employee-duplicates?name=${encodeURIComponent(normalized)}`),
+    enabled: enabled && normalized.length >= 3,
+    staleTime: 5_000,
+  });
+}
+export function useEmployeeTypes() {
+  return useQuery({ queryKey: ["hr", "employee-types"], queryFn: () => api.get<T.EmployeeTypeOut[]>("/hr/employee-types") });
+}
+export function useCreateEmployeeType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: T.EmployeeTypeIn) => api.post<T.EmployeeTypeOut>("/hr/employee-types", body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["hr", "employee-types"] }),
+  });
+}
+export function useUpdateEmployeeType() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: T.EmployeeTypeIn & { id: string }) => api.patch<T.EmployeeTypeOut>(`/hr/employee-types/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["hr", "employee-types"] }),
+  });
+}
+
+export function useEmployees(includeInactive = false) {
+  return useQuery({
+    queryKey: ["employees", includeInactive],
+    queryFn: () => api.get<T.EmployeeOut[]>(`/manufacturing/employees${includeInactive ? "?include_inactive=true" : ""}`),
+  });
 }
 export function useCreateEmployee() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: T.EmployeeIn) => api.post<T.EmployeeOut>("/manufacturing/employees", body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["employees"] }),
+  });
+}
+export function useUpdateEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: T.EmployeeUpdate & { id: string }) =>
+      api.put<T.EmployeeOut>(`/manufacturing/employees/${id}`, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["employees"] }),
+  });
+}
+export function useSetEmployeeStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...body }: T.EmployeeStatusUpdate & { id: string }) =>
+      api.patch<T.EmployeeOut>(`/manufacturing/employees/${id}/status`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employees"] });
+      qc.invalidateQueries({ queryKey: ["production-orders"] });
+    },
   });
 }
 export function useEmployeeSkills(employeeId: string | null) {

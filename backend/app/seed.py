@@ -15,6 +15,19 @@ from __future__ import annotations
 import argparse
 from datetime import date, timedelta
 
+# This script uses synchronous SQLAlchemy sessions and engines. Normalize a
+# runtime asyncpg URL before app.db.session constructs its synchronous engine.
+from sqlalchemy.engine import make_url
+
+from app.core.config import get_settings
+
+_settings = get_settings()
+_database_url = make_url(_settings.database_url)
+if _database_url.drivername == "postgresql+asyncpg":
+    _settings.database_url = _database_url.set(
+        drivername="postgresql+psycopg"
+    ).render_as_string(hide_password=False)
+
 from app import models
 from app.api.routes.approvals import ApprovalRequest, Department
 from app.core.security import hash_password
