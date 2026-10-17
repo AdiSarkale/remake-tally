@@ -178,8 +178,8 @@ def test_attendance_excel_template_has_exact_import_sheet_and_separate_instructi
         assert list(next(workbook["Attendance"].iter_rows(min_row=1, max_row=1, values_only=True))) == [
             "Employee Code", "Work Date", "Status", "Overtime Minutes", "Punch In", "Punch Out", "Note",
         ]
-        # The example is explanatory only and does not become an import row.
-        assert workbook["Attendance"].max_row == 1
+        # Preformatted empty rows are provided for convenience; no example data is on the import sheet.
+        assert not any(any(value is not None for value in row) for row in workbook["Attendance"].iter_rows(min_row=2, values_only=True))
         assert workbook["Instructions"].max_row >= 17
     finally:
         workbook.close()
