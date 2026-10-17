@@ -1139,7 +1139,10 @@ def _demo_tenant_database():
         control_db.close()
 
     database_url = make_url(resolve_tenant_database_url(database_secret_ref))
-    if database_url.drivername == "postgresql+asyncpg":
+    # The container installs Psycopg 3, not psycopg2. Tenant URLs may come
+    # from Railway without an explicit driver (postgresql://), or from older
+    # async configurations (postgresql+asyncpg://); normalize all of them.
+    if database_url.drivername in {"postgres", "postgresql", "postgresql+asyncpg"}:
         database_url = database_url.set(drivername="postgresql+psycopg")
     target_engine = create_engine(
         database_url.render_as_string(hide_password=False),
