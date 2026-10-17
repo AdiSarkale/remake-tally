@@ -72,11 +72,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Minitally — Intelligent ERP Platform" },
+      { title: "Nexora ERP — Structure. Connect. Grow." },
       {
         name: "description",
         content:
-          "Minitally is a modern ERP platform connecting sales, procurement, inventory, production, work centers, HR and finance into one intelligent operations hub.",
+          "Nexora ERP is a modern ERP platform connecting sales, procurement, inventory, production, work centers, HR and finance into one intelligent operations hub.",
       },
       { property: "og:title", content: "Minitally — Intelligent ERP Platform" },
       {
@@ -88,7 +88,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:card", content: "summary" },
     ],
     links: [
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "/nexora-mark.svg", type: "image/svg+xml" },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
