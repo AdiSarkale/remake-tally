@@ -30,20 +30,38 @@ def resolve_tenant_database_url(secret_ref: str) -> str:
 
 
 def _enforce_postgres_tls(database_url: str) -> str:
-    """Require encrypted PostgreSQL tenant connections in production."""
+    """Normalize the installed PostgreSQL driver and require TLS in production."""
     settings = get_settings()
-    if not settings.tenant_db_require_tls or settings.environment.lower() != "production":
-        return database_url
-
     parts = urlsplit(database_url)
-    if parts.scheme not in {"postgresql", "postgresql+psycopg"}:
+
+    # SQLAlchemy defaults postgresql:// to psycopg2. This service installs
+    # Psycopg 3, so normalize URLs resolved from tenant secret references too.
+    if parts.scheme in {"postgres", "postgresql"}:
+        parts = parts._replace(scheme="postgresql+psycopg")
+        database_url = urlunsplit(parts)
+
+    # Normalize Railway's ssl_mode spelling while preserving other query values.
+    parts = urlsplit(database_url)
+    query_items = parse_qsl(parts.query, keep_blank_values=True)
+    query_items = [
+        ("sslmode" if key.lower() == "ssl_mode" else key, value)
+        for key, value in query_items
+    ]
+    query = dict(query_items)
+
+    if not settings.tenant_db_require_tls or settings.environment.lower() != "production":
+        if query_items != parse_qsl(parts.query, keep_blank_values=True):
+            return urlunsplit(parts._replace(query=urlencode(query_items)))
         return database_url
 
-    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    if parts.scheme != "postgresql+psycopg":
+        return database_url
+
     sslmode = query.get("sslmode", "").lower()
     if sslmode in {"require", "verify-ca", "verify-full"}:
-        return database_url
+        return urlunsplit(parts._replace(query=urlencode(query_items)))
     if sslmode and sslmode != "disable":
         raise RuntimeError("Unsupported PostgreSQL sslmode for production tenant connection")
     query["sslmode"] = "require"
     return urlunsplit(parts._replace(query=urlencode(query)))
+
