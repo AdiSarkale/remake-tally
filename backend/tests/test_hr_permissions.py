@@ -84,8 +84,9 @@ def test_tenant_hr_migration_chain_has_single_latest_head():
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["hr_employee_type_code_length_004"]
+    assert script.get_heads() == ["hr_payroll_005"]
     assert script.get_revision("hr_role_001").down_revision == "employee_type_001"
     assert script.get_revision("hr_employee_types_002").down_revision == "hr_role_001"
     assert script.get_revision("hr_employee_codes_003").down_revision == "hr_employee_types_002"
     assert script.get_revision("hr_employee_type_code_length_004").down_revision == "hr_employee_codes_003"
+    assert script.get_revision("hr_payroll_005").down_revision == "hr_employee_type_code_length_004"
