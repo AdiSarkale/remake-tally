@@ -1,14 +1,18 @@
 """Tests for salary composition, calendar rules and payroll calculations."""
-from datetime import date
+from datetime import date, time as time_type
+from io import BytesIO
 from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
+from openpyxl import Workbook, load_workbook
 from pydantic import ValidationError
 
 from app.api.routes.hr_payroll import (
+    _attendance_template_workbook,
     _calculate_employee_monthly_payroll,
     _calendar_type,
+    _parse_attendance_workbook,
     _salary_count_divisor,
 )
 from app.modules.hr.payroll_schemas import PayrollSettingsIn
@@ -149,3 +153,94 @@ def test_payroll_period_validation_rejects_out_of_range_values(year, month):
         _validate_period(year, month)
 
     assert exc.value.status_code == 422
+
+
+def _attendance_workbook(rows, headers=None):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Attendance"
+    sheet.append(headers or [
+        "Employee Code", "Work Date", "Status", "Overtime Minutes", "Punch In", "Punch Out", "Note",
+    ])
+    for row in rows:
+        sheet.append(row)
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    return output.getvalue()
+
+
+def test_attendance_excel_template_has_exact_import_sheet_and_separate_instructions():
+    content = _attendance_template_workbook(2026, 10).getvalue()
+    workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
+    try:
+        assert workbook.sheetnames == ["Attendance", "Instructions"]
+        assert list(next(workbook["Attendance"].iter_rows(min_row=1, max_row=1, values_only=True))) == [
+            "Employee Code", "Work Date", "Status", "Overtime Minutes", "Punch In", "Punch Out", "Note",
+        ]
+        # The example is explanatory only and does not become an import row.
+        assert workbook["Attendance"].max_row == 1
+        assert workbook["Instructions"].max_row >= 17
+    finally:
+        workbook.close()
+
+
+def test_attendance_excel_parser_reads_valid_rows_and_excel_times():
+    workbook = _attendance_workbook([
+        [" emp-001 ", date(2026, 10, 5), "Present", 30, time_type(8, 30), time_type(17, 0), "Shift A"],
+        ["EMP-002", "2026-10-06", "half day", 0, None, None, ""],
+    ])
+    employees = {
+        "EMP-001": SimpleNamespace(id="emp-1", emp_code="EMP-001", active=True),
+        "EMP-002": SimpleNamespace(id="emp-2", emp_code="EMP-002", active=True),
+    }
+    rows = _parse_attendance_workbook(workbook, 2026, 10, employees)
+
+    assert len(rows) == 2
+    assert rows[0]["employee_id"] == "emp-1"
+    assert rows[0]["status"] == "present"
+    assert rows[0]["overtime_minutes"] == 30
+    assert rows[0]["punch_in"].date() == date(2026, 10, 5)
+    assert rows[0]["punch_in"].hour == 8
+    assert rows[0]["punch_out"].hour == 17
+    assert rows[1]["status"] == "half_day"
+    assert rows[1]["work_date"] == date(2026, 10, 6)
+
+
+def test_attendance_excel_parser_rejects_entire_file_on_unknown_employee_or_bad_period():
+    workbook = _attendance_workbook([
+        ["EMP-001", date(2026, 10, 5), "present", 0, None, None, ""],
+        ["UNKNOWN", date(2026, 10, 6), "present", 0, None, None, ""],
+    ])
+    employees = {"EMP-001": SimpleNamespace(id="emp-1", emp_code="EMP-001", active=True)}
+    with pytest.raises(ValueError, match="not found or is inactive"):
+        _parse_attendance_workbook(workbook, 2026, 10, employees)
+
+    wrong_month = _attendance_workbook([
+        ["EMP-001", date(2026, 9, 30), "present", 0, None, None, ""],
+    ])
+    with pytest.raises(ValueError, match="must be in 2026-10"):
+        _parse_attendance_workbook(wrong_month, 2026, 10, employees)
+
+
+def test_attendance_excel_parser_rejects_duplicate_employee_day_before_writing():
+    workbook = _attendance_workbook([
+        ["EMP-001", date(2026, 10, 5), "present", 0, None, None, ""],
+        ["EMP-001", date(2026, 10, 5), "absent", 0, None, None, ""],
+    ])
+    employees = {"EMP-001": SimpleNamespace(id="emp-1", emp_code="EMP-001", active=True)}
+    with pytest.raises(ValueError, match="duplicate Employee Code and Work Date"):
+        _parse_attendance_workbook(workbook, 2026, 10, employees)
+
+
+def test_attendance_excel_parser_rejects_header_changes():
+    workbook = _attendance_workbook(
+        [["EMP-001", date(2026, 10, 5), "present", 0, None, None, ""]],
+        headers=["Employee", "Work Date", "Status", "Overtime Minutes", "Punch In", "Punch Out", "Note"],
+    )
+    with pytest.raises(ValueError, match="headers must match the template exactly"):
+        _parse_attendance_workbook(
+            workbook, 2026, 10,
+            {"EMP-001": SimpleNamespace(id="emp-1", emp_code="EMP-001", active=True)},
+        )
+
