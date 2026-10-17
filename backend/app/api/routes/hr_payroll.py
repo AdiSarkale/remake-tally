@@ -618,7 +618,12 @@ def _salary_output(employee: models.Employee, profile: models.EmployeeSalaryProf
 
 @router.get("/salaries", response_model=list[schemas.EmployeeSalaryOut])
 def list_employee_salaries(db: Session = Depends(get_db), user: models.User = hr_access):
-    employees = db.query(models.Employee).order_by(models.Employee.emp_code).all()
+    # Salary and attendance workflows operate on active employees. Inactive
+    # employees remain available in the employee history UI, but shouldn't
+    # reappear in the active Payroll workspace after a demo reset/deactivation.
+    employees = db.query(models.Employee).filter(
+        models.Employee.active.is_(True)
+    ).order_by(models.Employee.emp_code).all()
     profiles = {row.employee_id: row for row in db.query(models.EmployeeSalaryProfile).all()}
     return [_salary_output(employee, profiles.get(employee.id)) for employee in employees]
 
