@@ -20,7 +20,6 @@ interface NavItem {
   label: string;
   icon: typeof LayoutDashboard;
   area?: string;
-  anyArea?: string[];
 }
 
 const NAV: NavItem[] = [
@@ -30,7 +29,7 @@ const NAV: NavItem[] = [
   { to: "/inventory", label: "Inventory", icon: Boxes, area: "inventory" },
   { to: "/production", label: "Production", icon: Factory, area: "production" },
   { to: "/finance", label: "Finance", icon: Wallet, area: "finance" },
-  { to: "/hr", label: "HR", icon: Users, anyArea: ["production", "hr"] },
+  { to: "/hr", label: "HR", icon: Users, area: "production" },
   { to: "/reports", label: "Reports", icon: FileBarChart, area: "reports" },
   { to: "/settings", label: "Settings", icon: Settings, area: "settings" },
 ];
@@ -39,7 +38,7 @@ export function AppSidebar({ collapsed }: { collapsed: boolean }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { can } = useAuth();
 
-  const items = NAV.filter((item) => item.area ? can(item.area) : item.anyArea ? item.anyArea.some((area) => can(area)) : true);
+  const items = NAV.filter((item) => !item.area || can(item.area));
 
   return (
     <aside
