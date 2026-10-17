@@ -42,6 +42,10 @@ pip install -r requirements.txt
 
 The FastAPI application exposes the REST API under `/api/v1`.
 
+## Short demo deployment
+
+See [Railway + Vercel demo deployment](docs/railway-demo.md) for the two-day demo setup, environment variables, database migrations, seeding and smoke tests. This guide is for demo data only, not production use.
+
 ## Demo
 
 Known demo accounts:
