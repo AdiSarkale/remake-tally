@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { BrandLockup, BrandMark } from "@/components/brand/brand-logo";
 
 interface NavItem {
   to: string;
@@ -48,17 +49,7 @@ export function AppSidebar({ collapsed }: { collapsed: boolean }) {
       )}
     >
       <div className={cn("flex h-14 items-center border-b", collapsed ? "justify-center px-0" : "gap-2.5 px-4")}>
-        <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary font-mono text-sm font-bold text-primary-foreground">
-          M
-        </div>
-        {!collapsed ? (
-          <div className="leading-none">
-            <div className="text-sm font-bold tracking-[0.18em]">MINITALLY</div>
-            <div className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-muted-foreground">
-              ERP Platform
-            </div>
-          </div>
-        ) : null}
+        <div className="shrink-0">{collapsed ? <BrandMark className="size-7" /> : <BrandLockup compact />}</div>
       </div>
 
       <ScrollArea className="flex-1 py-3">
