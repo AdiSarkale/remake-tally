@@ -147,7 +147,8 @@ The multi-company guide describes a tenant backup utility using PostgreSQL custo
 - **DONE:** manufacturing router is registered in FastAPI.
 - **DONE:** `GET /api/v1/manufacturing/production-orders/{order_id}/material-plan` returns a point-in-time material availability snapshot.
 - **DONE:** focused tests cover router registration, shortages, prior consumption and missing active BOM.
-- **PARTIAL:** production-branch CI validates backend dependency installation, compilation and pytest; no frontend exists in this branch snapshot.
+- **DONE:** production-execution regression tests cover default BOM consumption, insufficient-stock rejection without posting inventory movements, and successful raw-material/finished-goods ledger updates.
+- **PARTIAL:** production-branch CI validates backend dependency installation, compilation and pytest; no frontend exists in this branch snapshot. The latest verified test commit is `81eca37`; both production CI workflows passed.
 
 The material-plan endpoint does **not** reserve stock, lock inventory, allocate a warehouse or guarantee availability at a later time. A positive result must not be treated as authorization to start production.
 
