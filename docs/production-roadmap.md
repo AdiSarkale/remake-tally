@@ -134,7 +134,7 @@ The multi-company guide describes a tenant backup utility using PostgreSQL custo
 | Routing | **PARTIAL** | Versioned routing and ordered operations with workcenter, skill and setup/run time | Operation scheduling, actual time capture and revision controls |
 | Production orders | **PARTIAL** | Create/list, planned quantity/date/due date, routing and operation rows, employee assignment | Controlled draft/release/hold/resume/stop/cancel/close lifecycle and demand planning |
 | Material planning | **DONE** | Read-only endpoint calculates BOM requirements, recorded consumption, available stock and shortage | Reservation, warehouse allocation and concurrency protection |
-| Material reservation/release | **NOT DONE** | No transactional reservation workflow | Atomic reserve/release, idempotency, concurrency control and audit |
+| Material reservation/release | **DONE — backend scope** | Atomic BOM-based reservation preflight, row locking, idempotent reserve, consumed-quantity tracking, release, warehouse association, WIP transfer and audit | PostgreSQL concurrency stress testing and multi-tenant authorization validation remain release gates |
 | Production execution | **PARTIAL** | Production entries, BOM consumption, finished-goods receipt and scrap at batch level | Dedicated operation execution, WIP transfer, controlled issue/return and traceability |
 | Job cards | **NOT DONE** | Operation rows provide an assignment foundation only | Separate job-card records, lifecycle, employee time logs and actual-vs-standard reporting |
 | Quality | **PARTIAL** | Production-level status, accepted/rejected quantities and remarks | Inspection templates, measured parameters, non-conformance workflow and controlled stock release |
@@ -148,14 +148,14 @@ The multi-company guide describes a tenant backup utility using PostgreSQL custo
 - **DONE:** `GET /api/v1/manufacturing/production-orders/{order_id}/material-plan` returns a point-in-time material availability snapshot.
 - **DONE:** focused tests cover router registration, shortages, prior consumption and missing active BOM.
 - **DONE:** production-execution regression tests cover default BOM consumption, insufficient-stock rejection without posting inventory movements, and successful raw-material/finished-goods ledger updates.
-- **PARTIAL:** production-branch CI validates backend dependency installation, compilation and pytest; no frontend exists in this branch snapshot. The latest verified test commit is `81eca37`; both production CI workflows passed.
+- **DONE — phase 1 backend scope:** production reservation regression coverage verifies shortage atomicity, idempotency, release, protection of reserved stock and company-wide reservations during warehouse issues. Commit `21955f8` passed both GitHub Actions workflows (`Backend Tests` and `MiniTally Production CI`) on 2026-11-06; 36 tests passed in the backend test job. The branch remains backend-only and CI is not a production deployment sign-off.
 
 The material-plan endpoint does **not** reserve stock, lock inventory, allocate a warehouse or guarantee availability at a later time. A positive result must not be treated as authorization to start production.
 
 ### 6.3 Manufacturing delivery sequence
 
 **P1 — controlled execution**
-- [ ] Transactional material reservation and release.
+- [x] Transactional material reservation and release (backend scope; see CI evidence above).
 - [ ] Explicit production-order lifecycle and transition validation.
 - [ ] Dedicated job cards and employee time logs.
 - [ ] Warehouse-aware material issue, return, WIP transfer and finished-goods receipt.
