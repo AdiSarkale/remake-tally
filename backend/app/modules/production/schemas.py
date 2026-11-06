@@ -261,3 +261,19 @@ class ManufacturingReportOut(BaseModel):
     actual_material_qty: float
     material_variance: float
     by_workcenter: list[dict]
+
+
+class StockReservationOut(ORMModel):
+    id: str
+    production_order_id: str
+    material_id: str
+    quantity: float
+    consumed_quantity: float
+    status: str
+    created_at: datetime
+    released_at: datetime | None
+
+class ProductionOrderReservationOut(BaseModel):
+    order_id: str
+    order_no: str
+    reservations: list[StockReservationOut] = Field(default_factory=list)

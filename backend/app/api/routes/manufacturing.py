@@ -230,6 +230,83 @@ def production_order_material_plan(
     }
 
 
+@router.post("/production-orders/{order_id}/reserve-materials", response_model=schemas.ProductionOrderReservationOut)
+def reserve_production_order_materials(order_id: str, db: Session = Depends(get_db), user: models.User = guard):
+    """Atomically reserve remaining active-BOM requirements for a planned order."""
+    order = db.query(models.ProductionOrder).filter_by(id=order_id).with_for_update().first()
+    if order is None:
+        raise HTTPException(404, "Production order not found")
+    if order.status not in ("Planned", "In Progress"):
+        raise HTTPException(409, "Materials can only be reserved for planned or in-progress orders")
+    bom = db.query(models.BillOfMaterials).filter(
+        models.BillOfMaterials.product_id == order.product_id,
+        models.BillOfMaterials.active.is_(True),
+    ).order_by(models.BillOfMaterials.version.desc()).first()
+    if bom is None or not bom.lines:
+        raise HTTPException(400, "No active BOM with material lines found for this production order")
+
+    plans = []
+    for line in bom.lines:
+        material = db.query(models.RawMaterial).filter_by(id=line.material_id).with_for_update().first()
+        if material is None:
+            raise HTTPException(409, f"BOM material {line.material_id} no longer exists")
+        consumed = float(db.query(func.coalesce(func.sum(models.ProductionConsumption.quantity), 0.0))
+            .join(models.ProductionEntry, models.ProductionEntry.id == models.ProductionConsumption.production_id)
+            .filter(models.ProductionEntry.production_order_id == order.id,
+                    models.ProductionConsumption.material_id == material.id).scalar() or 0.0)
+        current = db.query(models.StockReservation).filter_by(
+            production_order_id=order.id, material_id=material.id
+        ).with_for_update().first()
+        own_reserved = current.remaining_quantity if current and current.status == "Reserved" else 0.0
+        other_reserved = float(db.query(func.coalesce(func.sum(models.StockReservation.quantity - models.StockReservation.consumed_quantity), 0.0))
+            .filter(models.StockReservation.material_id == material.id,
+                    models.StockReservation.status == "Reserved",
+                    models.StockReservation.production_order_id != order.id).scalar() or 0.0)
+        required_remaining = max(round(float(line.quantity) * float(order.quantity) - consumed, 3), 0.0)
+        to_reserve = max(round(required_remaining - own_reserved, 3), 0.0)
+        available_unreserved = max(round(float(material.stock) - other_reserved - own_reserved, 3), 0.0)
+        if to_reserve > available_unreserved:
+            raise HTTPException(409, f"Insufficient unreserved stock for {material.name} (required {to_reserve}, available {available_unreserved})")
+        plans.append((material.id, current, consumed, own_reserved, to_reserve))
+
+    # No writes occur until every BOM line passes the stock preflight.
+    for material_id, current, consumed, own_reserved, to_reserve in plans:
+        if current is None:
+            current = models.StockReservation(
+                production_order_id=order.id, material_id=material_id,
+                quantity=round(consumed + to_reserve, 3), consumed_quantity=round(consumed, 3), status="Reserved",
+            )
+            db.add(current)
+        else:
+            current.quantity = round(consumed + own_reserved + to_reserve, 3)
+            current.consumed_quantity = round(consumed, 3)
+            current.status = "Reserved" if current.quantity > current.consumed_quantity else "Consumed"
+            current.released_at = None
+    log_audit(db, user.username, "RESERVE", "production_order", order.order_no)
+    db.commit()
+    rows = db.query(models.StockReservation).filter_by(production_order_id=order.id).order_by(models.StockReservation.material_id).all()
+    return {"order_id": order.id, "order_no": order.order_no, "reservations": rows}
+
+
+@router.post("/production-orders/{order_id}/release-materials", response_model=schemas.ProductionOrderReservationOut)
+def release_production_order_materials(order_id: str, db: Session = Depends(get_db), user: models.User = guard):
+    """Release unused reservations while preserving consumed quantities for audit."""
+    order = db.query(models.ProductionOrder).filter_by(id=order_id).with_for_update().first()
+    if order is None:
+        raise HTTPException(404, "Production order not found")
+    rows = db.query(models.StockReservation).filter_by(
+        production_order_id=order.id, status="Reserved"
+    ).with_for_update().all()
+    from datetime import datetime, timezone
+    for row in rows:
+        row.status = "Released"
+        row.released_at = datetime.now(timezone.utc)
+    log_audit(db, user.username, "RELEASE", "production_order", order.order_no)
+    db.commit()
+    rows = db.query(models.StockReservation).filter_by(production_order_id=order.id).order_by(models.StockReservation.material_id).all()
+    return {"order_id": order.id, "order_no": order.order_no, "reservations": rows}
+
+
 @router.post("/production-orders", response_model=schemas.ProductionOrderOut, status_code=201)
 def create_production_order(payload: schemas.ProductionOrderIn, db: Session = Depends(get_db), user: models.User = guard):
     product = db.get(models.Product, payload.product_id)

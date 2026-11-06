@@ -180,3 +180,22 @@ class ProductionOrderOperation(Base):
     status: Mapped[str] = mapped_column(String(32), default="Pending")
     planned_qty: Mapped[float] = mapped_column(Float)
     completed_qty: Mapped[float] = mapped_column(Float, default=0)
+
+
+class StockReservation(Base):
+    """Raw-material quantity reserved for a production order."""
+    __tablename__ = "stock_reservations"
+    __table_args__ = (UniqueConstraint("production_order_id", "material_id", name="uq_stock_reservation_order_material"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    production_order_id: Mapped[str] = mapped_column(ForeignKey("production_orders.id", ondelete="CASCADE"), index=True)
+    material_id: Mapped[str] = mapped_column(ForeignKey("raw_materials.id"), index=True)
+    quantity: Mapped[float] = mapped_column(Float)
+    consumed_quantity: Mapped[float] = mapped_column(Float, default=0)
+    status: Mapped[str] = mapped_column(String(16), default="Reserved", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    @property
+    def remaining_quantity(self) -> float:
+        return round(max(float(self.quantity) - float(self.consumed_quantity), 0.0), 3)

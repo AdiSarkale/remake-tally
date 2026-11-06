@@ -280,7 +280,20 @@ def create_production(
             reason="Production consumption",
             entry_date=payload.entry_date,
             user_id=user.id,
+            reservation_order_id=payload.production_order_id,
         )
+        if payload.production_order_id:
+            reservation = db.query(models.StockReservation).filter_by(
+                production_order_id=payload.production_order_id,
+                material_id=consumption_line.material_id,
+                status="Reserved",
+            ).with_for_update().first()
+            if reservation is not None:
+                reservation.consumed_quantity = round(
+                    min(reservation.quantity, reservation.consumed_quantity + consumption_line.quantity), 3
+                )
+                if reservation.remaining_quantity <= 0:
+                    reservation.status = "Consumed"
 
        # -------------------------------------------------
     # Finished product IN
