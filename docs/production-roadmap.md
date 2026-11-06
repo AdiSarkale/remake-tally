@@ -136,7 +136,7 @@ The multi-company guide describes a tenant backup utility using PostgreSQL custo
 | Material planning | **DONE** | Read-only endpoint calculates BOM requirements, recorded consumption, available stock and shortage | Reservation, warehouse allocation and concurrency protection |
 | Material reservation/release | **DONE — backend scope** | Atomic BOM-based reservation preflight, row locking, idempotent reserve, consumed-quantity tracking, release, warehouse association, WIP transfer and audit | PostgreSQL concurrency stress testing and multi-tenant authorization validation remain release gates |
 | Production execution | **PARTIAL** | Production entries, BOM consumption, finished-goods receipt and scrap at batch level | Dedicated operation execution, WIP transfer, controlled issue/return and traceability |
-| Job cards | **NOT DONE** | Operation rows provide an assignment foundation only | Separate job-card records, lifecycle, employee time logs and actual-vs-standard reporting |
+| Job cards | **DONE — core execution** | One card per order operation, employee assignment, start/stop lifecycle, time logs, overlap prevention, completion guards and production-output progress updates | Multi-employee parallel assignment, detailed operation quality routing and efficiency analytics remain future enhancements |
 | Quality | **PARTIAL** | Production-level status, accepted/rejected quantities and remarks | Inspection templates, measured parameters, non-conformance workflow and controlled stock release |
 | Manufacturing inventory | **PARTIAL** | Aggregate raw-material stock and movement ledger | Warehouse/bin balances, reservations, serial/batch traceability and WIP stock |
 | Manufacturing reports | **PARTIAL** | Production totals, scrap, material variance and workcenter aggregation | Operation efficiency, capacity utilization, labor reporting and production costing |
@@ -149,7 +149,8 @@ The multi-company guide describes a tenant backup utility using PostgreSQL custo
 - **DONE:** focused tests cover router registration, shortages, prior consumption and missing active BOM.
 - **DONE:** production-execution regression tests cover default BOM consumption, insufficient-stock rejection without posting inventory movements, and successful raw-material/finished-goods ledger updates.
 - **DONE — phase 1 backend scope:** production reservation regression coverage verifies shortage atomicity, idempotency, release, protection of reserved stock and company-wide reservations during warehouse issues.
-- **DONE — phase 2 core lifecycle:** explicit transition regression coverage verifies invalid transition rejection, release/start ordering, reservation prerequisite, premature completion rejection, cancellation restrictions, reservation release and successful completion. Commit `5f01ae3` passed both GitHub Actions workflows (`Backend Tests` and `MiniTally Production CI`) on 2026-11-06; 37 tests passed, 2 warnings. The branch remains backend-only and CI is not a production deployment sign-off.
+- **DONE — phase 2 core lifecycle:** explicit transition regression coverage verifies invalid transition rejection, release/start ordering, reservation prerequisite, premature completion rejection, cancellation restrictions, reservation release and successful completion. Commit `5f01ae3` passed both GitHub Actions workflows on 2026-11-06; 37 tests passed, 2 warnings.
+- **DONE — phase 3 core job-card execution:** release-generated job cards, start/stop time capture, employee overlap prevention and premature-completion rejection are covered. Commit `9e0b258` passed both GitHub Actions workflows on 2026-11-06; 38 tests passed, 2 warnings. The branch remains backend-only and CI is not a production deployment sign-off.
 
 The material-plan endpoint does **not** reserve stock, lock inventory, allocate a warehouse or guarantee availability at a later time. A positive result must not be treated as authorization to start production.
 
@@ -158,7 +159,7 @@ The material-plan endpoint does **not** reserve stock, lock inventory, allocate 
 **P1 — controlled execution**
 - [x] Transactional material reservation and release (backend scope; see CI evidence above).
 - [x] Explicit production-order lifecycle and transition validation (core lifecycle; see phase 2 CI evidence above).
-- [ ] Dedicated job cards and employee time logs.
+- [x] Dedicated job cards and employee time logs (core execution scope; see phase 3 CI evidence above).
 - [ ] Warehouse-aware material issue, return, WIP transfer and finished-goods receipt.
 - [ ] Quality inspection templates and accepted/rejected release gate.
 
