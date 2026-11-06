@@ -199,6 +199,7 @@ class StockReservation(Base):
     status: Mapped[str] = mapped_column(String(16), default="Reserved", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    warehouse_id: Mapped[str | None] = mapped_column(ForeignKey("warehouses.id"), nullable=True, index=True)
 
     @property
     def remaining_quantity(self) -> float:

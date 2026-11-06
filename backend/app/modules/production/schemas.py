@@ -278,6 +278,7 @@ class StockReservationOut(ORMModel):
     quantity: float
     consumed_quantity: float
     status: str
+    warehouse_id: str | None = None
     created_at: datetime
     released_at: datetime | None
 

@@ -69,6 +69,8 @@ def apply_movement(
         )
         if reservation_order_id:
             reserved_query = reserved_query.filter(models.StockReservation.production_order_id != reservation_order_id)
+        if warehouse_id:
+            reserved_query = reserved_query.filter(models.StockReservation.warehouse_id == warehouse_id)
         reserved_for_others = float(reserved_query.scalar() or 0.0)
         available_to_consume = round(float(item.stock) - reserved_for_others, 3)
         if quantity > available_to_consume:

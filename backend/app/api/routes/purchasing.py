@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session, selectinload
 from app import models, schemas
 from app.api.deps import require_area
 from app.db.session import get_db
-from app.services.inventory import log_audit
 from app.models import ItemKind, MovementType
 from app.services.inventory import apply_movement, log_audit
 
@@ -1157,28 +1156,11 @@ def create_grn(
             6,
         )
 
-        material.stock = round(
-            material.stock + line.quantity,
-            6,
+        apply_movement(
+            db, kind=ItemKind.material, item_id=material.id, movement_type=MovementType.IN,
+            quantity=line.quantity, reference=payload.grn_no, reason=f"Purchase receipt — {po.po_no}",
+            entry_date=payload.grn_date, user_id=user.id, warehouse_id=warehouse_id,
         )
-
-        # InventoryMovement is the durable movement ledger.
-        movement = models.InventoryMovement(
-            id=models._uuid(),
-            entry_date=payload.grn_date,
-            item_kind=models.ItemKind.material,
-            item_id=material.id,
-            item_name=material.name,
-            movement_type=models.MovementType.IN,
-            quantity=line.quantity,
-            unit=material.unit,
-            balance=material.stock,
-            reference=payload.grn_no,
-            reason=f"Purchase receipt — {po.po_no}",
-            user_id=user.id,
-        )
-
-        db.add(movement)
 
     # Determine PO completion only after all receipt quantities
     # have been applied.
