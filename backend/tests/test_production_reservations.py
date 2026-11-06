@@ -101,7 +101,7 @@ def test_reserved_order_can_consume_its_own_reserved_stock(reservation_context):
 
 def test_company_wide_reservation_blocks_warehouse_issue(reservation_context):
     _, db, order, _, material = reservation_context
-    plant = models.Plant(code="PL-RES-001", name="Reservation Plant", active=True)
+    plant = models.Plant(code="PL-RES-001", name="Reservation Plant", location="Test floor", active=True)
     db.add(plant)
     db.flush()
     warehouse = models.Warehouse(code="WH-RES-001", name="Reservation Warehouse", plant_id=plant.id, active=True)
