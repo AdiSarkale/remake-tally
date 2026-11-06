@@ -352,9 +352,9 @@ def create_production(
             produced_total = float(db.query(func.coalesce(func.sum(models.ProductionEntry.quantity), 0.0)).filter(
                 models.ProductionEntry.production_order_id == order.id
             ).scalar() or 0.0) + payload.quantity
-            if ops and all(x.completed_qty >= x.planned_qty for x in ops) and produced_total >= order.quantity:
-                order.status = "Completed"
-            elif any(x.completed_qty > 0 for x in ops):
+            if any(x.completed_qty > 0 for x in ops):
+                # Completion is an explicit lifecycle action so final checks and
+                # unused-reservation release happen in one controlled transaction.
                 order.status = "In Progress"
 
     log_audit(

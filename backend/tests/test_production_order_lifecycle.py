@@ -68,3 +68,27 @@ def test_cancellation_releases_reservations_when_nothing_is_produced(lifecycle_c
     assert response.status_code==200 and response.json()["status"]=="Cancelled"
     reservation=db.query(models.StockReservation).one()
     assert reservation.status=="Released"
+
+
+def test_order_requires_explicit_completion_after_all_output_and_operations(lifecycle_context):
+    http, db, order, op_row, product, _ = lifecycle_context
+    http.post(f"/api/v1/manufacturing/production-orders/{order.id}/transition", json={"action": "release"})
+    started = http.post(f"/api/v1/manufacturing/production-orders/{order.id}/transition", json={"action": "start"})
+    assert started.status_code == 200
+    production = http.post("/api/v1/production", json={
+        "entry_date": date.today().isoformat(),
+        "product_id": product.id,
+        "quantity": 10,
+        "production_order_id": order.id,
+        "operation_id": op_row.id,
+    })
+    assert production.status_code == 201, production.text
+    db.refresh(order)
+    assert order.status == "In Progress"
+    db.refresh(op_row)
+    assert op_row.status == "Completed"
+    completed = http.post(f"/api/v1/manufacturing/production-orders/{order.id}/transition", json={"action": "complete"})
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["status"] == "Completed"
+    reservation = db.query(models.StockReservation).one()
+    assert reservation.status == "Consumed"
