@@ -1,69 +1,103 @@
-# ERPNext-inspired production parity review
+# MiniTally production MVP status
 
 **Reviewed:** 2026-11-06  
-**Target:** MiniTally `production` branch  
-**Reference:** Frappe ERPNext `develop` branch (public source)
+**Branch:** `production`  
+**Scope:** Repository state on the `production` branch. Statuses below describe code present in this branch; they are not claims that a live deployment has been verified.
 
-This is a capability comparison, not a claim of feature equivalence. ERPNext is a mature manufacturing ERP with a substantially broader execution and stock-accounting model. The goal is to reuse the workflow ideas that fit MiniTally's current schema, not to transplant ERPNext code or its Frappe framework.
+## Status legend
 
-## Existing MiniTally capabilities
+- **DONE** — implemented in this branch and covered by the available tests or CI evidence.
+- **PARTIAL** — a usable foundation exists, but important workflow or production controls are missing.
+- **NOT DONE** — no complete implementation is present in this branch.
+- **BLOCKED** — cannot be treated as release-ready until an external dependency or deployment condition is resolved.
 
-| Area | Current implementation | Assessment |
+## Manufacturing capability checklist
+
+| Capability | Status | What exists | Remaining work |
+|---|---|---|---|
+| Bill of Materials (BOM) | **PARTIAL** | Versioned BOMs, active-version selection, component quantities, expected scrap percentage | Multi-level BOM explosion, sub-assemblies, alternate materials, operation-level costing |
+| Workcenters | **PARTIAL** | Workcenter master, capacity-per-hour field, status, location, supported materials | Shift/calendar capacity, downtime, finite-capacity scheduling and utilization |
+| Routing | **PARTIAL** | Versioned product routing, ordered operations, workcenter, required skill, setup/run time | Operation scheduling, actual time capture and routing revision controls |
+| Production orders | **PARTIAL** | Create/list orders, planned quantity/date/due date, routing snapshot, operation rows and employee assignment | Controlled draft/release/hold/resume/stop/cancel/close lifecycle; sales-order demand planning |
+| Material planning | **DONE** | Read-only material-plan endpoint calculates BOM requirement, recorded consumption, available stock and shortage | Reservation, allocation, warehouse selection and protection from concurrent stock claims |
+| Material reservation/release | **NOT DONE** | No transactional reservation workflow | Atomic reservation/release, idempotency, concurrency protection and audit trail |
+| Production execution | **PARTIAL** | Production entries, BOM consumption, finished-goods receipt and scrap movement at batch level | Dedicated operation execution, WIP transfers, controlled issue/return and full traceability |
+| Job cards | **NOT DONE** | Production-order operation rows provide a basic assignment foundation | Separate job-card records, operation status lifecycle, employee time logs and actual-vs-standard reporting |
+| Quality control | **PARTIAL** | Production-level status, accepted/rejected quantities and remarks | Inspection templates, measured parameters, sampling, non-conformance workflow and release gate |
+| Inventory for manufacturing | **PARTIAL** | Aggregate raw-material stock and stock movement ledger | Warehouse/bin-level balances, reservations, serial/batch traceability, WIP stock and reconciliation |
+| Manufacturing reports | **PARTIAL** | Production totals, scrap, material variance and workcenter aggregation | Operation efficiency, capacity utilization, labor reporting, production costing and drill-down auditability |
+| Multi-level production planning | **NOT DONE** | No complete production-plan/BOM-explosion workflow | Demand consolidation, nested BOM explosion, make/buy suggestions and purchase requirements |
+
+## API and test status
+
+| Item | Status | Evidence / notes |
 |---|---|---|
-| Bill of Materials | Versioned BOMs with active-version selection, material quantities, and expected scrap percentage | Implemented, but single-level; no BOM explosion, sub-assemblies, operation costing, or alternate materials |
-| Workcenters | Workcenter master, hourly capacity field, status, location, and supported materials | Foundation implemented; no capacity calendar or finite-capacity scheduling |
-| Routing | Versioned product routing with ordered operations, workcenter, skill, setup time, and run time | Foundation implemented; no operation-level time logs or scheduling |
-| Production orders | Order quantity/date/due date, generated operation rows, employee assignment, and completed quantity | Basic work-order workflow; no draft/submit/hold/stop/close lifecycle or sales-order planning |
-| Production execution | Production entries, BOM consumption, finished-goods receipt, and scrap movement | Implemented at batch level; no separate job-card execution document or WIP transfer |
-| Quality | Production-level quality status, accepted/rejected quantities, and remarks | Basic inspection result only; no inspection template, measured parameters, or controlled release |
-| Inventory | Aggregate item stock and movement ledger | Basic stock tracking; no warehouse-level production ledger, reservation, serial/batch traceability, or WIP stock |
-| Reporting | Production totals, scrap, material variance, and workcenter aggregation | Basic operational summary; no operation efficiency, capacity utilization, or production costing |
+| Manufacturing router registration | **DONE** | Router is registered in the FastAPI application on this branch |
+| Material-plan API | **DONE** | `GET /api/v1/manufacturing/production-orders/{order_id}/material-plan` |
+| Material-plan test coverage | **DONE** | Tests cover router registration, shortages, prior consumption and missing active BOM |
+| Production branch CI configuration | **DONE** | Backend dependency installation, compilation and pytest are configured; this branch snapshot has no frontend directory |
+| Latest known production CI | **DONE** | The previous implementation commits passed the recorded `MiniTally Production CI` and `Backend Tests` runs; this is not a live deployment check |
+| Live API smoke test | **NOT DONE** | No production URL health/login/business-flow verification is recorded here |
+| Database migration on production database | **NOT VERIFIED** | CI passing does not prove the live database has been backed up and migrated successfully |
 
-## Comparison with ERPNext patterns
+### Material-plan endpoint limitation
 
-ERPNext's manufacturing flow is organized around distinct responsibilities:
+The material plan is a point-in-time availability calculation. It does **not** reserve stock, lock inventory, allocate a warehouse, generate a pick list, or guarantee that the displayed quantity will still be available when a later transaction runs. Do not treat a successful material plan as authorization to start production.
 
-1. **BOM** defines component requirements and may include operations, process loss, secondary items, and multi-level sub-assemblies.
-2. **Production Plan** consolidates demand and explodes BOMs to determine production and purchase requirements.
-3. **Work Order** authorizes a production quantity, carries required items and operations, and can reserve stock.
-4. **Job Card** tracks an individual operation, assigned employees, time logs, status, quantities, and quality checks.
-5. **Stock Entry** records material issue/transfer, finished-goods receipt, WIP, and related stock effects.
+## Production deployment readiness
 
-MiniTally currently combines several of these responsibilities in production orders and production entries. This is simpler, but it means it does not yet have the controls or traceability of the separate ERPNext documents.
-
-## Changes made in this update
-
-- Registered the existing `manufacturing` router in the FastAPI application. Without this, the existing workcenter, routing, employee-skill, production-order, quality, and report endpoints were not reachable.
-- Added `GET /api/v1/manufacturing/production-orders/{order_id}/material-plan`. It calculates BOM requirements for the order, subtracts recorded consumption linked to the order, compares the remaining requirement with current raw-material stock, and reports shortages.
-- Added API response schemas and tests for router registration, shortages, prior consumption, and missing active BOMs.
-- Corrected the production-branch CI workflow to run backend dependency installation, compilation, and pytest. This branch has no frontend directory, so a frontend `npm ci` job was not valid for this branch snapshot.
-
-### Material-plan limitation
-
-The material plan is a **read-only point-in-time availability check**. It does not reserve stock, lock inventory, allocate a warehouse, generate a pick list, or protect against another transaction consuming the same stock after the response. A later reservation/issue workflow must implement those controls transactionally before the API can claim materials are secured.
-
-## Recommended next phases
-
-| Priority | Capability | Why it matters |
+| Release requirement | Status | Required action |
 |---|---|---|
-| P1 | Transactional material reservation and release | Prevents two orders from claiming the same available stock |
-| P1 | Explicit order lifecycle and operation state transitions | Adds controlled start, hold, resume, completion, and cancellation |
-| P2 | Separate job-card execution with employee time logs | Supports operator-level accountability and actual-vs-standard time |
-| P2 | Warehouse-aware material issue, WIP transfer, and finished-goods receipt | Gives traceable stock movement by production location |
-| P2 | Quality inspection plans and controlled accepted/rejected release | Prevents uninspected production from being treated as releasable stock |
-| P3 | Multi-level BOM explosion and sub-assembly planning | Supports products with nested manufactured components |
-| P3 | Capacity scheduling, production costing, and efficiency reports | Supports planning and operational improvement |
+| Backend manufacturing API baseline | **PARTIAL** | Core master data, order, execution, quality and report endpoints exist; lifecycle and stock controls remain incomplete |
+| Frontend included in `production` | **BLOCKED** | The branch root has no frontend directory. Bring the intended frontend into a release branch and verify API compatibility |
+| Branch alignment with `main` | **BLOCKED** | At review, `production` is 5 commits ahead and 370 commits behind `main`; histories are diverged. Reconcile deliberately, not with an unreviewed blind merge |
+| Deployment configuration and secrets | **NOT VERIFIED** | Confirm hosting configuration, environment variables, CORS origins, database URL, secret management and HTTPS |
+| Database backup/restore procedure | **NOT VERIFIED** | Document and test backup, restore and migration rollback procedures |
+| Authentication and authorization smoke tests | **NOT VERIFIED** | Test login, token expiry, tenant isolation and role/area permissions against the deployed environment |
+| Observability and recovery | **NOT VERIFIED** | Configure structured logs, error reporting, health checks, backups and operational alerts |
+| End-to-end release acceptance | **NOT DONE** | Run critical workflows against the actual deployed frontend and backend using production-like data |
 
-## Branch note
+**Release assessment: NOT PRODUCTION-READY as a complete ERP application.** The production branch currently provides a backend manufacturing foundation, not a verified full-stack MVP. Passing CI is necessary but does not establish deployment readiness, tenant safety, data integrity or end-to-end workflow correctness.
 
-At review time, `production` is 370 commits behind and 3 commits ahead of `main`. The branches have diverged substantially, and this production snapshot does not contain the current frontend tree. This update intentionally changes only `production`; it does not merge the divergent `main` history.
+## Prioritized work remaining
 
-## Upstream reference locations
+### P0 — required before calling this a deployable MVP
+
+- [ ] Reconcile `production` with the intended frontend/backend release source; resolve the 370-commit divergence without blindly merging.
+- [ ] Publish and verify the frontend and backend deployment configuration.
+- [ ] Verify production environment variables, CORS, HTTPS, secrets and database connectivity.
+- [ ] Run deployed login, tenant-isolation, role-permission and core CRUD smoke tests.
+- [ ] Establish tested database backup, restore and migration procedures.
+- [ ] Run end-to-end acceptance tests for the modules included in the MVP.
+
+### P1 — required for controlled manufacturing execution
+
+- [ ] Add transactional material reservation and release with concurrency protection.
+- [ ] Add explicit production-order lifecycle transitions and audit history.
+- [ ] Add dedicated job cards and employee time logs.
+- [ ] Add warehouse-aware material issue, return, WIP transfer and finished-goods receipt.
+- [ ] Add quality inspection templates and prevent unapproved/rejected output from being released as accepted stock.
+
+### P2 — post-MVP manufacturing depth
+
+- [ ] Multi-level BOM explosion and sub-assembly planning.
+- [ ] Capacity calendars, finite scheduling and downtime management.
+- [ ] Production costing, labor variance and operation efficiency.
+- [ ] Serial/batch traceability and richer manufacturing analytics.
+
+## Implementation notes
+
+- The manufacturing router and read-only material-plan endpoint were added on `production`.
+- The material-plan endpoint has focused backend tests.
+- No material-reservation, job-card, employee-time-log or new production lifecycle implementation is included in the reviewed branch snapshot.
+- This document intentionally distinguishes implemented code from planned work. Update a row to **DONE** only after the feature exists in the branch and its relevant tests pass.
+
+## ERPNext workflow references
+
+These links are used as workflow references, not as evidence of MiniTally feature parity:
 
 - [ERPNext BOM](https://github.com/frappe/erpnext/tree/develop/erpnext/manufacturing/doctype/bom)
 - [ERPNext Production Plan](https://github.com/frappe/erpnext/tree/develop/erpnext/manufacturing/doctype/production_plan)
 - [ERPNext Work Order](https://github.com/frappe/erpnext/tree/develop/erpnext/manufacturing/doctype/work_order)
 - [ERPNext Job Card](https://github.com/frappe/erpnext/tree/develop/erpnext/manufacturing/doctype/job_card)
 - [ERPNext Stock Entry](https://github.com/frappe/erpnext/tree/develop/erpnext/stock/doctype/stock_entry)
-
-The implementation in this branch is original MiniTally code. These references are used for workflow comparison only.
