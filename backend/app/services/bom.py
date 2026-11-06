@@ -39,10 +39,20 @@ def explode_bom_tree(db:Session,product_id:str,quantity:float,*,strict:bool=Fals
     rows.append({"line_type":"SF","item_id":child.id,"item_code":child.code,"item_name":child.name,"unit":child.unit,"required_quantity":required,"level":level+1,"parent_product_id":pid,"status":"Exploded" if child_bom else "Missing BOM"})
     if child_bom: walk(child.id,required,level+1,(*path,pid))
  walk(product_id,quantity,0,())
+ totals={}
+ for row in rows:
+  if row["line_type"]=="RM": totals[row["item_id"]]=round(totals.get(row["item_id"],0.0)+row["required_quantity"],3)
+ for material_id,total in totals.items():
+  material=db.get(models.RawMaterial,material_id)
+  for row in rows:
+   if row["line_type"]=="RM" and row["item_id"]==material_id:
+    row["status"]="Available" if material and material.stock>=total else "Shortage"
  return rows
 
 def explode_material_requirements(db:Session,product_id:str,quantity:float):
  rows=explode_bom_tree(db,product_id,quantity,strict=True)
+ missing=[row for row in rows if row["line_type"]=="SF" and row["status"]=="Missing BOM"]
+ if missing: raise HTTPException(409,"Active BOM missing for subassembly product(s): "+", ".join(row["item_code"] for row in missing))
  totals={}
  for row in rows:
   if row["line_type"]=="RM": totals[row["item_id"]]=round(totals.get(row["item_id"],0.0)+row["required_quantity"],3)
