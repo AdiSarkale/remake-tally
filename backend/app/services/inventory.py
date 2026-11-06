@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app import models
@@ -76,7 +76,14 @@ def apply_movement(
         if reservation_order_id:
             reserved_query = reserved_query.filter(models.StockReservation.production_order_id != reservation_order_id)
         if warehouse_id:
-            reserved_query = reserved_query.filter(models.StockReservation.warehouse_id == warehouse_id)
+            # A reservation without a warehouse is company-wide; it must
+            # protect stock regardless of which warehouse an issue uses.
+            reserved_query = reserved_query.filter(
+                or_(
+                    models.StockReservation.warehouse_id == warehouse_id,
+                    models.StockReservation.warehouse_id.is_(None),
+                )
+            )
         reserved_for_others = float(reserved_query.scalar() or 0.0)
         available_to_consume = round(float(item.stock) - reserved_for_others, 3)
         if quantity > available_to_consume:
