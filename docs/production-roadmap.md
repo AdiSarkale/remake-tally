@@ -206,7 +206,7 @@ A full ERP MVP is not complete just because manufacturing endpoints pass. For ev
 
 ### Phase 7–8 integration blocker (verified 2026-11-06)
 
-The `production` branch currently has no DB-per-company runtime boundary or tenant backup/restore implementation. `main` contains these capabilities, but its tenant runtime replaces the single-database session/authentication path and expects additional settings, JWT claims, user fields, control-plane migrations and deployment configuration. A blind merge or partial file copy is unsafe. Phases 7 and 8 remain BLOCKED until the branch histories and migration lineage are reconciled on a dedicated integration branch, then the complete tenant implementation is ported with PostgreSQL isolation and backup/restore CI.
+The `production` branch currently has no DB-per-company runtime boundary or tenant backup/restore implementation. A GitHub comparison on 2026-11-06 reports `main` is 372 commits ahead of `production`, while `production` is 54 commits ahead of `main`, with 214 changed files. `main` contains the tenant and backup capabilities, but its runtime replaces the single-database session/authentication path and expects additional settings, JWT claims, user fields, control-plane migrations and deployment configuration. A blind merge or partial file copy is unsafe. Phases 7 and 8 remain BLOCKED until the branch histories and migration lineage are reconciled on a dedicated integration branch, then the complete tenant implementation is ported with PostgreSQL isolation and backup/restore CI.
 
 | Gate | Required evidence | Promotion decision |
 |---|---|---|
