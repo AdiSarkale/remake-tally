@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.api.deps import require_area
 from app.db.session import get_db
-from app.services.inventory import log_audit, next_batch_no
+from app.services.inventory import apply_movement, log_audit, next_batch_no
 
 router = APIRouter(prefix="/manufacturing", tags=["manufacturing"])
 guard = Depends(require_area("production"))
@@ -153,7 +153,7 @@ def add_employee_skill(employee_id: str, payload: schemas.EmployeeSkillIn, db: S
 def list_production_orders(db: Session = Depends(get_db), user: models.User = guard):
     rows = db.query(models.ProductionOrder).order_by(models.ProductionOrder.order_date.desc()).all()
     return [
-        {**{k:getattr(o,k) for k in ("id","order_no","order_date","product_id","quantity","due_date","routing_id","status","remarks")},
+        {**{k:getattr(o,k) for k in ("id","order_no","order_date","product_id","quantity","due_date","routing_id","status","source_warehouse_id","wip_warehouse_id","target_warehouse_id","remarks")},
          "operations": db.query(models.ProductionOrderOperation).filter_by(production_order_id=o.id).order_by(models.ProductionOrderOperation.sequence).all()}
         for o in rows
     ]
@@ -290,6 +290,34 @@ def reserve_production_order_materials(order_id: str, db: Session = Depends(get_
     return {"order_id": order.id, "order_no": order.order_no, "reservations": rows}
 
 
+@router.post("/production-orders/{order_id}/transfer-to-wip", response_model=list[schemas.ProductionMaterialTransferOut], status_code=201)
+def transfer_production_materials_to_wip(order_id: str, db: Session = Depends(get_db), user: models.User = guard):
+    order=db.query(models.ProductionOrder).filter_by(id=order_id).with_for_update().first()
+    if order is None: raise HTTPException(404,"Production order not found")
+    if order.status not in ("Released","In Progress"): raise HTTPException(409,"Production order must be Released or In Progress")
+    if not order.source_warehouse_id or not order.wip_warehouse_id: raise HTTPException(409,"Source and WIP warehouses are required")
+    bom=db.query(models.BillOfMaterials).filter_by(product_id=order.product_id,active=True).order_by(models.BillOfMaterials.version.desc()).first()
+    if bom is None or not bom.lines: raise HTTPException(409,"Active BOM with material lines is required")
+    plans=[]
+    for line in bom.lines:
+        moved=float(db.query(func.coalesce(func.sum(models.ProductionMaterialTransfer.quantity),0.0)).filter_by(production_order_id=order.id,material_id=line.material_id).scalar() or 0.0)
+        qty=max(round(float(line.quantity)*float(order.quantity)-moved,3),0.0)
+        if qty<=0: continue
+        row=db.query(models.WarehouseStock).filter_by(warehouse_id=order.source_warehouse_id,item_kind=models.ItemKind.material,item_id=line.material_id).with_for_update().first()
+        available=float(row.quantity) if row else 0.0
+        material=db.get(models.RawMaterial,line.material_id)
+        if material is None: raise HTTPException(409,"BOM material no longer exists")
+        if qty>available: raise HTTPException(409,f"Insufficient source warehouse stock for {material.name} (required {qty}, available {available})")
+        plans.append((line.material_id,qty))
+    for material_id,qty in plans:
+        apply_movement(db,kind=models.ItemKind.material,item_id=material_id,movement_type=models.MovementType.OUT,quantity=qty,reference=order.order_no,reason="Material transfer to WIP",entry_date=order.order_date,user_id=user.id,reservation_order_id=order.id,warehouse_id=order.source_warehouse_id)
+        apply_movement(db,kind=models.ItemKind.material,item_id=material_id,movement_type=models.MovementType.IN,quantity=qty,reference=order.order_no,reason="Material received in WIP",entry_date=order.order_date,user_id=user.id,warehouse_id=order.wip_warehouse_id)
+        db.add(models.ProductionMaterialTransfer(production_order_id=order.id,material_id=material_id,source_warehouse_id=order.source_warehouse_id,target_warehouse_id=order.wip_warehouse_id,quantity=qty))
+    log_audit(db,user.username,"TRANSFER","production_order",order.order_no+" to WIP")
+    db.commit()
+    return db.query(models.ProductionMaterialTransfer).filter_by(production_order_id=order.id).order_by(models.ProductionMaterialTransfer.transferred_at).all()
+
+
 @router.post("/production-orders/{order_id}/release-materials", response_model=schemas.ProductionOrderReservationOut)
 def release_production_order_materials(order_id: str, db: Session = Depends(get_db), user: models.User = guard):
     """Release unused reservations while preserving consumed quantities for audit."""
@@ -319,10 +347,20 @@ def create_production_order(payload: schemas.ProductionOrderIn, db: Session = De
         raise HTTPException(400, "No active routing found for this product")
     if routing.product_id != payload.product_id:
         raise HTTPException(400, "Routing does not belong to product")
+    warehouse_ids = [payload.source_warehouse_id, payload.wip_warehouse_id, payload.target_warehouse_id]
+    if any(warehouse_ids) and not all(warehouse_ids):
+        raise HTTPException(400, "Source, WIP, and target warehouses must be selected together")
+    for warehouse_id in warehouse_ids:
+        if warehouse_id:
+            warehouse = db.get(models.Warehouse, warehouse_id)
+            if warehouse is None or not warehouse.active:
+                raise HTTPException(400, f"Warehouse {warehouse_id} not found or inactive")
     order = models.ProductionOrder(
         order_no=next_batch_no(db).replace("BATCH-", "PO-"),
         order_date=payload.order_date, product_id=payload.product_id, quantity=payload.quantity,
-        due_date=payload.due_date, routing_id=routing.id, status="Planned", remarks=payload.remarks,
+        due_date=payload.due_date, routing_id=routing.id, status="Planned",
+        source_warehouse_id=payload.source_warehouse_id, wip_warehouse_id=payload.wip_warehouse_id,
+        target_warehouse_id=payload.target_warehouse_id, remarks=payload.remarks,
     )
     db.add(order)
     db.flush()
@@ -336,7 +374,7 @@ def create_production_order(payload: schemas.ProductionOrderIn, db: Session = De
     log_audit(db, user.username, "CREATE", "production_order", order.order_no)
     db.commit()
     db.refresh(order)
-    return {**{k:getattr(order,k) for k in ("id","order_no","order_date","product_id","quantity","due_date","routing_id","status","remarks")},
+    return {**{k:getattr(order,k) for k in ("id","order_no","order_date","product_id","quantity","due_date","routing_id","status","source_warehouse_id","wip_warehouse_id","target_warehouse_id","remarks")},
             "operations": db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).order_by(models.ProductionOrderOperation.sequence).all()}
 
 

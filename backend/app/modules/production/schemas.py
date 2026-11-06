@@ -198,6 +198,9 @@ class ProductionOrderIn(BaseModel):
     quantity: float = Field(gt=0)
     due_date: date | None = None
     routing_id: str | None = None
+    source_warehouse_id: str | None = None
+    wip_warehouse_id: str | None = None
+    target_warehouse_id: str | None = None
     remarks: str = ""
 
 class ProductionOrderOperationOut(ORMModel):
@@ -219,6 +222,9 @@ class ProductionOrderOut(ORMModel):
     due_date: date | None
     routing_id: str | None
     status: str
+    source_warehouse_id: str | None = None
+    wip_warehouse_id: str | None = None
+    target_warehouse_id: str | None = None
     remarks: str
     operations: list[ProductionOrderOperationOut] = Field(default_factory=list)
 
@@ -316,3 +322,13 @@ class JobCardOut(ORMModel):
     completed_at: datetime | None
     remarks: str
     time_logs: list[JobCardTimeLogOut] = Field(default_factory=list)
+
+
+class ProductionMaterialTransferOut(ORMModel):
+    id: str
+    production_order_id: str
+    material_id: str
+    source_warehouse_id: str
+    target_warehouse_id: str
+    quantity: float
+    transferred_at: datetime

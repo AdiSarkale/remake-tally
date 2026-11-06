@@ -43,15 +43,24 @@ def apply_movement(
     entry_date: date,
     user_id: str,
     reservation_order_id: str | None = None,
+    warehouse_id: str | None = None,
 ) -> models.InventoryMovement:
     item = _bucket(db, kind, item_id)
+    warehouse_row = None
+    warehouse_balance = None
+    if warehouse_id:
+        warehouse = db.get(models.Warehouse, warehouse_id)
+        if warehouse is None or not warehouse.active:
+            raise HTTPException(status_code=400, detail="Warehouse not found or inactive")
+        warehouse_row = db.query(models.WarehouseStock).filter_by(warehouse_id=warehouse_id, item_kind=kind, item_id=item.id).with_for_update().first()
+        warehouse_balance = float(warehouse_row.quantity) if warehouse_row else 0.0
 
     if movement_type is MovementType.IN:
         delta = quantity
     elif movement_type is MovementType.OUT:
         delta = -quantity
     else:  # ADJUST -> quantity is the counted physical stock
-        delta = quantity - item.stock
+        delta = quantity - (warehouse_balance if warehouse_id else item.stock)
 
     if movement_type is MovementType.OUT and kind is ItemKind.material:
         reserved_query = db.query(func.coalesce(func.sum(models.StockReservation.quantity - models.StockReservation.consumed_quantity), 0.0)).filter(
@@ -65,6 +74,15 @@ def apply_movement(
         if quantity > available_to_consume:
             raise HTTPException(status_code=400, detail=f"Insufficient unreserved stock for {item.name} (required {quantity}, available {max(available_to_consume, 0.0)})")
 
+    if warehouse_id:
+        new_wh_balance = round((warehouse_balance or 0.0) + delta, 3)
+        if new_wh_balance < 0:
+            raise HTTPException(status_code=400, detail=f"Insufficient stock in warehouse for {item.name} (available {warehouse_balance or 0.0})")
+        if warehouse_row is None:
+            warehouse_row = models.WarehouseStock(warehouse_id=warehouse_id, item_kind=kind, item_id=item.id, item_name=item.name, quantity=new_wh_balance, unit=item.unit)
+            db.add(warehouse_row)
+        else:
+            warehouse_row.quantity = new_wh_balance
     new_balance = round(item.stock + delta, 3)
     if new_balance < 0:
         raise HTTPException(
@@ -85,6 +103,7 @@ def apply_movement(
         reference=reference,
         reason=reason,
         user_id=user_id,
+        warehouse_id=warehouse_id,
     )
     db.add(movement)
     db.flush()

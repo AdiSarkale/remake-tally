@@ -36,6 +36,7 @@ def create_movement(payload: schemas.MovementIn, db: Session = Depends(get_db), 
         reason=payload.reason or "Manual stock movement",
         entry_date=payload.entry_date or date.today(),
         user_id=user.id,
+        warehouse_id=payload.warehouse_id,
     )
     log_audit(
         db,
@@ -47,6 +48,14 @@ def create_movement(payload: schemas.MovementIn, db: Session = Depends(get_db), 
     db.commit()
     db.refresh(movement)
     return movement
+
+
+@router.get("/warehouse-stock", response_model=list[schemas.WarehouseStockOut])
+def list_warehouse_stock(warehouse_id: str | None = None, db: Session = Depends(get_db), user: models.User = guard):
+    query = db.query(models.WarehouseStock)
+    if warehouse_id:
+        query = query.filter(models.WarehouseStock.warehouse_id == warehouse_id)
+    return query.order_by(models.WarehouseStock.warehouse_id, models.WarehouseStock.item_name).all()
 
 
 @router.get("/valuation")

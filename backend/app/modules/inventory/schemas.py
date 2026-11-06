@@ -15,6 +15,7 @@ class MovementIn(BaseModel):
     reference: str = ""
     reason: str = ""
     entry_date: date | None = None
+    warehouse_id: str | None = None
 
 class MovementOut(ORMModel):
     id: str
@@ -28,6 +29,17 @@ class MovementOut(ORMModel):
     balance: float
     reference: str
     reason: str
+    warehouse_id: str | None = None
+
+
+class WarehouseStockOut(ORMModel):
+    id: str
+    warehouse_id: str
+    item_kind: ItemKind
+    item_id: str
+    item_name: str
+    quantity: float
+    unit: str
 
 
 # ---------- Production ----------

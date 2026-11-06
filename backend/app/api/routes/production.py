@@ -302,6 +302,7 @@ def create_production(
             entry_date=payload.entry_date,
             user_id=user.id,
             reservation_order_id=payload.production_order_id,
+            warehouse_id=(db.get(models.ProductionOrder, payload.production_order_id).wip_warehouse_id if payload.production_order_id else None),
         )
         if payload.production_order_id:
             reservation = db.query(models.StockReservation).filter_by(
@@ -330,6 +331,7 @@ def create_production(
         reason="Production output",
         entry_date=payload.entry_date,
         user_id=user.id,
+        warehouse_id=(db.get(models.ProductionOrder, payload.production_order_id).target_warehouse_id if payload.production_order_id else None),
     )
 
 

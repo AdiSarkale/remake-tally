@@ -166,6 +166,9 @@ class ProductionOrder(Base):
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     routing_id: Mapped[str | None] = mapped_column(ForeignKey("routings.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="Planned")
+    source_warehouse_id: Mapped[str | None] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
+    wip_warehouse_id: Mapped[str | None] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
+    target_warehouse_id: Mapped[str | None] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
     remarks: Mapped[str] = mapped_column(Text, default="")
 
 class ProductionOrderOperation(Base):
@@ -230,3 +233,14 @@ class JobCardTimeLog(Base):
     duration_minutes: Mapped[float] = mapped_column(Float, default=0)
     completed_qty: Mapped[float] = mapped_column(Float, default=0)
     remarks: Mapped[str] = mapped_column(Text, default="")
+
+
+class ProductionMaterialTransfer(Base):
+    __tablename__ = "production_material_transfers"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    production_order_id: Mapped[str] = mapped_column(ForeignKey("production_orders.id", ondelete="CASCADE"), index=True)
+    material_id: Mapped[str] = mapped_column(ForeignKey("raw_materials.id"), index=True)
+    source_warehouse_id: Mapped[str] = mapped_column(ForeignKey("warehouses.id"))
+    target_warehouse_id: Mapped[str] = mapped_column(ForeignKey("warehouses.id"))
+    quantity: Mapped[float] = mapped_column(Float)
+    transferred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

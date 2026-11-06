@@ -26,3 +26,16 @@ class InventoryMovement(Base):
     reference: Mapped[str] = mapped_column(String(64), default="")
     reason: Mapped[str] = mapped_column(String(255), default="")
     user_id: Mapped[str] = mapped_column(String(36), default="")
+    warehouse_id: Mapped[str | None] = mapped_column(ForeignKey("warehouses.id"), nullable=True, index=True)
+
+
+class WarehouseStock(Base):
+    __tablename__ = "warehouse_stock"
+    __table_args__ = (UniqueConstraint("warehouse_id", "item_kind", "item_id", name="uq_warehouse_item_stock"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    warehouse_id: Mapped[str] = mapped_column(ForeignKey("warehouses.id", ondelete="CASCADE"), index=True)
+    item_kind: Mapped[ItemKind] = mapped_column(Enum(ItemKind), index=True)
+    item_id: Mapped[str] = mapped_column(String(36), index=True)
+    item_name: Mapped[str] = mapped_column(String(160))
+    quantity: Mapped[float] = mapped_column(Float, default=0)
+    unit: Mapped[str] = mapped_column(String(16))
