@@ -65,6 +65,10 @@ class ConsumptionOut(ORMModel):
     planned_quantity: float
     quantity: float
     variance: float
+    unit_cost: float = 0
+    planned_cost: float = 0
+    actual_cost: float = 0
+    variance_cost: float = 0
 
 class ProductionIn(BaseModel):
     entry_date: date
@@ -110,6 +114,12 @@ class ProductionOut(ORMModel):
     accepted_qty: float = 0
     rejected_qty: float = 0
     quality_remarks: str = ""
+    planned_material_cost: float = 0
+    actual_material_cost: float = 0
+    material_variance_cost: float = 0
+    scrap_recovery_value: float = 0
+    total_cost: float = 0
+    unit_cost: float = 0
     consumption: list[ConsumptionOut] = Field(default_factory=list)
 
 
@@ -149,6 +159,7 @@ class WorkcenterIn(BaseModel):
     name: str
     department: str = ""
     capacity_per_hour: float = Field(default=0, ge=0)
+    overhead_rate_per_hour: float = Field(default=0, ge=0)
     status: str = "Available"
     active: bool = True
     location: str = ""
@@ -160,6 +171,7 @@ class WorkcenterOut(ORMModel):
     name: str
     department: str
     capacity_per_hour: float
+    overhead_rate_per_hour: float = 0
     status: str
     active: bool
     location: str

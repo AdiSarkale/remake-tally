@@ -67,6 +67,12 @@ class ProductionEntry(Base):
     accepted_qty: Mapped[float] = mapped_column(Float, default=0)
     rejected_qty: Mapped[float] = mapped_column(Float, default=0)
     quality_remarks: Mapped[str] = mapped_column(Text, default="")
+    planned_material_cost: Mapped[float] = mapped_column(Float, default=0)
+    actual_material_cost: Mapped[float] = mapped_column(Float, default=0)
+    material_variance_cost: Mapped[float] = mapped_column(Float, default=0)
+    scrap_recovery_value: Mapped[float] = mapped_column(Float, default=0)
+    total_cost: Mapped[float] = mapped_column(Float, default=0)
+    unit_cost: Mapped[float] = mapped_column(Float, default=0)
 
     scrap_type_id: Mapped[str | None] = mapped_column(
         ForeignKey("scrap_types.id"),
@@ -85,6 +91,10 @@ class ProductionConsumption(Base):
     material_id: Mapped[str] = mapped_column(ForeignKey("raw_materials.id"))
     planned_quantity: Mapped[float] = mapped_column(Float, default=0)
     quantity: Mapped[float] = mapped_column(Float)
+    unit_cost: Mapped[float] = mapped_column(Float, default=0)
+    planned_cost: Mapped[float] = mapped_column(Float, default=0)
+    actual_cost: Mapped[float] = mapped_column(Float, default=0)
+    variance_cost: Mapped[float] = mapped_column(Float, default=0)
 
     entry: Mapped[ProductionEntry] = relationship(back_populates="consumption")
 
@@ -105,6 +115,9 @@ class ScrapEntry(Base):
     quantity: Mapped[float] = mapped_column(Float)
     reason: Mapped[str] = mapped_column(String(120), default="")
     remarks: Mapped[str] = mapped_column(Text, default="")
+    production_entry_id: Mapped[str | None] = mapped_column(ForeignKey("production_entries.id"), nullable=True, index=True)
+    unit_recovery_rate: Mapped[float] = mapped_column(Float, default=0)
+    recovery_value: Mapped[float] = mapped_column(Float, default=0)
 
 class Workcenter(Base):
     __tablename__ = "workcenters"
@@ -114,6 +127,7 @@ class Workcenter(Base):
     name: Mapped[str] = mapped_column(String(120))
     department: Mapped[str] = mapped_column(String(120), default="")
     capacity_per_hour: Mapped[float] = mapped_column(Float, default=0)
+    overhead_rate_per_hour: Mapped[float] = mapped_column(Float, default=0)
     status: Mapped[str] = mapped_column(String(32), default="Available")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     location: Mapped[str] = mapped_column(String(160), default="")

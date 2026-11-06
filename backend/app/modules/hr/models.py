@@ -19,6 +19,7 @@ class Employee(Base):
     name: Mapped[str] = mapped_column(String(120))
     department: Mapped[str] = mapped_column(String(120), default="")
     designation: Mapped[str] = mapped_column(String(120), default="")
+    hourly_rate: Mapped[float] = mapped_column(Float, default=0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 class EmployeeSkill(Base):

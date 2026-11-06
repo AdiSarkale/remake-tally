@@ -12,6 +12,7 @@ class EmployeeIn(BaseModel):
     name: str
     department: str = ""
     designation: str = ""
+    hourly_rate: float = Field(default=0, ge=0)
     active: bool = True
 
 class EmployeeSkillIn(BaseModel):
@@ -26,6 +27,7 @@ class EmployeeOut(ORMModel):
     name: str
     department: str
     designation: str
+    hourly_rate: float = 0
     active: bool
 
 class EmployeeSkillOut(ORMModel):
