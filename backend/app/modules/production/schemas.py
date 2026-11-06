@@ -442,3 +442,27 @@ class ProductionPlanningOut(BaseModel):
     subassemblies: list[ProductionPlanningSubassemblyOut] = Field(default_factory=list)
     missing_bom_products: list[str] = Field(default_factory=list)
     materials_available: bool
+
+
+class ProductionOperationCostOut(BaseModel):
+    job_card_id: str
+    operation_name: str
+    workcenter_name: str
+    duration_minutes: float
+    labor_cost: float
+    overhead_cost: float
+
+class ProductionOrderCostSummaryOut(BaseModel):
+    order_id: str
+    order_no: str
+    produced_quantity: float
+    planned_material_cost: float
+    actual_material_cost: float
+    material_variance_cost: float
+    labor_cost: float
+    overhead_cost: float
+    scrap_recovery_value: float
+    total_cost: float
+    unit_cost: float
+    scrap_quantity: float
+    by_operation: list[ProductionOperationCostOut] = Field(default_factory=list)

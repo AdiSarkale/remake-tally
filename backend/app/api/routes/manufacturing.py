@@ -33,7 +33,7 @@ def _auto_employee(db: Session, operation: models.RoutingOperation) -> models.Em
 def list_workcenters(db: Session = Depends(get_db), user: models.User = guard):
     rows = db.query(models.Workcenter).order_by(models.Workcenter.code).all()
     return [
-        {**{k: getattr(w, k) for k in ("id","code","name","department","capacity_per_hour","status","active","location")},
+        {**{k: getattr(w, k) for k in ("id","code","name","department","capacity_per_hour","overhead_rate_per_hour","status","active","location")},
          "materials": db.query(models.WorkcenterMaterial).filter_by(workcenter_id=w.id).all()}
         for w in rows
     ]
@@ -45,7 +45,7 @@ def create_workcenter(payload: schemas.WorkcenterIn, db: Session = Depends(get_d
         raise HTTPException(400, "Workcenter code already exists")
     w = models.Workcenter(
         code=payload.code, name=payload.name, department=payload.department,
-        capacity_per_hour=payload.capacity_per_hour, status=payload.status,
+        capacity_per_hour=payload.capacity_per_hour, overhead_rate_per_hour=payload.overhead_rate_per_hour, status=payload.status,
         active=payload.active, location=payload.location,
     )
     db.add(w)
@@ -64,7 +64,7 @@ def update_workcenter(workcenter_id: str, payload: schemas.WorkcenterIn, db: Ses
     w = db.get(models.Workcenter, workcenter_id)
     if not w:
         raise HTTPException(404, "Workcenter not found")
-    for k in ("code","name","department","capacity_per_hour","status","active","location"):
+    for k in ("code","name","department","capacity_per_hour","overhead_rate_per_hour","status","active","location"):
         setattr(w, k, getattr(payload, k))
     db.query(models.WorkcenterMaterial).filter_by(workcenter_id=w.id).delete()
     for item in payload.materials:
@@ -198,6 +198,40 @@ def preview_production_plan(payload: schemas.ProductionPlanningIn, db: Session =
     return {"items": planned_items, "raw_materials": raw_rows, "subassemblies": sub_rows,
             "missing_bom_products": sorted(missing_boms),
             "materials_available": not any(row["shortage_quantity"] > 0 for row in raw_rows) and not missing_boms}
+
+
+@router.get("/production-orders/{order_id}/cost-summary", response_model=schemas.ProductionOrderCostSummaryOut)
+def production_order_cost_summary(order_id: str, db: Session = Depends(get_db), user: models.User = guard):
+    order = db.get(models.ProductionOrder, order_id)
+    if order is None: raise HTTPException(404, "Production order not found")
+    entries = db.query(models.ProductionEntry).filter_by(production_order_id=order.id).all()
+    planned_material_cost = round(sum(x.planned_material_cost for x in entries), 2)
+    actual_material_cost = round(sum(x.actual_material_cost for x in entries), 2)
+    material_variance_cost = round(sum(x.material_variance_cost for x in entries), 2)
+    scrap_recovery_value = round(sum(x.scrap_recovery_value for x in entries), 2)
+    scrap_quantity = round(sum(x.actual_scrap or 0 for x in entries), 3)
+    produced_quantity = round(sum(x.quantity for x in entries), 3)
+    cards = db.query(models.JobCard).filter_by(production_order_id=order.id).all()
+    labor_cost = overhead_cost = 0.0
+    by_operation = []
+    for card in cards:
+        operation = db.get(models.RoutingOperation, card.operation_id)
+        workcenter = db.get(models.Workcenter, card.workcenter_id)
+        logs = db.query(models.JobCardTimeLog).filter_by(job_card_id=card.id).all()
+        duration = sum(float(log.duration_minutes or 0) for log in logs if log.end_time is not None)
+        labor = sum(float(log.duration_minutes or 0) * float((db.get(models.Employee, log.employee_id).hourly_rate if db.get(models.Employee, log.employee_id) else 0)) / 60 for log in logs if log.end_time is not None)
+        overhead = duration * float(workcenter.overhead_rate_per_hour if workcenter else 0) / 60
+        labor_cost += labor; overhead_cost += overhead
+        by_operation.append({"job_card_id":card.id,"operation_name":operation.name if operation else "Unknown",
+            "workcenter_name":workcenter.name if workcenter else "Unknown","duration_minutes":round(duration,2),
+            "labor_cost":round(labor,2),"overhead_cost":round(overhead,2)})
+    total_cost = round(actual_material_cost + labor_cost + overhead_cost - scrap_recovery_value, 2)
+    return {"order_id":order.id,"order_no":order.order_no,"produced_quantity":produced_quantity,
+        "planned_material_cost":planned_material_cost,"actual_material_cost":actual_material_cost,
+        "material_variance_cost":material_variance_cost,"labor_cost":round(labor_cost,2),
+        "overhead_cost":round(overhead_cost,2),"scrap_recovery_value":scrap_recovery_value,
+        "total_cost":total_cost,"unit_cost":round(total_cost/produced_quantity,2) if produced_quantity else 0,
+        "scrap_quantity":scrap_quantity,"by_operation":by_operation}
 
 
 @router.get("/production-orders", response_model=list[schemas.ProductionOrderOut])
