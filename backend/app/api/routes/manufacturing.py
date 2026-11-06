@@ -1,6 +1,7 @@
 """Manufacturing master data, routing, workcenter and production-order execution APIs."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -154,6 +155,79 @@ def list_production_orders(db: Session = Depends(get_db), user: models.User = gu
          "operations": db.query(models.ProductionOrderOperation).filter_by(production_order_id=o.id).order_by(models.ProductionOrderOperation.sequence).all()}
         for o in rows
     ]
+
+
+@router.get("/production-orders/{order_id}/material-plan", response_model=schemas.ProductionOrderMaterialPlanOut)
+def production_order_material_plan(
+    order_id: str,
+    db: Session = Depends(get_db),
+    user: models.User = guard,
+):
+    """Return a point-in-time BOM material requirement and shortage snapshot.
+
+    This endpoint does not reserve stock. Inventory can change after the response.
+    """
+    order = db.get(models.ProductionOrder, order_id)
+    if order is None:
+        raise HTTPException(404, "Production order not found")
+
+    bom = (
+        db.query(models.BillOfMaterials)
+        .filter(
+            models.BillOfMaterials.product_id == order.product_id,
+            models.BillOfMaterials.active.is_(True),
+        )
+        .order_by(models.BillOfMaterials.version.desc())
+        .first()
+    )
+    if bom is None or not bom.lines:
+        raise HTTPException(400, "No active BOM with material lines found for this production order")
+
+    materials = []
+    for line in bom.lines:
+        material = db.get(models.RawMaterial, line.material_id)
+        if material is None:
+            raise HTTPException(409, f"BOM material {line.material_id} no longer exists")
+
+        consumed_value = (
+            db.query(func.coalesce(func.sum(models.ProductionConsumption.quantity), 0.0))
+            .join(
+                models.ProductionEntry,
+                models.ProductionEntry.id == models.ProductionConsumption.production_id,
+            )
+            .filter(
+                models.ProductionEntry.production_order_id == order.id,
+                models.ProductionConsumption.material_id == material.id,
+            )
+            .scalar()
+        )
+        required_quantity = round(float(line.quantity) * float(order.quantity), 3)
+        consumed_quantity = round(float(consumed_value or 0), 3)
+        remaining_quantity = round(max(required_quantity - consumed_quantity, 0.0), 3)
+        available_quantity = round(float(material.stock or 0), 3)
+        shortage_quantity = round(max(remaining_quantity - available_quantity, 0.0), 3)
+
+        materials.append({
+            "material_id": material.id,
+            "material_code": material.code,
+            "material_name": material.name,
+            "unit": material.unit,
+            "required_quantity": required_quantity,
+            "consumed_quantity": consumed_quantity,
+            "remaining_quantity": remaining_quantity,
+            "available_quantity": available_quantity,
+            "shortage_quantity": shortage_quantity,
+            "status": "Available" if shortage_quantity == 0 else "Shortage",
+        })
+
+    return {
+        "order_id": order.id,
+        "order_no": order.order_no,
+        "product_id": order.product_id,
+        "order_quantity": order.quantity,
+        "materials_available": all(row["shortage_quantity"] == 0 for row in materials),
+        "materials": materials,
+    }
 
 
 @router.post("/production-orders", response_model=schemas.ProductionOrderOut, status_code=201)

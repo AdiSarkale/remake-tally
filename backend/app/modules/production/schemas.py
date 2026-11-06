@@ -220,6 +220,28 @@ class ProductionOrderOut(ORMModel):
     remarks: str
     operations: list[ProductionOrderOperationOut] = Field(default_factory=list)
 
+class ProductionOrderMaterialRequirementOut(BaseModel):
+    material_id: str
+    material_code: str
+    material_name: str
+    unit: str
+    required_quantity: float
+    consumed_quantity: float
+    remaining_quantity: float
+    available_quantity: float
+    shortage_quantity: float
+    status: str
+
+
+class ProductionOrderMaterialPlanOut(BaseModel):
+    order_id: str
+    order_no: str
+    product_id: str
+    order_quantity: float
+    materials_available: bool
+    materials: list[ProductionOrderMaterialRequirementOut] = Field(default_factory=list)
+
+
 class ManufacturingAssignmentOut(BaseModel):
     operation_id: str
     workcenter_id: str
