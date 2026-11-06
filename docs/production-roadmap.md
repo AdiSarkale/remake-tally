@@ -132,7 +132,7 @@ The multi-company guide describes a tenant backup utility using PostgreSQL custo
 | Bill of Materials | **PARTIAL** | Versioned BOMs, active version, component quantities and expected scrap | Multi-level explosion, sub-assemblies, alternates and operation costing |
 | Workcenters | **PARTIAL** | Master data, capacity-per-hour, status, location and supported materials | Shift calendars, downtime and finite-capacity scheduling |
 | Routing | **PARTIAL** | Versioned routing and ordered operations with workcenter, skill and setup/run time | Operation scheduling, actual time capture and revision controls |
-| Production orders | **PARTIAL** | Create/list, planned quantity/date/due date, routing and operation rows, employee assignment | Controlled draft/release/hold/resume/stop/cancel/close lifecycle and demand planning |
+| Production orders | **DONE — core lifecycle** | Planned, Released, In Progress, Completed and Cancelled states; validated transitions, reservation gate, operation assignment, completion checks, cancellation restrictions and audit events | Hold/resume/stop states and demand-driven creation remain outside this phase's accepted scope |
 | Material planning | **DONE** | Read-only endpoint calculates BOM requirements, recorded consumption, available stock and shortage | Reservation, warehouse allocation and concurrency protection |
 | Material reservation/release | **DONE — backend scope** | Atomic BOM-based reservation preflight, row locking, idempotent reserve, consumed-quantity tracking, release, warehouse association, WIP transfer and audit | PostgreSQL concurrency stress testing and multi-tenant authorization validation remain release gates |
 | Production execution | **PARTIAL** | Production entries, BOM consumption, finished-goods receipt and scrap at batch level | Dedicated operation execution, WIP transfer, controlled issue/return and traceability |
@@ -148,7 +148,8 @@ The multi-company guide describes a tenant backup utility using PostgreSQL custo
 - **DONE:** `GET /api/v1/manufacturing/production-orders/{order_id}/material-plan` returns a point-in-time material availability snapshot.
 - **DONE:** focused tests cover router registration, shortages, prior consumption and missing active BOM.
 - **DONE:** production-execution regression tests cover default BOM consumption, insufficient-stock rejection without posting inventory movements, and successful raw-material/finished-goods ledger updates.
-- **DONE — phase 1 backend scope:** production reservation regression coverage verifies shortage atomicity, idempotency, release, protection of reserved stock and company-wide reservations during warehouse issues. Commit `21955f8` passed both GitHub Actions workflows (`Backend Tests` and `MiniTally Production CI`) on 2026-11-06; 36 tests passed in the backend test job. The branch remains backend-only and CI is not a production deployment sign-off.
+- **DONE — phase 1 backend scope:** production reservation regression coverage verifies shortage atomicity, idempotency, release, protection of reserved stock and company-wide reservations during warehouse issues.
+- **DONE — phase 2 core lifecycle:** explicit transition regression coverage verifies invalid transition rejection, release/start ordering, reservation prerequisite, premature completion rejection, cancellation restrictions, reservation release and successful completion. Commit `5f01ae3` passed both GitHub Actions workflows (`Backend Tests` and `MiniTally Production CI`) on 2026-11-06; 37 tests passed, 2 warnings. The branch remains backend-only and CI is not a production deployment sign-off.
 
 The material-plan endpoint does **not** reserve stock, lock inventory, allocate a warehouse or guarantee availability at a later time. A positive result must not be treated as authorization to start production.
 
@@ -156,7 +157,7 @@ The material-plan endpoint does **not** reserve stock, lock inventory, allocate 
 
 **P1 — controlled execution**
 - [x] Transactional material reservation and release (backend scope; see CI evidence above).
-- [ ] Explicit production-order lifecycle and transition validation.
+- [x] Explicit production-order lifecycle and transition validation (core lifecycle; see phase 2 CI evidence above).
 - [ ] Dedicated job cards and employee time logs.
 - [ ] Warehouse-aware material issue, return, WIP transfer and finished-goods receipt.
 - [ ] Quality inspection templates and accepted/rejected release gate.
