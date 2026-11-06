@@ -63,3 +63,18 @@ def test_time_logs_reject_overlapping_employee_assignments(job_card_context):
     second=http.post(f"/api/v1/manufacturing/job-cards/{card_id}/time-logs",json={"start_time":(start+timedelta(minutes=30)).isoformat(),"end_time":(start+timedelta(hours=2)).isoformat()})
     assert second.status_code==409
 
+
+
+
+def test_job_card_cannot_be_completed_before_planned_output(job_card_context):
+    http, db, order, _ = job_card_context
+    generated = http.post(f"/api/v1/manufacturing/production-orders/{order.id}/job-cards")
+    assert generated.status_code == 201, generated.text
+    card_id = generated.json()[0]["id"]
+
+    response = http.post(f"/api/v1/manufacturing/job-cards/{card_id}/complete")
+
+    assert response.status_code == 409
+    card = db.get(models.JobCard, card_id)
+    assert card.status == "Pending"
+    assert card.completed_qty == 0
