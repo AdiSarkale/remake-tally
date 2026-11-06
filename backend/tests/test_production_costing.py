@@ -19,3 +19,15 @@ def test_production_order_cost_summary_includes_material_labour_overhead_and_scr
  try:
   response=TestClient(app).get(f"/api/v1/manufacturing/production-orders/{order.id}/cost-summary");assert response.status_code==200,response.text;body=response.json();assert body["planned_material_cost"]==80;assert body["actual_material_cost"]==100;assert body["material_variance_cost"]==20;assert body["labor_cost"]==18;assert body["overhead_cost"]==12;assert body["scrap_recovery_value"]==6;assert body["total_cost"]==124;assert body["unit_cost"]==12.4
  finally:app.dependency_overrides.clear();d.close();Base.metadata.drop_all(bind=e);e.dispose()
+
+
+def test_production_entry_snapshots_material_and_scrap_costs():
+ e=create_engine("sqlite://",connect_args={"check_same_thread":False},poolclass=StaticPool);S=sessionmaker(bind=e,autoflush=False,autocommit=False);Base.metadata.create_all(bind=e);d=S()
+ u=models.User(username="cost-post-test",full_name="Cost Post",password_hash="x",role=models.Role.admin,active=True);p=models.Product(code="FG-CPOST",name="Costed FG",unit="PCS",stock=0);m=models.RawMaterial(code="RM-CPOST",name="Costed RM",unit="KG",stock=100,cost=4);scrap=models.ScrapType(code="SCR-CPOST",name="Metal Scrap",selling_rate=3,active=True);d.add_all([u,p,m,scrap]);d.flush()
+ bom=models.BillOfMaterials(product_id=p.id,version=1,active=True,expected_scrap_percent=10,scrap_type_id=scrap.id);d.add(bom);d.flush();d.add(models.BomLine(bom_id=bom.id,material_id=m.id,line_type="RM",quantity=2));d.commit();app.dependency_overrides[get_db]=lambda:d;app.dependency_overrides[current_user]=lambda:u
+ try:
+  response=TestClient(app).post("/api/v1/production",json={"entry_date":date.today().isoformat(),"product_id":p.id,"quantity":10})
+  assert response.status_code==201,response.text;body=response.json();assert body["planned_material_cost"]==80;assert body["actual_material_cost"]==80;assert body["scrap_recovery_value"]==3;assert body["total_cost"]==77;assert body["unit_cost"]==7.7
+  entry=d.get(models.ProductionEntry,body["id"]);consumption=d.query(models.ProductionConsumption).filter_by(production_id=entry.id).one();assert consumption.unit_cost==4;assert consumption.planned_cost==80;assert consumption.actual_cost==80
+  scrap_row=d.query(models.ScrapEntry).filter_by(production_entry_id=entry.id).one();assert scrap_row.quantity==1;assert scrap_row.recovery_value==3
+ finally:app.dependency_overrides.clear();d.close();Base.metadata.drop_all(bind=e);e.dispose()
