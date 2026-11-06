@@ -389,3 +389,44 @@ class BomExplosionOut(BaseModel):
     quantity: float
     lines: list[BomExplosionLineOut] = Field(default_factory=list)
     raw_materials_available: bool
+
+
+class ProductionPlanningItemIn(BaseModel):
+    product_id: str
+    quantity: float = Field(gt=0)
+
+class ProductionPlanningIn(BaseModel):
+    items: list[ProductionPlanningItemIn] = Field(min_length=1)
+    source_warehouse_id: str | None = None
+
+class ProductionPlanningItemOut(BaseModel):
+    product_id: str
+    product_code: str
+    product_name: str
+    quantity: float
+
+class ProductionPlanningMaterialOut(BaseModel):
+    material_id: str
+    material_code: str
+    material_name: str
+    unit: str
+    required_quantity: float
+    available_quantity: float
+    shortage_quantity: float
+
+class ProductionPlanningSubassemblyOut(BaseModel):
+    product_id: str
+    product_code: str
+    product_name: str
+    unit: str
+    required_quantity: float
+    available_quantity: float
+    make_quantity: float
+    has_active_bom: bool
+
+class ProductionPlanningOut(BaseModel):
+    items: list[ProductionPlanningItemOut] = Field(default_factory=list)
+    raw_materials: list[ProductionPlanningMaterialOut] = Field(default_factory=list)
+    subassemblies: list[ProductionPlanningSubassemblyOut] = Field(default_factory=list)
+    missing_bom_products: list[str] = Field(default_factory=list)
+    materials_available: bool

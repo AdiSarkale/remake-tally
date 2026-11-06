@@ -150,6 +150,56 @@ def add_employee_skill(employee_id: str, payload: schemas.EmployeeSkillIn, db: S
     return row
 
 
+@router.post("/production-planning", response_model=schemas.ProductionPlanningOut)
+def preview_production_plan(payload: schemas.ProductionPlanningIn, db: Session = Depends(get_db), user: models.User = guard):
+    """Aggregate multi-level BOM requirements for a set of planned finished goods."""
+    if payload.source_warehouse_id:
+        warehouse = db.get(models.Warehouse, payload.source_warehouse_id)
+        if warehouse is None or not warehouse.active:
+            raise HTTPException(400, "Source warehouse not found or inactive")
+    raw_totals = {}
+    sub_totals = {}
+    missing_boms = set()
+    planned_items = []
+    for item in payload.items:
+        product = db.get(models.Product, item.product_id)
+        if product is None:
+            raise HTTPException(404, f"Production planning product {item.product_id} not found")
+        planned_items.append({"product_id": product.id, "product_code": product.code, "product_name": product.name, "quantity": item.quantity})
+        rows = explode_bom_tree(db, product.id, item.quantity)
+        if not rows:
+            raise HTTPException(409, f"No active BOM found for {product.code}")
+        for row in rows:
+            if row["line_type"] == "RM":
+                raw_totals[row["item_id"]] = round(raw_totals.get(row["item_id"], 0.0) + row["required_quantity"], 3)
+            elif row["line_type"] == "SF":
+                sub_totals[row["item_id"]] = round(sub_totals.get(row["item_id"], 0.0) + row["required_quantity"], 3)
+                if row["status"] == "Missing BOM":
+                    missing_boms.add(row["item_code"])
+    raw_rows = []
+    for material_id, required in raw_totals.items():
+        material = db.get(models.RawMaterial, material_id)
+        if payload.source_warehouse_id:
+            stock = db.query(models.WarehouseStock).filter_by(warehouse_id=payload.source_warehouse_id, item_kind=models.ItemKind.material, item_id=material_id).first()
+            available = float(stock.quantity) if stock else 0.0
+        else:
+            available = float(material.stock)
+        shortage = max(round(required - available, 3), 0.0)
+        raw_rows.append({"material_id": material.id, "material_code": material.code, "material_name": material.name, "unit": material.unit, "required_quantity": required, "available_quantity": round(available, 3), "shortage_quantity": shortage})
+    sub_rows = []
+    for product_id, required in sub_totals.items():
+        sub = db.get(models.Product, product_id)
+        if payload.source_warehouse_id:
+            stock = db.query(models.WarehouseStock).filter_by(warehouse_id=payload.source_warehouse_id, item_kind=models.ItemKind.product, item_id=product_id).first()
+            available = float(stock.quantity) if stock else 0.0
+        else:
+            available = float(sub.stock)
+        sub_rows.append({"product_id": sub.id, "product_code": sub.code, "product_name": sub.name, "unit": sub.unit, "required_quantity": required, "available_quantity": round(available, 3), "make_quantity": max(round(required - available, 3), 0.0), "has_active_bom": db.query(models.BillOfMaterials).filter_by(product_id=sub.id, active=True).first() is not None})
+    return {"items": planned_items, "raw_materials": raw_rows, "subassemblies": sub_rows,
+            "missing_bom_products": sorted(missing_boms),
+            "materials_available": not any(row["shortage_quantity"] > 0 for row in raw_rows) and not missing_boms}
+
+
 @router.get("/production-orders", response_model=list[schemas.ProductionOrderOut])
 def list_production_orders(db: Session = Depends(get_db), user: models.User = guard):
     rows = db.query(models.ProductionOrder).order_by(models.ProductionOrder.order_date.desc()).all()
