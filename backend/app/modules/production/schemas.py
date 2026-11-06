@@ -277,3 +277,7 @@ class ProductionOrderReservationOut(BaseModel):
     order_id: str
     order_no: str
     reservations: list[StockReservationOut] = Field(default_factory=list)
+
+
+class ProductionOrderTransitionIn(BaseModel):
+    action: str = Field(pattern="^(release|start|complete|cancel)$")

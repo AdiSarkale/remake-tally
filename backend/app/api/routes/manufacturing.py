@@ -1,5 +1,7 @@
 """Manufacturing master data, routing, workcenter and production-order execution APIs."""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -332,6 +334,83 @@ def create_production_order(payload: schemas.ProductionOrderIn, db: Session = De
             planned_qty=payload.quantity, status="Assigned" if employee else "Pending",
         ))
     log_audit(db, user.username, "CREATE", "production_order", order.order_no)
+    db.commit()
+    db.refresh(order)
+    return {**{k:getattr(order,k) for k in ("id","order_no","order_date","product_id","quantity","due_date","routing_id","status","remarks")},
+            "operations": db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).order_by(models.ProductionOrderOperation.sequence).all()}
+
+
+@router.post("/production-orders/{order_id}/transition", response_model=schemas.ProductionOrderOut)
+def transition_production_order(order_id: str, payload: schemas.ProductionOrderTransitionIn, db: Session = Depends(get_db), user: models.User = guard):
+    """Apply an explicit, validated production-order lifecycle transition."""
+    order = db.query(models.ProductionOrder).filter_by(id=order_id).with_for_update().first()
+    if order is None:
+        raise HTTPException(404, "Production order not found")
+
+    action = payload.action
+    allowed = {
+        "Planned": {"release", "cancel"},
+        "Released": {"start", "cancel"},
+        "In Progress": {"complete", "cancel"},
+        "Completed": set(),
+        "Cancelled": set(),
+    }
+    if action not in allowed.get(order.status, set()):
+        raise HTTPException(409, f"Cannot {action} a production order in {order.status} status")
+
+    if action in ("release", "start"):
+        bom = db.query(models.BillOfMaterials).filter(
+            models.BillOfMaterials.product_id == order.product_id,
+            models.BillOfMaterials.active.is_(True),
+        ).order_by(models.BillOfMaterials.version.desc()).first()
+        if bom is None or not bom.lines:
+            raise HTTPException(409, "An active BOM with material lines is required")
+        for line in bom.lines:
+            reservation = db.query(models.StockReservation).filter_by(
+                production_order_id=order.id, material_id=line.material_id, status="Reserved"
+            ).with_for_update().first()
+            required = round(float(line.quantity) * float(order.quantity), 3)
+            if reservation is None or reservation.remaining_quantity + 0.0001 < required:
+                raise HTTPException(409, f"Material {line.material_id} is not fully reserved for this order")
+
+    if action == "release":
+        operations = db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).all()
+        if not operations:
+            raise HTTPException(409, "At least one production operation is required")
+        order.status = "Released"
+    elif action == "start":
+        operations = db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).all()
+        if not operations:
+            raise HTTPException(409, "At least one production operation is required")
+        unassigned = [row for row in operations if row.assigned_employee_id is None]
+        if unassigned:
+            raise HTTPException(409, "Assign an employee to every operation before starting production")
+        order.status = "In Progress"
+    elif action == "complete":
+        produced = float(db.query(func.coalesce(func.sum(models.ProductionEntry.quantity), 0.0)).filter(
+            models.ProductionEntry.production_order_id == order.id
+        ).scalar() or 0.0)
+        operations = db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).all()
+        if round(produced, 3) < round(order.quantity, 3):
+            raise HTTPException(409, f"Cannot complete order: produced {round(produced, 3)} of {order.quantity}")
+        if not operations or any(row.completed_qty + 0.0001 < row.planned_qty for row in operations):
+            raise HTTPException(409, "All production operations must be completed before closing the order")
+        order.status = "Completed"
+        for reservation in db.query(models.StockReservation).filter_by(production_order_id=order.id, status="Reserved").with_for_update().all():
+            reservation.status = "Released"
+            reservation.released_at = datetime.now(timezone.utc)
+    else:  # cancel
+        produced = float(db.query(func.coalesce(func.sum(models.ProductionEntry.quantity), 0.0)).filter(
+            models.ProductionEntry.production_order_id == order.id
+        ).scalar() or 0.0)
+        if produced > 0:
+            raise HTTPException(409, "An order with posted production cannot be cancelled; complete or use a controlled reversal")
+        order.status = "Cancelled"
+        for reservation in db.query(models.StockReservation).filter_by(production_order_id=order.id, status="Reserved").with_for_update().all():
+            reservation.status = "Released"
+            reservation.released_at = datetime.now(timezone.utc)
+
+    log_audit(db, user.username, "TRANSITION", "production_order", f"{order.order_no}: {action}")
     db.commit()
     db.refresh(order)
     return {**{k:getattr(order,k) for k in ("id","order_no","order_date","product_id","quantity","due_date","routing_id","status","remarks")},

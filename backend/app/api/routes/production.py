@@ -81,6 +81,8 @@ def create_production(
         order = db.get(models.ProductionOrder, payload.production_order_id)
         if not order:
             raise HTTPException(400, "Production order not found")
+        if order.status != "In Progress":
+            raise HTTPException(409, f"Production order must be In Progress before posting output (current: {order.status})")
         if order.product_id != payload.product_id:
             raise HTTPException(400, "Production order does not belong to product")
         if payload.operation_id:
@@ -88,8 +90,9 @@ def create_production(
             if not order_op or order_op.production_order_id != order.id:
                 raise HTTPException(400, "Production order operation not found")
         else:
-            order_op = db.query(models.ProductionOrderOperation).filter_by(
-                production_order_id=order.id, status="Assigned"
+            order_op = db.query(models.ProductionOrderOperation).filter(
+                models.ProductionOrderOperation.production_order_id == order.id,
+                models.ProductionOrderOperation.status.in_(("Assigned", "In Progress")),
             ).order_by(models.ProductionOrderOperation.sequence).first()
         if not order_op:
             raise HTTPException(400, "No assigned production operation available")
@@ -346,7 +349,10 @@ def create_production(
         order = db.get(models.ProductionOrder, payload.production_order_id)
         if order:
             ops = db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).all()
-            if ops and all(x.completed_qty >= x.planned_qty for x in ops):
+            produced_total = float(db.query(func.coalesce(func.sum(models.ProductionEntry.quantity), 0.0)).filter(
+                models.ProductionEntry.production_order_id == order.id
+            ).scalar() or 0.0) + payload.quantity
+            if ops and all(x.completed_qty >= x.planned_qty for x in ops) and produced_total >= order.quantity:
                 order.status = "Completed"
             elif any(x.completed_qty > 0 for x in ops):
                 order.status = "In Progress"
