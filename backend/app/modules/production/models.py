@@ -85,6 +85,12 @@ class ProductionConsumption(Base):
 
     entry: Mapped[ProductionEntry] = relationship(back_populates="consumption")
 
+    @property
+    def variance(self) -> float:
+        """Actual material usage minus the BOM-planned quantity."""
+        return round(float(self.quantity) - float(self.planned_quantity), 3)
+
+
 class ScrapEntry(Base):
     __tablename__ = "scrap_entries"
 
