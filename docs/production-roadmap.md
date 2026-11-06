@@ -215,6 +215,5 @@ A capability is **DONE** only when implementation, migrations, backend authoriza
 
 - [Manufacturing parity and detailed capability comparison](erpnext-production-parity.md)
 - [Multi-company production deployment design on `main`](https://github.com/AdiSarkale/remake-tally/blob/main/docs/multi-company-production.md) — source reference only; not evidence of implementation on this branch.
-- [Railway/Vercel demo guide on `main`](https://github.com/AdiSarkale/remake-tally/blob/main/docs/railway-demo.md) — demo-only instructions.
 
 This roadmap is the consolidated release tracker. Update statuses only after verifying code and relevant test/deployment evidence on the release branch. Keep detailed implementation notes in the linked documents, and do not mark a capability complete based solely on a plan or a document existing on another branch.
