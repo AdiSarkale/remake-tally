@@ -59,7 +59,7 @@ The document `docs/multi-company-production.md` on `main` describes a database-p
 - Tenant DB credentials are stored as secret references and resolved through a SecretProvider.
 - Provisioning, migration and retry operations record migration audit events.
 
-**Production-branch status: NOT VERIFIED.** The multi-company architecture and operational requirements are now included in `docs/multi-company-production.md` on this branch. This is a documentation alignment only: the presence of the guide does not prove that the referenced code, deployment configuration, or live operational controls are implemented and tested on `production`. Treat those capabilities as NOT VERIFIED until the implementation and evidence are audited.
+**Production-branch status: BLOCKED — implementation absent.** The branch still uses one process-wide `DATABASE_URL` engine and its JWTs do not carry a company context. The production tree does not contain the control-plane models/database, tenant engine/session resolver, tenant credential provider, company-token resolver, or tenant-isolation tests. The implementation exists on `main`, but `production` and `main` have diverged substantially; selectively copying a few files would leave incompatible auth, settings, user-schema and migration assumptions. Port the complete tenant boundary through a reviewed integration branch before promoting it.
 
 ### 3.2 Required tenant controls
 
@@ -88,7 +88,7 @@ The multi-company guide describes AWS Secrets Manager for production and environ
 
 The multi-company guide describes a tenant backup utility using PostgreSQL custom-format dumps, JSON manifests and SHA-256 checksums; a restore utility; per-tenant migration revision audits; and a decommission workflow that disables the tenant and requires a final backup before marking it decommissioned.
 
-**Production-branch status: NOT VERIFIED.** The guide is now present on this branch, but the scripts, CI evidence and live restore evidence have not been verified here. Do not treat copying the guide as implementation. Audit the referenced scripts and tests before changing the status.
+**Production-branch status: BLOCKED — implementation absent.** The production tree has no control-plane migration environment, tenant backup/restore utility, tenant lifecycle scripts, secret-reference resolver, or PostgreSQL backup/restore integration tests. The guide describes the intended controls but is not executable evidence. These capabilities depend on phase 7's tenant architecture and must be ported and tested together.
 
 ### Required controls
 
@@ -203,6 +203,10 @@ A full ERP MVP is not complete just because manufacturing endpoints pass. For ev
 12. Error logging and health/readiness checks.
 
 ## 8. Delivery gates and definition of done
+
+### Phase 7–8 integration blocker (verified 2026-11-06)
+
+The `production` branch currently has no DB-per-company runtime boundary or tenant backup/restore implementation. `main` contains these capabilities, but its tenant runtime replaces the single-database session/authentication path and expects additional settings, JWT claims, user fields, control-plane migrations and deployment configuration. A blind merge or partial file copy is unsafe. Phases 7 and 8 remain BLOCKED until the branch histories and migration lineage are reconciled on a dedicated integration branch, then the complete tenant implementation is ported with PostgreSQL isolation and backup/restore CI.
 
 | Gate | Required evidence | Promotion decision |
 |---|---|---|
