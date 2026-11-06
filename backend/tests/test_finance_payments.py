@@ -67,6 +67,7 @@ def client(db_session):
         supplier_id=supplier.id,
         supplier_name=supplier.name,
         warehouse_id="WH-TEST",
+        notes="",
         sub_total=2000,
         gst_total=360,
         grand_total=2360,
