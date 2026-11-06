@@ -197,9 +197,20 @@ def create_production(
         for consumption_line in consumption:
             if consumption_line.quantity < 0:
                 raise HTTPException(400, "Actual consumption cannot be negative")
-            material = db.get(models.RawMaterial, consumption_line.material_id)
-            if material and material.stock < consumption_line.quantity:
-                raise HTTPException(400, f"Insufficient stock for {material.name} (required {consumption_line.quantity}, available {material.stock})")
+
+    # Preflight every material before writing any inventory movement. This
+    # applies to both BOM-default and manually supplied actual consumption.
+    # It prevents a partially applied batch when a later BOM line is short.
+    for consumption_line in consumption:
+        material = db.get(models.RawMaterial, consumption_line.material_id)
+        if material is None:
+            raise HTTPException(400, f"Material {consumption_line.material_id} not found")
+        if material.stock < consumption_line.quantity:
+            raise HTTPException(
+                400,
+                f"Insufficient stock for {material.name} "
+                f"(required {consumption_line.quantity}, available {material.stock})",
+            )
 
     # -------------------------------------------------
     # Calculate scrap
