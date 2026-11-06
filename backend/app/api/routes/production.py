@@ -285,6 +285,8 @@ def create_production(
     )
 
     db.add(entry)
+    db.flush()
+    db.add(models.QualityInspection(production_entry_id=entry.id, status="Pending", inspected_quantity=payload.quantity, accepted_quantity=0, rejected_quantity=0, remarks="Awaiting quality inspection"))
 
     # -------------------------------------------------
     # Raw materials OUT
@@ -333,6 +335,14 @@ def create_production(
         user_id=user.id,
         warehouse_id=(db.get(models.ProductionOrder, payload.production_order_id).target_warehouse_id if payload.production_order_id else None),
     )
+    if payload.production_order_id and db.get(models.ProductionOrder, payload.production_order_id).target_warehouse_id:
+        target_id = db.get(models.ProductionOrder, payload.production_order_id).target_warehouse_id
+        finished_stock = db.query(models.WarehouseStock).filter_by(warehouse_id=target_id, item_kind=ItemKind.product, item_id=product.id).with_for_update().first()
+        if finished_stock is None:
+            raise HTTPException(409, "Finished-goods warehouse balance was not created")
+        finished_stock.quality_hold_quantity = round(finished_stock.quality_hold_quantity + payload.quantity, 3)
+    else:
+        product.quality_hold_stock = round(product.quality_hold_stock + payload.quantity, 3)
 
 
     # -------------------------------------------------

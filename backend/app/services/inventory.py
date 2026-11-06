@@ -55,6 +55,12 @@ def apply_movement(
         warehouse_row = db.query(models.WarehouseStock).filter_by(warehouse_id=warehouse_id, item_kind=kind, item_id=item.id).with_for_update().first()
         warehouse_balance = float(warehouse_row.quantity) if warehouse_row else 0.0
 
+    if movement_type is MovementType.OUT and kind is ItemKind.product:
+        held = float(warehouse_row.quality_hold_quantity if warehouse_row else 0.0) if warehouse_id else float(item.quality_hold_stock or 0.0)
+        stock_at_location = float(warehouse_balance if warehouse_id else item.stock)
+        if quantity > max(round(stock_at_location - held, 3), 0.0):
+            raise HTTPException(status_code=409, detail=f"Insufficient released finished-goods stock for {item.name}; {held} is on quality hold")
+
     if movement_type is MovementType.IN:
         delta = quantity
     elif movement_type is MovementType.OUT:

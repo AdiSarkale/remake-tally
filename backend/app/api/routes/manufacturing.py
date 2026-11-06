@@ -635,21 +635,43 @@ def complete_job_card(job_card_id: str, db: Session = Depends(get_db), user: mod
     return _job_card_payload(db, card)
 
 
+@router.get("/production/{production_id}/quality-inspection", response_model=schemas.QualityInspectionOut)
+def get_quality_inspection(production_id: str, db: Session = Depends(get_db), user: models.User = guard):
+    production = db.get(models.ProductionEntry, production_id)
+    if production is None: raise HTTPException(404, "Production entry not found")
+    inspection = db.query(models.QualityInspection).filter_by(production_entry_id=production.id).first()
+    if inspection is None: raise HTTPException(404, "Quality inspection not found")
+    return {**{k:getattr(inspection,k) for k in ("id","production_entry_id","status","inspected_quantity","accepted_quantity","rejected_quantity","inspector_user_id","inspected_at","remarks")}, "lines": db.query(models.QualityInspectionLine).filter_by(inspection_id=inspection.id).order_by(models.QualityInspectionLine.id).all()}
+
+
 @router.patch("/production/{production_id}/quality", response_model=schemas.ProductionOut)
 def update_production_quality(production_id: str, payload: schemas.ProductionQualityIn, db: Session = Depends(get_db), user: models.User = guard):
-    production = db.get(models.ProductionEntry, production_id)
-    if not production:
-        raise HTTPException(404, "Production entry not found")
-    if round(payload.accepted_qty + payload.rejected_qty, 3) > round(production.quantity, 3):
-        raise HTTPException(400, "Accepted plus rejected quantity cannot exceed produced quantity")
-    production.quality_status = payload.status
-    production.accepted_qty = payload.accepted_qty
-    production.rejected_qty = payload.rejected_qty
-    production.quality_remarks = payload.remarks
-    log_audit(db, user.username, "QUALITY", "production", production.batch_no + ": " + payload.status)
-    db.commit()
-    db.refresh(production)
-    return production
+    production = db.query(models.ProductionEntry).filter_by(id=production_id).with_for_update().first()
+    if production is None: raise HTTPException(404, "Production entry not found")
+    inspection = db.query(models.QualityInspection).filter_by(production_entry_id=production.id).with_for_update().first()
+    if inspection is None: raise HTTPException(409, "Quality inspection record is missing")
+    if inspection.status != "Pending": raise HTTPException(409, "Quality inspection has already been finalized")
+    if round(payload.accepted_qty + payload.rejected_qty, 3) != round(production.quantity, 3):
+        raise HTTPException(400, "Accepted plus rejected quantity must equal the produced quantity")
+    if payload.status == "Accepted" and payload.rejected_qty > 0: raise HTTPException(400, "Accepted status cannot contain rejected quantity")
+    if payload.status == "Rejected" and payload.accepted_qty > 0: raise HTTPException(400, "Rejected status cannot contain accepted quantity")
+    if payload.status == "Accepted with Deviation" and (payload.accepted_qty <= 0 or payload.rejected_qty <= 0):
+        raise HTTPException(400, "Accepted with Deviation requires both accepted and rejected quantities")
+    inspection.status=payload.status; inspection.accepted_quantity=payload.accepted_qty; inspection.rejected_quantity=payload.rejected_qty
+    inspection.inspector_user_id=user.id; inspection.inspected_at=datetime.now(timezone.utc); inspection.remarks=payload.remarks
+    for check in payload.checks: db.add(models.QualityInspectionLine(inspection_id=inspection.id, **check.model_dump()))
+    order=db.get(models.ProductionOrder,production.production_order_id) if production.production_order_id else None
+    if order and order.target_warehouse_id:
+        stock=db.query(models.WarehouseStock).filter_by(warehouse_id=order.target_warehouse_id,item_kind=models.ItemKind.product,item_id=production.product_id).with_for_update().first()
+        if stock is None or stock.quality_hold_quantity + 0.0001 < payload.accepted_qty: raise HTTPException(409,"Finished-goods quality hold balance is inconsistent")
+        stock.quality_hold_quantity=round(stock.quality_hold_quantity-payload.accepted_qty,3)
+    else:
+        product=db.get(models.Product,production.product_id)
+        if product is None or product.quality_hold_stock + 0.0001 < payload.accepted_qty: raise HTTPException(409,"Finished-goods quality hold balance is inconsistent")
+        product.quality_hold_stock=round(product.quality_hold_stock-payload.accepted_qty,3)
+    production.quality_status=payload.status; production.accepted_qty=payload.accepted_qty; production.rejected_qty=payload.rejected_qty; production.quality_remarks=payload.remarks
+    log_audit(db,user.username,"QUALITY","production",production.batch_no+": "+payload.status)
+    db.commit(); db.refresh(production); return production
 
 
 @router.get("/reports/production", response_model=schemas.ManufacturingReportOut)
