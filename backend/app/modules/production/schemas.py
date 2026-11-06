@@ -2,18 +2,27 @@
 
 from __future__ import annotations
 from datetime import date, datetime
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.modules._base import Role, ItemKind, MovementType, InvoiceStatus, QuotationStatus, SalesOrderStatus, DispatchStatus, PurchaseOrderStatus
 from app.modules.core.schemas import ORMModel
 
 
 class BomLineIn(BaseModel):
-    material_id: str
+    material_id: str | None = None
+    subassembly_product_id: str | None = None
     quantity: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def validate_item_reference(self):
+        if bool(self.material_id) == bool(self.subassembly_product_id):
+            raise ValueError("Specify exactly one of material_id or subassembly_product_id")
+        return self
 
 class BomLineOut(BaseModel):
     id: int
-    material_id: str
+    material_id: str | None = None
+    subassembly_product_id: str | None = None
+    line_type: str = "RM"
     quantity: float
 
 class BomIn(BaseModel):
@@ -361,3 +370,22 @@ class ProductionMaterialTransferOut(ORMModel):
     target_warehouse_id: str
     quantity: float
     transferred_at: datetime
+
+
+class BomExplosionLineOut(BaseModel):
+    line_type: str
+    item_id: str
+    item_code: str
+    item_name: str
+    unit: str
+    required_quantity: float
+    level: int
+    parent_product_id: str
+    status: str
+
+class BomExplosionOut(BaseModel):
+    bom_id: str
+    product_id: str
+    quantity: float
+    lines: list[BomExplosionLineOut] = Field(default_factory=list)
+    raw_materials_available: bool

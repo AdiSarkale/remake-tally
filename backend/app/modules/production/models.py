@@ -37,7 +37,9 @@ class BomLine(Base):
 
     bom_id : Mapped[str] = mapped_column(ForeignKey('bill_of_materials.id', ondelete='CASCADE'),index=True)
 
-    material_id: Mapped[str] = mapped_column(ForeignKey('raw_materials.id'), index=True)
+    material_id: Mapped[str | None] = mapped_column(ForeignKey('raw_materials.id'), nullable=True, index=True)
+    subassembly_product_id: Mapped[str | None] = mapped_column(ForeignKey('products.id'), nullable=True, index=True)
+    line_type: Mapped[str] = mapped_column(String(8), default="RM")
     quantity: Mapped[float] = mapped_column(Float)
 
     bom: Mapped[BillOfMaterials] = relationship(back_populates='lines')
