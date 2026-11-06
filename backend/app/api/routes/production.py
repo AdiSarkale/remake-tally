@@ -380,9 +380,6 @@ def create_production(
         db.add(models.ScrapEntry(entry_date=payload.entry_date, product_id=payload.product_id, batch_no=batch_no,
             scrap_type_id=scrap_type_id, quantity=actual_scrap, reason="Production scrap", remarks=payload.remarks,
             production_entry_id=entry.id, unit_recovery_rate=float(scrap_type.selling_rate or 0), recovery_value=scrap_recovery_value))
-        db.add(models.ScrapEntry(entry_date=payload.entry_date, product_id=payload.product_id, batch_no=batch_no,
-            scrap_type_id=scrap_type_id, quantity=actual_scrap, reason="Production scrap", remarks=payload.remarks,
-            production_entry_id=entry.id, unit_recovery_rate=float(scrap_type.selling_rate or 0), recovery_value=scrap_recovery_value))
         apply_movement(
             db,
             kind=ItemKind.scrap,
