@@ -92,3 +92,20 @@ def test_order_requires_explicit_completion_after_all_output_and_operations(life
     assert completed.json()["status"] == "Completed"
     reservation = db.query(models.StockReservation).one()
     assert reservation.status == "Consumed"
+
+
+
+def test_release_requires_full_material_reservation(lifecycle_context):
+    http, db, order, _, _, _ = lifecycle_context
+    db.query(models.StockReservation).filter_by(production_order_id=order.id).delete()
+    db.commit()
+
+    response = http.post(
+        f"/api/v1/manufacturing/production-orders/{order.id}/transition",
+        json={"action": "release"},
+    )
+
+    assert response.status_code == 409
+    db.refresh(order)
+    assert order.status == "Planned"
+    assert db.query(models.JobCard).filter_by(production_order_id=order.id).count() == 0
