@@ -47,3 +47,24 @@ def test_manufacture_consumes_from_wip_and_receives_finished_goods_in_target(ctx
     finished=d.query(models.WarehouseStock).filter_by(warehouse_id=o.target_warehouse_id,item_id=o.product_id).one()
     assert finished.quantity==10
     assert d.get(models.RawMaterial,m.id).stock==10
+
+
+def test_warehouse_finished_goods_remain_held_until_quality_acceptance(ctx):
+    h,d,o,m,src,wip=ctx
+    release=h.post(f"/api/v1/manufacturing/production-orders/{o.id}/transition",json={"action":"release"});assert release.status_code==200,release.text
+    start=h.post(f"/api/v1/manufacturing/production-orders/{o.id}/transition",json={"action":"start"});assert start.status_code==200,start.text
+    h.post(f"/api/v1/manufacturing/production-orders/{o.id}/transfer-to-wip")
+    card=h.get(f"/api/v1/manufacturing/production-orders/{o.id}/job-cards").json()[0]
+    produced=h.post("/api/v1/production",json={"entry_date":date.today().isoformat(),"product_id":o.product_id,"quantity":10,"production_order_id":o.id,"job_card_id":card["id"]})
+    assert produced.status_code==201,produced.text
+    finished=d.query(models.WarehouseStock).filter_by(warehouse_id=o.target_warehouse_id,item_id=o.product_id).one()
+    assert finished.quality_hold_quantity==10
+    blocked=h.post("/api/v1/inventory/movements",json={"item_kind":"product","item_id":o.product_id,"movement_type":"OUT","quantity":1,"warehouse_id":o.target_warehouse_id})
+    assert blocked.status_code==409
+    inspection=h.get(f"/api/v1/manufacturing/production/{produced.json()['id']}/quality-inspection")
+    assert inspection.status_code==200 and inspection.json()["status"]=="Pending"
+    accepted=h.patch(f"/api/v1/manufacturing/production/{produced.json()['id']}/quality",json={"status":"Accepted","accepted_qty":10,"rejected_qty":0,"remarks":"Passed final inspection"})
+    assert accepted.status_code==200,accepted.text
+    d.refresh(finished);assert finished.quality_hold_quantity==0
+    released=h.post("/api/v1/inventory/movements",json={"item_kind":"product","item_id":o.product_id,"movement_type":"OUT","quantity":10,"warehouse_id":o.target_warehouse_id})
+    assert released.status_code==201,released.text
