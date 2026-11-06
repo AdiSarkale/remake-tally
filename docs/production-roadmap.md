@@ -140,7 +140,7 @@ The multi-company guide describes a tenant backup utility using PostgreSQL custo
 | Quality | **DONE — core inspection gate** | Per-batch inspection record, measured check lines, accepted/rejected quantities, finalization guard, audit trail and release of accepted quantity only; rejected output remains on hold | Reusable inspection templates, non-conformance disposition and corrective-action workflow remain future enhancements |
 | Manufacturing inventory | **DONE — core warehouse flow** | Warehouse balances, source-to-WIP transfers, WIP consumption, target-warehouse finished-goods receipt, transfer idempotency and quality-hold balances | Bin-level picking, serial/batch traceability and advanced returns remain future enhancements |
 | Manufacturing reports | **PARTIAL** | Production totals, scrap, material variance and workcenter aggregation | Operation efficiency, capacity utilization, labor reporting and production costing |
-| Multi-level production planning | **NOT DONE** | No complete production-plan/BOM-explosion workflow | Demand consolidation, nested BOM explosion and make/buy suggestions |
+| Multi-level production planning | **DONE — BOM planning preview** | Recursive BOM explosion, cycle/depth and missing-BOM detection, aggregated subassembly demand, existing subassembly stock netting, make quantities and raw-material shortages | Finite-capacity scheduling, lead-time calendars and actual subassembly stock issue/consumption remain future work |
 
 ### 6.2 Existing manufacturing API/test evidence
 
@@ -152,7 +152,8 @@ The multi-company guide describes a tenant backup utility using PostgreSQL custo
 - **DONE — phase 2 core lifecycle:** explicit transition regression coverage verifies invalid transition rejection, release/start ordering, reservation prerequisite, premature completion rejection, cancellation restrictions, reservation release and successful completion. Commit `5f01ae3` passed both GitHub Actions workflows on 2026-11-06; 37 tests passed, 2 warnings.
 - **DONE — phase 3 core job-card execution:** release-generated job cards, start/stop time capture, employee overlap prevention and premature-completion rejection are covered. Commit `9e0b258` passed both GitHub Actions workflows on 2026-11-06; 38 tests passed, 2 warnings.
 - **DONE — phase 4 core warehouse/WIP flow:** source warehouse to WIP transfer, WIP material consumption, target-warehouse output receipt, quality-hold integration and repeated-transfer idempotency are covered. Commit `cad5cae` passed both GitHub Actions workflows on 2026-11-06; 39 tests passed, 2 warnings.
-- **DONE — phase 5 core quality gate:** inspection records and measured checks, accepted/rejected quantity reconciliation, finalization protection, accepted-stock release and rejected-stock hold are covered. Commit `0b8f170` passed both GitHub Actions workflows on 2026-11-06; 40 tests passed, 2 warnings. Reusable templates and corrective-action workflows are not included in this core scope. The branch remains backend-only and CI is not a production deployment sign-off.
+- **DONE — phase 5 core quality gate:** inspection records and measured checks, accepted/rejected quantity reconciliation, finalization protection, accepted-stock release and rejected-stock hold are covered. Commit `0b8f170` passed both GitHub Actions workflows on 2026-11-06; 40 tests passed, 2 warnings. Reusable templates and corrective-action workflows are not included in this core scope.
+- **DONE — phase 6 BOM planning preview:** recursive BOM planning now nets existing subassembly stock before exploding lower-level raw-material requirements; it also reports make quantities and avoids requiring a BOM when existing stock fully covers demand. Commit `6ee2bf2` passed both GitHub Actions workflows on 2026-11-06; 40 tests passed, 2 warnings. Finite-capacity scheduling, lead-time calendars and subassembly stock consumption during production execution remain outside this phase's verified scope. The branch remains backend-only and CI is not a production deployment sign-off.
 
 The material-plan endpoint does **not** reserve stock, lock inventory, allocate a warehouse or guarantee availability at a later time. A positive result must not be treated as authorization to start production.
 
@@ -166,7 +167,7 @@ The material-plan endpoint does **not** reserve stock, lock inventory, allocate 
 - [x] Quality inspection records and accepted/rejected stock-release gate (core scope; reusable templates and corrective actions remain open).
 
 **P2 — planning and operational depth**
-- [ ] Multi-level BOM explosion and sub-assembly planning.
+- [x] Recursive multi-level BOM explosion and sub-assembly make-quantity planning (core preview; finite capacity scheduling remains open).
 - [ ] Capacity calendars, finite scheduling and downtime.
 - [ ] Production costing, labor variance and operation efficiency.
 - [ ] Serial/batch traceability and advanced manufacturing analytics.
