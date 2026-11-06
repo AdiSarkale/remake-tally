@@ -368,8 +368,16 @@ def create_production(
         if card is not None:
             card.completed_qty = round(card.completed_qty + payload.quantity, 3)
             if card.completed_qty >= card.planned_qty:
+                now = datetime.now(timezone.utc)
                 card.status = "Completed"
-                card.completed_at = datetime.now(timezone.utc)
+                card.completed_at = now
+                active_log = db.query(models.JobCardTimeLog).filter_by(job_card_id=card.id, end_time=None).with_for_update().first()
+                if active_log is not None:
+                    active_log.end_time = now
+                    started_at = active_log.start_time
+                    if started_at.tzinfo is None:
+                        started_at = started_at.replace(tzinfo=timezone.utc)
+                    active_log.duration_minutes = round(max((now - started_at).total_seconds() / 60, 0), 2)
             elif card.status == "Pending":
                 card.status = "In Progress"
                 card.started_at = datetime.now(timezone.utc)

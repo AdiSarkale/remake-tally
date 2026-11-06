@@ -522,7 +522,10 @@ def stop_job_card(job_card_id: str, db: Session = Depends(get_db), user: models.
         raise HTTPException(409, "No active time log exists for this job card")
     now = datetime.now(timezone.utc)
     active_log.end_time = now
-    active_log.duration_minutes = round(max((now - active_log.start_time).total_seconds() / 60, 0), 2)
+    started_at = active_log.start_time
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    active_log.duration_minutes = round(max((now - started_at).total_seconds() / 60, 0), 2)
     card.status = "Pending" if card.completed_qty <= 0 else "In Progress"
     log_audit(db, user.username, "STOP", "job_card", card.id)
     db.commit()
