@@ -96,3 +96,51 @@ def test_reserved_order_can_consume_its_own_reserved_stock(reservation_context):
         quantity=20, reference="TEST", reason="Order consumption", entry_date=date.today(), user_id="tester", reservation_order_id=order.id)
     assert movement.balance == 10
     assert db.get(models.RawMaterial, material.id).stock == 10
+
+
+
+def test_company_wide_reservation_blocks_warehouse_issue(reservation_context):
+    _, db, order, _, material = reservation_context
+    plant = models.Plant(code="PL-RES-001", name="Reservation Plant", active=True)
+    db.add(plant)
+    db.flush()
+    warehouse = models.Warehouse(code="WH-RES-001", name="Reservation Warehouse", plant_id=plant.id, active=True)
+    db.add(warehouse)
+    db.flush()
+    db.add(models.WarehouseStock(
+        warehouse_id=warehouse.id,
+        item_kind=models.ItemKind.material,
+        item_id=material.id,
+        item_name=material.name,
+        quantity=30,
+        unit=material.unit,
+    ))
+    db.add(models.StockReservation(
+        production_order_id=order.id,
+        material_id=material.id,
+        quantity=20,
+        consumed_quantity=0,
+        status="Reserved",
+        warehouse_id=None,
+    ))
+    db.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        apply_movement(
+            db,
+            kind=models.ItemKind.material,
+            item_id=material.id,
+            movement_type=models.MovementType.OUT,
+            quantity=11,
+            reference="WAREHOUSE-ISSUE",
+            reason="Unrelated warehouse issue",
+            entry_date=date.today(),
+            user_id="tester",
+            warehouse_id=warehouse.id,
+        )
+    assert exc.value.status_code == 400
+    assert db.get(models.RawMaterial, material.id).stock == 30
+    balance = db.query(models.WarehouseStock).filter_by(
+        warehouse_id=warehouse.id, item_kind=models.ItemKind.material, item_id=material.id
+    ).one()
+    assert balance.quantity == 30
