@@ -55,7 +55,7 @@ def create_workcenter(payload: schemas.WorkcenterIn, db: Session = Depends(get_d
     log_audit(db, user.username, "CREATE", "workcenter", w.code)
     db.commit()
     db.refresh(w)
-    return {**{k: getattr(w, k) for k in ("id","code","name","department","capacity_per_hour","status","active","location")},
+    return {**{k: getattr(w, k) for k in ("id","code","name","department","capacity_per_hour","overhead_rate_per_hour","status","active","location")},
             "materials": db.query(models.WorkcenterMaterial).filter_by(workcenter_id=w.id).all()}
 
 
@@ -72,7 +72,7 @@ def update_workcenter(workcenter_id: str, payload: schemas.WorkcenterIn, db: Ses
     log_audit(db, user.username, "UPDATE", "workcenter", w.code)
     db.commit()
     db.refresh(w)
-    return {**{k: getattr(w, k) for k in ("id","code","name","department","capacity_per_hour","status","active","location")},
+    return {**{k: getattr(w, k) for k in ("id","code","name","department","capacity_per_hour","overhead_rate_per_hour","status","active","location")},
             "materials": db.query(models.WorkcenterMaterial).filter_by(workcenter_id=w.id).all()}
 
 
@@ -232,6 +232,27 @@ def production_order_cost_summary(order_id: str, db: Session = Depends(get_db), 
         "overhead_cost":round(overhead_cost,2),"scrap_recovery_value":scrap_recovery_value,
         "total_cost":total_cost,"unit_cost":round(total_cost/produced_quantity,2) if produced_quantity else 0,
         "scrap_quantity":scrap_quantity,"by_operation":by_operation}
+
+
+@router.get("/production-orders/{order_id}/cost-summary", response_model=schemas.ProductionOrderCostSummaryOut)
+def production_order_cost_summary(order_id: str, db: Session = Depends(get_db), user: models.User = guard):
+    order=db.get(models.ProductionOrder,order_id)
+    if order is None: raise HTTPException(404,"Production order not found")
+    entries=db.query(models.ProductionEntry).filter_by(production_order_id=order.id).all()
+    planned=round(sum(x.planned_material_cost for x in entries),2);actual=round(sum(x.actual_material_cost for x in entries),2)
+    variance=round(sum(x.material_variance_cost for x in entries),2);recovery=round(sum(x.scrap_recovery_value for x in entries),2)
+    scrap=round(sum(x.actual_scrap or 0 for x in entries),3);produced=round(sum(x.quantity for x in entries),3)
+    labor=overhead=0.0;by_operation=[]
+    for card in db.query(models.JobCard).filter_by(production_order_id=order.id).all():
+        operation=db.get(models.RoutingOperation,card.operation_id);wc=db.get(models.Workcenter,card.workcenter_id)
+        logs=db.query(models.JobCardTimeLog).filter_by(job_card_id=card.id).all()
+        minutes=sum(float(x.duration_minutes or 0) for x in logs if x.end_time is not None)
+        labor_line=sum(float(x.duration_minutes or 0)*float((db.get(models.Employee,x.employee_id).hourly_rate if db.get(models.Employee,x.employee_id) else 0))/60 for x in logs if x.end_time is not None)
+        overhead_line=minutes*float(wc.overhead_rate_per_hour if wc else 0)/60
+        labor+=labor_line;overhead+=overhead_line
+        by_operation.append({"job_card_id":card.id,"operation_name":operation.name if operation else "Unknown","workcenter_name":wc.name if wc else "Unknown","duration_minutes":round(minutes,2),"labor_cost":round(labor_line,2),"overhead_cost":round(overhead_line,2)})
+    total=round(actual+labor+overhead-recovery,2)
+    return {"order_id":order.id,"order_no":order.order_no,"produced_quantity":produced,"planned_material_cost":planned,"actual_material_cost":actual,"material_variance_cost":variance,"labor_cost":round(labor,2),"overhead_cost":round(overhead,2),"scrap_recovery_value":recovery,"total_cost":total,"unit_cost":round(total/produced,2) if produced else 0,"scrap_quantity":scrap,"by_operation":by_operation}
 
 
 @router.get("/production-orders", response_model=list[schemas.ProductionOrderOut])

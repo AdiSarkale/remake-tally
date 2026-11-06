@@ -58,8 +58,14 @@ def list_production(
             "accepted_qty": production.accepted_qty,
             "rejected_qty": production.rejected_qty,
             "quality_remarks": production.quality_remarks,
+            "planned_material_cost": production.planned_material_cost,
+            "actual_material_cost": production.actual_material_cost,
+            "material_variance_cost": production.material_variance_cost,
+            "scrap_recovery_value": production.scrap_recovery_value,
+            "total_cost": production.total_cost,
+            "unit_cost": production.unit_cost,
             "consumption": [
-                {"material_id": line.material_id, "planned_quantity": line.planned_quantity, "quantity": line.quantity, "variance": round(line.quantity - line.planned_quantity, 3)}
+                {"material_id": line.material_id, "planned_quantity": line.planned_quantity, "quantity": line.quantity, "variance": round(line.quantity - line.planned_quantity, 3), "unit_cost": line.unit_cost, "planned_cost": line.planned_cost, "actual_cost": line.actual_cost, "variance_cost": line.variance_cost}
                 for line in production.consumption
             ],
         })
@@ -255,6 +261,20 @@ def create_production(
     scrap_recovery_value = round(actual_scrap * float(scrap_type.selling_rate or 0), 2) if scrap_type else 0.0
     total_cost = round(actual_material_cost - scrap_recovery_value, 2)
 
+    planned_material_cost = actual_material_cost = 0.0
+    for consumption_line in consumption:
+        material = db.get(models.RawMaterial, consumption_line.material_id)
+        unit_cost = float(material.cost or 0)
+        consumption_line.unit_cost = unit_cost
+        consumption_line.planned_cost = round(consumption_line.planned_quantity * unit_cost, 2)
+        consumption_line.actual_cost = round(consumption_line.quantity * unit_cost, 2)
+        consumption_line.variance_cost = round(consumption_line.actual_cost - consumption_line.planned_cost, 2)
+        planned_material_cost += consumption_line.planned_cost
+        actual_material_cost += consumption_line.actual_cost
+    scrap_type = db.get(models.ScrapType, scrap_type_id) if scrap_type_id else None
+    scrap_recovery_value = round(actual_scrap * float(scrap_type.selling_rate or 0), 2) if scrap_type else 0.0
+    total_cost = round(actual_material_cost - scrap_recovery_value, 2)
+
     # -------------------------------------------------
     # Create production entry
     # -------------------------------------------------
@@ -357,6 +377,9 @@ def create_production(
                 detail="Scrap type is required when scrap quantity is greater than zero",
             )
 
+        db.add(models.ScrapEntry(entry_date=payload.entry_date, product_id=payload.product_id, batch_no=batch_no,
+            scrap_type_id=scrap_type_id, quantity=actual_scrap, reason="Production scrap", remarks=payload.remarks,
+            production_entry_id=entry.id, unit_recovery_rate=float(scrap_type.selling_rate or 0), recovery_value=scrap_recovery_value))
         db.add(models.ScrapEntry(entry_date=payload.entry_date, product_id=payload.product_id, batch_no=batch_no,
             scrap_type_id=scrap_type_id, quantity=actual_scrap, reason="Production scrap", remarks=payload.remarks,
             production_entry_id=entry.id, unit_recovery_rate=float(scrap_type.selling_rate or 0), recovery_value=scrap_recovery_value))
