@@ -38,4 +38,5 @@ class WarehouseStock(Base):
     item_id: Mapped[str] = mapped_column(String(36), index=True)
     item_name: Mapped[str] = mapped_column(String(160))
     quantity: Mapped[float] = mapped_column(Float, default=0)
+    quality_hold_quantity: Mapped[float] = mapped_column(Float, default=0)
     unit: Mapped[str] = mapped_column(String(16))

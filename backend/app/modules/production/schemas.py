@@ -256,11 +256,39 @@ class ManufacturingAssignmentOut(BaseModel):
     employee_id: str | None
     assignment_mode: str
 
+class QualityCheckIn(BaseModel):
+    test_name: str = Field(min_length=1, max_length=120)
+    expected_value: str = ""
+    actual_value: str = ""
+    passed: bool = True
+    remarks: str = ""
+
+class QualityInspectionLineOut(ORMModel):
+    id: int
+    test_name: str
+    expected_value: str
+    actual_value: str
+    passed: bool
+    remarks: str
+
+class QualityInspectionOut(ORMModel):
+    id: str
+    production_entry_id: str
+    status: str
+    inspected_quantity: float
+    accepted_quantity: float
+    rejected_quantity: float
+    inspector_user_id: str | None
+    inspected_at: datetime | None
+    remarks: str
+    lines: list[QualityInspectionLineOut] = Field(default_factory=list)
+
 class ProductionQualityIn(BaseModel):
-    status: str = Field(pattern="^(Pending|Accepted|Rejected|Accepted with Deviation)$")
+    status: str = Field(pattern="^(Accepted|Rejected|Accepted with Deviation)$")
     accepted_qty: float = Field(ge=0)
     rejected_qty: float = Field(ge=0)
     remarks: str = ""
+    checks: list[QualityCheckIn] = Field(default_factory=list)
 
 class ManufacturingReportOut(BaseModel):
     production_qty: float

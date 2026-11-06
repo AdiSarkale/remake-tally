@@ -49,6 +49,7 @@ class Product(Base):
     gst_rate: Mapped[float] = mapped_column(Float, default=18)
     stock: Mapped[float] = mapped_column(Float, default=0)
     min_stock: Mapped[float] = mapped_column(Float, default=0)
+    quality_hold_stock: Mapped[float] = mapped_column(Float, default=0)
 
 class RawMaterial(Base):
     __tablename__ = "raw_materials"

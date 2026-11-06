@@ -245,3 +245,27 @@ class ProductionMaterialTransfer(Base):
     target_warehouse_id: Mapped[str] = mapped_column(ForeignKey("warehouses.id"))
     quantity: Mapped[float] = mapped_column(Float)
     transferred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class QualityInspection(Base):
+    __tablename__ = "quality_inspections"
+    __table_args__ = (UniqueConstraint("production_entry_id", name="uq_quality_inspection_production_entry"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    production_entry_id: Mapped[str] = mapped_column(ForeignKey("production_entries.id", ondelete="CASCADE"), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="Pending", index=True)
+    inspected_quantity: Mapped[float] = mapped_column(Float)
+    accepted_quantity: Mapped[float] = mapped_column(Float, default=0)
+    rejected_quantity: Mapped[float] = mapped_column(Float, default=0)
+    inspector_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    inspected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    remarks: Mapped[str] = mapped_column(Text, default="")
+
+class QualityInspectionLine(Base):
+    __tablename__ = "quality_inspection_lines"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    inspection_id: Mapped[str] = mapped_column(ForeignKey("quality_inspections.id", ondelete="CASCADE"), index=True)
+    test_name: Mapped[str] = mapped_column(String(120))
+    expected_value: Mapped[str] = mapped_column(String(160), default="")
+    actual_value: Mapped[str] = mapped_column(String(160), default="")
+    passed: Mapped[bool] = mapped_column(Boolean, default=True)
+    remarks: Mapped[str] = mapped_column(Text, default="")
