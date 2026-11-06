@@ -38,7 +38,8 @@ def explode_bom_tree(db:Session,product_id:str,quantity:float,*,strict:bool=Fals
     child_bom=_active_bom(db,child.id)
     rows.append({"line_type":"SF","item_id":child.id,"item_code":child.code,"item_name":child.name,"unit":child.unit,"required_quantity":required,"level":level+1,"parent_product_id":pid,"status":"Exploded" if child_bom else "Missing BOM"})
     if child_bom: walk(child.id,required,level+1,(*path,pid))
- return rows if not (walk(product_id,quantity,0,()),) else rows
+ walk(product_id,quantity,0,())
+ return rows
 
 def explode_material_requirements(db:Session,product_id:str,quantity:float):
  rows=explode_bom_tree(db,product_id,quantity,strict=True)

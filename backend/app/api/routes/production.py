@@ -11,6 +11,7 @@ from app.api.deps import require_area
 from app.db.session import get_db
 from app.models import ItemKind, MovementType
 from app.services.inventory import apply_movement, log_audit, next_batch_no
+from app.services.bom import explode_material_requirements
 
 router = APIRouter(prefix="/production", tags=["production"])
 guard = Depends(require_area("production"))
@@ -168,32 +169,12 @@ def create_production(
     # -------------------------------------------------
 
     consumption = []
-
-
-    for bom_line in bom.lines:
-        required_quantity = round(
-            bom_line.quantity * payload.quantity,
-            3,
-        )
-
-        material = db.get(
-            models.RawMaterial,
-            bom_line.material_id,
-        )
-
+    planned = explode_material_requirements(db, payload.product_id, payload.quantity)
+    for material_id, required_quantity in planned.items():
+        material = db.get(models.RawMaterial, material_id)
         if material is None:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Material {bom_line.material_id} not found",
-            )
-
-        consumption.append(
-            models.ProductionConsumption(
-                material_id=bom_line.material_id,
-                planned_quantity=required_quantity,
-                quantity=required_quantity
-            )
-        )
+            raise HTTPException(400, detail=f"Material {material_id} not found")
+        consumption.append(models.ProductionConsumption(material_id=material_id, planned_quantity=required_quantity, quantity=required_quantity))
     # -------------------------------------------------
     # Validate legacy/manual consumption input
     # -------------------------------------------------
@@ -204,13 +185,12 @@ def create_production(
                 raise HTTPException(400, "A material cannot appear twice in production consumption")
             supplied[line.material_id] = round(line.quantity, 3)
 
-        planned = {line.material_id: round(line.quantity * payload.quantity, 3) for line in bom.lines}
         unknown = set(supplied) - set(planned)
         missing = set(planned) - set(supplied)
         if unknown:
             raise HTTPException(400, "Actual consumption may only contain materials from the active BOM")
         if missing:
-            raise HTTPException(400, "Actual consumption must include every active BOM material line")
+            raise HTTPException(400, "Actual consumption must include every exploded raw-material requirement")
 
         for consumption_line in consumption:
             consumption_line.quantity = supplied[consumption_line.material_id]

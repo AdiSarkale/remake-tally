@@ -10,6 +10,7 @@ from app import models, schemas
 from app.api.deps import require_area
 from app.db.session import get_db
 from app.services.inventory import apply_movement, log_audit, next_batch_no
+from app.services.bom import explode_bom_tree, explode_material_requirements
 
 router = APIRouter(prefix="/manufacturing", tags=["manufacturing"])
 guard = Depends(require_area("production"))
@@ -186,25 +187,16 @@ def production_order_material_plan(
         raise HTTPException(400, "No active BOM with material lines found for this production order")
 
     materials = []
-    for line in bom.lines:
-        material = db.get(models.RawMaterial, line.material_id)
+    requirements = explode_material_requirements(db, order.product_id, order.quantity)
+    for material_id, required_quantity in requirements.items():
+        material = db.get(models.RawMaterial, material_id)
         if material is None:
-            raise HTTPException(409, f"BOM material {line.material_id} no longer exists")
-
-        consumed_value = (
-            db.query(func.coalesce(func.sum(models.ProductionConsumption.quantity), 0.0))
-            .join(
-                models.ProductionEntry,
-                models.ProductionEntry.id == models.ProductionConsumption.production_id,
-            )
-            .filter(
-                models.ProductionEntry.production_order_id == order.id,
-                models.ProductionConsumption.material_id == material.id,
-            )
-            .scalar()
-        )
-        required_quantity = round(float(line.quantity) * float(order.quantity), 3)
+            raise HTTPException(409, f"BOM material {material_id} no longer exists")
+        consumed_value = (db.query(func.coalesce(func.sum(models.ProductionConsumption.quantity), 0.0))
+            .join(models.ProductionEntry, models.ProductionEntry.id == models.ProductionConsumption.production_id)
+            .filter(models.ProductionEntry.production_order_id == order.id, models.ProductionConsumption.material_id == material.id).scalar())
         consumed_quantity = round(float(consumed_value or 0), 3)
+        required_quantity = round(float(required_quantity), 3)
         remaining_quantity = round(max(required_quantity - consumed_quantity, 0.0), 3)
         available_quantity = round(float(material.stock or 0), 3)
         if order.source_warehouse_id:
@@ -213,19 +205,10 @@ def production_order_material_plan(
             other_reserved = float(db.query(func.coalesce(func.sum(models.StockReservation.quantity - models.StockReservation.consumed_quantity), 0.0)).filter(models.StockReservation.material_id == material.id, models.StockReservation.status == "Reserved", models.StockReservation.production_order_id != order.id, models.StockReservation.warehouse_id == order.source_warehouse_id).scalar() or 0.0)
             available_quantity = max(round(available_quantity - other_reserved, 3), 0.0)
         shortage_quantity = round(max(remaining_quantity - available_quantity, 0.0), 3)
-
-        materials.append({
-            "material_id": material.id,
-            "material_code": material.code,
-            "material_name": material.name,
-            "unit": material.unit,
-            "required_quantity": required_quantity,
-            "consumed_quantity": consumed_quantity,
-            "remaining_quantity": remaining_quantity,
-            "available_quantity": available_quantity,
-            "shortage_quantity": shortage_quantity,
-            "status": "Available" if shortage_quantity == 0 else "Shortage",
-        })
+        materials.append({"material_id": material.id, "material_code": material.code, "material_name": material.name, "unit": material.unit,
+            "required_quantity": required_quantity, "consumed_quantity": consumed_quantity, "remaining_quantity": remaining_quantity,
+            "available_quantity": available_quantity, "shortage_quantity": shortage_quantity,
+            "status": "Available" if shortage_quantity == 0 else "Shortage"})
 
     return {
         "order_id": order.id,
@@ -253,10 +236,11 @@ def reserve_production_order_materials(order_id: str, db: Session = Depends(get_
         raise HTTPException(400, "No active BOM with material lines found for this production order")
 
     plans = []
-    for line in bom.lines:
-        material = db.query(models.RawMaterial).filter_by(id=line.material_id).with_for_update().first()
+    requirements = explode_material_requirements(db, order.product_id, order.quantity)
+    for material_id, required_total in requirements.items():
+        material = db.query(models.RawMaterial).filter_by(id=material_id).with_for_update().first()
         if material is None:
-            raise HTTPException(409, f"BOM material {line.material_id} no longer exists")
+            raise HTTPException(409, f"BOM material {material_id} no longer exists")
         consumed = float(db.query(func.coalesce(func.sum(models.ProductionConsumption.quantity), 0.0))
             .join(models.ProductionEntry, models.ProductionEntry.id == models.ProductionConsumption.production_id)
             .filter(models.ProductionEntry.production_order_id == order.id,
@@ -269,7 +253,7 @@ def reserve_production_order_materials(order_id: str, db: Session = Depends(get_
         if order.source_warehouse_id:
             other_query = other_query.filter(models.StockReservation.warehouse_id == order.source_warehouse_id)
         other_reserved = float(other_query.scalar() or 0.0)
-        required_remaining = max(round(float(line.quantity) * float(order.quantity) - consumed, 3), 0.0)
+        required_remaining = max(round(float(required_total) - consumed, 3), 0.0)
         to_reserve = max(round(required_remaining - own_reserved, 3), 0.0)
         source_balance = float(material.stock)
         if order.source_warehouse_id:
@@ -309,16 +293,17 @@ def transfer_production_materials_to_wip(order_id: str, db: Session = Depends(ge
     bom=db.query(models.BillOfMaterials).filter_by(product_id=order.product_id,active=True).order_by(models.BillOfMaterials.version.desc()).first()
     if bom is None or not bom.lines: raise HTTPException(409,"Active BOM with material lines is required")
     plans=[]
-    for line in bom.lines:
-        moved=float(db.query(func.coalesce(func.sum(models.ProductionMaterialTransfer.quantity),0.0)).filter_by(production_order_id=order.id,material_id=line.material_id).scalar() or 0.0)
-        qty=max(round(float(line.quantity)*float(order.quantity)-moved,3),0.0)
+    requirements=explode_material_requirements(db,order.product_id,order.quantity)
+    for material_id,required_total in requirements.items():
+        moved=float(db.query(func.coalesce(func.sum(models.ProductionMaterialTransfer.quantity),0.0)).filter_by(production_order_id=order.id,material_id=material_id).scalar() or 0.0)
+        qty=max(round(float(required_total)-moved,3),0.0)
         if qty<=0: continue
-        row=db.query(models.WarehouseStock).filter_by(warehouse_id=order.source_warehouse_id,item_kind=models.ItemKind.material,item_id=line.material_id).with_for_update().first()
+        row=db.query(models.WarehouseStock).filter_by(warehouse_id=order.source_warehouse_id,item_kind=models.ItemKind.material,item_id=material_id).with_for_update().first()
         available=float(row.quantity) if row else 0.0
-        material=db.get(models.RawMaterial,line.material_id)
+        material=db.get(models.RawMaterial,material_id)
         if material is None: raise HTTPException(409,"BOM material no longer exists")
         if qty>available: raise HTTPException(409,f"Insufficient source warehouse stock for {material.name} (required {qty}, available {available})")
-        plans.append((line.material_id,qty))
+        plans.append((material_id,qty))
     for material_id,qty in plans:
         apply_movement(db,kind=models.ItemKind.material,item_id=material_id,movement_type=models.MovementType.OUT,quantity=qty,reference=order.order_no,reason="Material transfer to WIP",entry_date=order.order_date,user_id=user.id,reservation_order_id=order.id,warehouse_id=order.source_warehouse_id)
         apply_movement(db,kind=models.ItemKind.material,item_id=material_id,movement_type=models.MovementType.IN,quantity=qty,reference=order.order_no,reason="Material received in WIP",entry_date=order.order_date,user_id=user.id,warehouse_id=order.wip_warehouse_id)
@@ -415,13 +400,11 @@ def transition_production_order(order_id: str, payload: schemas.ProductionOrderT
         ).order_by(models.BillOfMaterials.version.desc()).first()
         if bom is None or not bom.lines:
             raise HTTPException(409, "An active BOM with material lines is required")
-        for line in bom.lines:
-            reservation = db.query(models.StockReservation).filter_by(
-                production_order_id=order.id, material_id=line.material_id, status="Reserved"
-            ).with_for_update().first()
-            required = round(float(line.quantity) * float(order.quantity), 3)
+        requirements = explode_material_requirements(db, order.product_id, order.quantity)
+        for material_id, required in requirements.items():
+            reservation = db.query(models.StockReservation).filter_by(production_order_id=order.id, material_id=material_id, status="Reserved").with_for_update().first()
             if reservation is None or reservation.remaining_quantity + 0.0001 < required:
-                raise HTTPException(409, f"Material {line.material_id} is not fully reserved for this order")
+                raise HTTPException(409, f"Material {material_id} is not fully reserved for this order")
 
     if action == "release":
         operations = db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).all()
