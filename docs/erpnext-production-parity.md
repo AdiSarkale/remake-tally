@@ -1,6 +1,6 @@
 # Manufacturing capability parity review
 
-This document is the detailed manufacturing capability assessment for MiniTally. The consolidated cross-cutting release plan, including branch reconciliation, multi-company architecture, tenant backup/restore, deployment readiness and manufacturing delivery gates, is maintained in [Production Roadmap](production-roadmap.md).
+This document is the detailed manufacturing capability assessment for MiniTally. The consolidated cross-cutting release plan, including branch reconciliation, multi-company architecture, tenant backup/restore, deployment readiness and manufacturing delivery gates, is maintained in [Production Roadmap](production-roadmap.md). The multi-company operating guide is maintained alongside it in [Multi-company production deployment](multi-company-production.md).
 
 **Reviewed:** 2026-11-06  
 **Branch:** `production`  

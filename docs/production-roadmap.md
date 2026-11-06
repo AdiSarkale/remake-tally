@@ -59,7 +59,7 @@ The document `docs/multi-company-production.md` on `main` describes a database-p
 - Tenant DB credentials are stored as secret references and resolved through a SecretProvider.
 - Provisioning, migration and retry operations record migration audit events.
 
-**Production-branch status: NOT VERIFIED.** The current `production` tree does not contain the referenced multi-company document, tenant lifecycle/backup scripts, or matching tenant operations implementation. Treat the architecture below as an integration requirement, not as a capability already shipped on this branch.
+**Production-branch status: NOT VERIFIED.** The multi-company architecture and operational requirements are now included in `docs/multi-company-production.md` on this branch. This is a documentation alignment only: the presence of the guide does not prove that the referenced code, deployment configuration, or live operational controls are implemented and tested on `production`. Treat those capabilities as NOT VERIFIED until the implementation and evidence are audited.
 
 ### 3.2 Required tenant controls
 
@@ -82,13 +82,13 @@ The document `docs/multi-company-production.md` on `main` describes a database-p
 - [ ] Rotate credentials and signing secrets using a documented procedure.
 - [ ] Verify secret resolution and failure behaviour in deployment tests.
 
-The `main` branch document describes AWS Secrets Manager for production and environment-backed secrets for local/demo use. Confirm the actual provider implementation and deployment configuration on the integrated release branch before marking this done.
+The multi-company guide describes AWS Secrets Manager for production and environment-backed secrets for local/demo use. Confirm the actual provider implementation and deployment configuration on this branch before marking this done.
 
 ## 4. Tenant backup, restore and decommissioning — P0
 
-The `main` branch document describes a tenant backup utility using PostgreSQL custom-format dumps, JSON manifests and SHA-256 checksums; a restore utility; per-tenant migration revision audits; and a decommission workflow that disables the tenant and requires a final backup before marking it decommissioned.
+The multi-company guide describes a tenant backup utility using PostgreSQL custom-format dumps, JSON manifests and SHA-256 checksums; a restore utility; per-tenant migration revision audits; and a decommission workflow that disables the tenant and requires a final backup before marking it decommissioned.
 
-**Production-branch status: NOT VERIFIED.** These scripts and their CI evidence are not present in the current `production` tree. Bring them into the release candidate only after reviewing code, tests, and operational assumptions.
+**Production-branch status: NOT VERIFIED.** The guide is now present on this branch, but the scripts, CI evidence and live restore evidence have not been verified here. Do not treat copying the guide as implementation. Audit the referenced scripts and tests before changing the status.
 
 ### Required controls
 
