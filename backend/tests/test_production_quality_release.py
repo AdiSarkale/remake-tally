@@ -32,3 +32,23 @@ def test_acceptance_releases_only_accepted_quantity(ctx):
 
 def test_quality_quantities_must_equal_produced_quantity(ctx):
  h,d,u,p,entry=ctx;x=h.patch(f"/api/v1/manufacturing/production/{entry.id}/quality",json={"status":"Accepted","accepted_qty":9,"rejected_qty":0});assert x.status_code==400;assert d.query(models.QualityInspection).one().status=="Pending"
+
+
+
+def test_rejected_quantity_remains_on_quality_hold_and_inspection_is_final(ctx):
+ h,d,u,p,entry=ctx
+ response=h.patch(
+  f"/api/v1/manufacturing/production/{entry.id}/quality",
+  json={"status":"Rejected","accepted_qty":0,"rejected_qty":10,"remarks":"Failed final inspection"},
+ )
+ assert response.status_code==200,response.text
+ d.refresh(p)
+ assert p.quality_hold_stock==10
+ with pytest.raises(HTTPException) as exc:
+  apply_movement(d,kind=models.ItemKind.product,item_id=p.id,movement_type=models.MovementType.OUT,quantity=1,reference="SALE",reason="Sale",entry_date=date.today(),user_id=u.id)
+ assert exc.value.status_code==409
+ repeated=h.patch(
+  f"/api/v1/manufacturing/production/{entry.id}/quality",
+  json={"status":"Accepted","accepted_qty":10,"rejected_qty":0},
+ )
+ assert repeated.status_code==409
