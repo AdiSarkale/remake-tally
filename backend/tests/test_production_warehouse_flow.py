@@ -28,3 +28,22 @@ def test_transfer_to_wip_moves_location_balance_and_preserves_total(ctx):
  a=d.query(models.WarehouseStock).filter_by(warehouse_id=src.id,item_id=m.id).one();b=d.query(models.WarehouseStock).filter_by(warehouse_id=wip.id,item_id=m.id).one();assert a.quantity==10 and b.quantity==20;assert d.get(models.RawMaterial,m.id).stock==30
 def test_warehouse_stock_out_rejects_overdraw(ctx):
  h,d,o,m,src,wip=ctx;x=h.post("/api/v1/inventory/movements",json={"item_kind":"material","item_id":m.id,"movement_type":"OUT","quantity":31,"warehouse_id":src.id});assert x.status_code==400;assert d.get(models.RawMaterial,m.id).stock==30
+
+
+def test_manufacture_consumes_from_wip_and_receives_finished_goods_in_target(ctx):
+    h,d,o,m,src,wip=ctx
+    # The target warehouse is already attached to the order fixture.
+    release=h.post(f"/api/v1/manufacturing/production-orders/{o.id}/transition",json={"action":"release"})
+    assert release.status_code==200,release.text
+    start=h.post(f"/api/v1/manufacturing/production-orders/{o.id}/transition",json={"action":"start"})
+    assert start.status_code==200,start.text
+    transfer=h.post(f"/api/v1/manufacturing/production-orders/{o.id}/transfer-to-wip")
+    assert transfer.status_code==201,transfer.text
+    card=h.get(f"/api/v1/manufacturing/production-orders/{o.id}/job-cards").json()[0]
+    produced=h.post("/api/v1/production",json={"entry_date":date.today().isoformat(),"product_id":o.product_id,"quantity":10,"production_order_id":o.id,"job_card_id":card["id"]})
+    assert produced.status_code==201,produced.text
+    wip_balance=d.query(models.WarehouseStock).filter_by(warehouse_id=wip.id,item_id=m.id).one()
+    assert wip_balance.quantity==0
+    finished=d.query(models.WarehouseStock).filter_by(warehouse_id=o.target_warehouse_id,item_id=o.product_id).one()
+    assert finished.quantity==10
+    assert d.get(models.RawMaterial,m.id).stock==10
