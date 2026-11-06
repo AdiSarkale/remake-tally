@@ -68,3 +68,31 @@ def test_warehouse_finished_goods_remain_held_until_quality_acceptance(ctx):
     d.refresh(finished);assert finished.quality_hold_quantity==0
     released=h.post("/api/v1/inventory/movements",json={"item_kind":"product","item_id":o.product_id,"movement_type":"OUT","quantity":10,"warehouse_id":o.target_warehouse_id})
     assert released.status_code==201,released.text
+
+
+
+def test_repeated_wip_transfer_is_idempotent(ctx):
+    h, d, order, material, source, wip = ctx
+    released = h.post(
+        f"/api/v1/manufacturing/production-orders/{order.id}/transition",
+        json={"action": "release"},
+    )
+    assert released.status_code == 200, released.text
+
+    first = h.post(f"/api/v1/manufacturing/production-orders/{order.id}/transfer-to-wip")
+    second = h.post(f"/api/v1/manufacturing/production-orders/{order.id}/transfer-to-wip")
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert len(first.json()) == len(second.json()) == 1
+    source_balance = d.query(models.WarehouseStock).filter_by(
+        warehouse_id=source.id, item_id=material.id
+    ).one()
+    wip_balance = d.query(models.WarehouseStock).filter_by(
+        warehouse_id=wip.id, item_id=material.id
+    ).one()
+    assert source_balance.quantity == 10
+    assert wip_balance.quantity == 20
+    assert d.query(models.ProductionMaterialTransfer).filter_by(
+        production_order_id=order.id
+    ).count() == 1
