@@ -123,8 +123,6 @@ The multi-company guide describes a tenant backup utility using PostgreSQL custo
 - [ ] Run login, role authorization, tenant isolation and critical business-flow smoke tests against the deployed URLs.
 - [ ] Record release version, migration revisions and smoke-test evidence.
 
-The `docs/railway-demo.md` guide on `main` describes a Railway + Vercel **demo** setup. It explicitly is not a production security, backup, availability or disaster-recovery configuration. Do not promote demo settings as production controls.
-
 ## 6. Manufacturing MVP roadmap
 
 ### 6.1 Capability status
