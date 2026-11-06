@@ -1,5 +1,7 @@
 """Production routes: create batches (FG in, RM out) and list history."""
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -81,11 +83,26 @@ def create_production(
         order = db.get(models.ProductionOrder, payload.production_order_id)
         if not order:
             raise HTTPException(400, "Production order not found")
+        if payload.job_card_id:
+            job_card = db.query(models.JobCard).filter_by(id=payload.job_card_id, production_order_id=order.id).with_for_update().first()
+            if job_card is None:
+                raise HTTPException(400, "Job card does not belong to this production order")
+            if job_card.status not in ("Pending", "In Progress"):
+                raise HTTPException(409, f"Cannot post production against a {job_card.status.lower()} job card")
+            order_op = db.get(models.ProductionOrderOperation, job_card.production_order_operation_id)
+            if order_op is None:
+                raise HTTPException(409, "Job card operation no longer exists")
+            if job_card.status == "Pending":
+                job_card.status = "In Progress"
+                job_card.started_at = datetime.now(timezone.utc)
         if order.status != "In Progress":
             raise HTTPException(409, f"Production order must be In Progress before posting output (current: {order.status})")
         if order.product_id != payload.product_id:
             raise HTTPException(400, "Production order does not belong to product")
-        if payload.operation_id:
+        if payload.job_card_id:
+            if order_op.production_order_id != order.id:
+                raise HTTPException(400, "Job card operation does not belong to production order")
+        elif payload.operation_id:
             order_op = db.get(models.ProductionOrderOperation, payload.operation_id)
             if not order_op or order_op.production_order_id != order.id:
                 raise HTTPException(400, "Production order operation not found")
@@ -258,6 +275,7 @@ def create_production(
         routing_id=payload.routing_id,
         operation_id=payload.operation_id or (order_op.operation_id if order_op else None),
         production_order_id=payload.production_order_id,
+        job_card_id=payload.job_card_id,
         employee_id=payload.employee_id,
         operator=payload.operator,
         shift=payload.shift,
@@ -346,6 +364,15 @@ def create_production(
     if order_op:
         order_op.completed_qty += payload.quantity
         order_op.status = "Completed" if order_op.completed_qty >= order_op.planned_qty else "In Progress"
+        card = db.query(models.JobCard).filter_by(production_order_operation_id=order_op.id).with_for_update().first()
+        if card is not None:
+            card.completed_qty = round(card.completed_qty + payload.quantity, 3)
+            if card.completed_qty >= card.planned_qty:
+                card.status = "Completed"
+                card.completed_at = datetime.now(timezone.utc)
+            elif card.status == "Pending":
+                card.status = "In Progress"
+                card.started_at = datetime.now(timezone.utc)
         order = db.get(models.ProductionOrder, payload.production_order_id)
         if order:
             ops = db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).all()

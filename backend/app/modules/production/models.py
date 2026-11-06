@@ -55,6 +55,7 @@ class ProductionEntry(Base):
     routing_id: Mapped[str | None] = mapped_column(ForeignKey("routings.id"), nullable=True, index=True)
     operation_id: Mapped[str | None] = mapped_column(ForeignKey("routing_operations.id"), nullable=True, index=True)
     production_order_id: Mapped[str | None] = mapped_column(ForeignKey("production_orders.id"), nullable=True, index=True)
+    job_card_id: Mapped[str | None] = mapped_column(ForeignKey("job_cards.id"), nullable=True, index=True)
     employee_id: Mapped[str | None] = mapped_column(ForeignKey("employees.id"), nullable=True, index=True)
     operator: Mapped[str] = mapped_column(String(120), default="")
     shift: Mapped[str] = mapped_column(String(4), default="A")
@@ -199,3 +200,33 @@ class StockReservation(Base):
     @property
     def remaining_quantity(self) -> float:
         return round(max(float(self.quantity) - float(self.consumed_quantity), 0.0), 3)
+
+
+class JobCard(Base):
+    """Shop-floor execution card for one production-order operation."""
+    __tablename__ = "job_cards"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    production_order_id: Mapped[str] = mapped_column(ForeignKey("production_orders.id", ondelete="CASCADE"), index=True)
+    production_order_operation_id: Mapped[str] = mapped_column(ForeignKey("production_order_operations.id", ondelete="CASCADE"), index=True)
+    operation_id: Mapped[str] = mapped_column(ForeignKey("routing_operations.id"), index=True)
+    workcenter_id: Mapped[str] = mapped_column(ForeignKey("workcenters.id"), index=True)
+    assigned_employee_id: Mapped[str | None] = mapped_column(ForeignKey("employees.id"), nullable=True, index=True)
+    planned_qty: Mapped[float] = mapped_column(Float)
+    completed_qty: Mapped[float] = mapped_column(Float, default=0)
+    status: Mapped[str] = mapped_column(String(24), default="Pending", index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    remarks: Mapped[str] = mapped_column(Text, default="")
+
+class JobCardTimeLog(Base):
+    __tablename__ = "job_card_time_logs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    job_card_id: Mapped[str] = mapped_column(ForeignKey("job_cards.id", ondelete="CASCADE"), index=True)
+    employee_id: Mapped[str] = mapped_column(ForeignKey("employees.id"), index=True)
+    start_time: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    end_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_minutes: Mapped[float] = mapped_column(Float, default=0)
+    completed_qty: Mapped[float] = mapped_column(Float, default=0)
+    remarks: Mapped[str] = mapped_column(Text, default="")

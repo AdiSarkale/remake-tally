@@ -378,6 +378,18 @@ def transition_production_order(order_id: str, payload: schemas.ProductionOrderT
         if not operations:
             raise HTTPException(409, "At least one production operation is required")
         order.status = "Released"
+        for operation_row in operations:
+            existing_card = db.query(models.JobCard).filter_by(production_order_operation_id=operation_row.id).first()
+            if existing_card is None:
+                db.add(models.JobCard(
+                    production_order_id=order.id,
+                    production_order_operation_id=operation_row.id,
+                    operation_id=operation_row.operation_id,
+                    workcenter_id=operation_row.workcenter_id,
+                    assigned_employee_id=operation_row.assigned_employee_id,
+                    planned_qty=operation_row.planned_qty,
+                    status="Pending",
+                ))
     elif action == "start":
         operations = db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).all()
         if not operations:
@@ -432,9 +444,142 @@ def assign_operation_employee(order_id: str, operation_row_id: str, payload: sch
             raise HTTPException(400, "Employee does not have the required routing skill")
     row.assigned_employee_id = employee.id
     row.status = "Assigned"
+    card = db.query(models.JobCard).filter_by(production_order_operation_id=row.id).first()
+    if card is not None:
+        card.assigned_employee_id = employee.id
     log_audit(db, user.username, "ASSIGN", "production_order_operation", f"{order_id}: {employee.emp_code}")
     db.commit()
     return {"operation_id": operation.id, "workcenter_id": row.workcenter_id, "employee_id": employee.id, "assignment_mode": "manual" if payload.employee_id else "automatic"}
+
+
+def _job_card_payload(db: Session, card: models.JobCard):
+    logs = db.query(models.JobCardTimeLog).filter_by(job_card_id=card.id).order_by(models.JobCardTimeLog.start_time).all()
+    return {**{k: getattr(card, k) for k in ("id", "production_order_id", "production_order_operation_id", "operation_id", "workcenter_id", "assigned_employee_id", "planned_qty", "completed_qty", "status", "started_at", "completed_at", "remarks")}, "time_logs": logs}
+
+
+@router.get("/production-orders/{order_id}/job-cards", response_model=list[schemas.JobCardOut])
+def list_job_cards(order_id: str, db: Session = Depends(get_db), user: models.User = guard):
+    if db.get(models.ProductionOrder, order_id) is None:
+        raise HTTPException(404, "Production order not found")
+    cards = db.query(models.JobCard).filter_by(production_order_id=order_id).order_by(models.JobCard.id).all()
+    return [_job_card_payload(db, card) for card in cards]
+
+
+@router.post("/production-orders/{order_id}/job-cards", response_model=list[schemas.JobCardOut], status_code=201)
+def generate_job_cards(order_id: str, db: Session = Depends(get_db), user: models.User = guard):
+    order = db.get(models.ProductionOrder, order_id)
+    if order is None:
+        raise HTTPException(404, "Production order not found")
+    operations = db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).order_by(models.ProductionOrderOperation.sequence).all()
+    if not operations:
+        raise HTTPException(409, "Production order has no operations")
+    for operation_row in operations:
+        card = db.query(models.JobCard).filter_by(production_order_operation_id=operation_row.id).first()
+        if card is None:
+            db.add(models.JobCard(production_order_id=order.id, production_order_operation_id=operation_row.id,
+                operation_id=operation_row.operation_id, workcenter_id=operation_row.workcenter_id,
+                assigned_employee_id=operation_row.assigned_employee_id, planned_qty=operation_row.planned_qty, status="Pending"))
+    log_audit(db, user.username, "GENERATE", "job_cards", order.order_no)
+    db.commit()
+    cards = db.query(models.JobCard).filter_by(production_order_id=order.id).order_by(models.JobCard.id).all()
+    return [_job_card_payload(db, card) for card in cards]
+
+
+@router.post("/job-cards/{job_card_id}/start", response_model=schemas.JobCardOut)
+def start_job_card(job_card_id: str, db: Session = Depends(get_db), user: models.User = guard):
+    card = db.query(models.JobCard).filter_by(id=job_card_id).with_for_update().first()
+    if card is None:
+        raise HTTPException(404, "Job card not found")
+    order = db.get(models.ProductionOrder, card.production_order_id)
+    if order is None or order.status != "In Progress":
+        raise HTTPException(409, "Production order must be In Progress before starting a job card")
+    if card.status != "Pending":
+        raise HTTPException(409, f"Cannot start a job card in {card.status} status")
+    if not card.assigned_employee_id:
+        raise HTTPException(409, "Assign an employee before starting this job card")
+    employee = db.get(models.Employee, card.assigned_employee_id)
+    if employee is None or not employee.active:
+        raise HTTPException(409, "Assigned employee is inactive or missing")
+    now = datetime.now(timezone.utc)
+    card.status = "In Progress"
+    card.started_at = now
+    db.add(models.JobCardTimeLog(job_card_id=card.id, employee_id=employee.id, start_time=now, remarks="Started from job card"))
+    log_audit(db, user.username, "START", "job_card", card.id)
+    db.commit()
+    db.refresh(card)
+    return _job_card_payload(db, card)
+
+
+@router.post("/job-cards/{job_card_id}/stop", response_model=schemas.JobCardOut)
+def stop_job_card(job_card_id: str, db: Session = Depends(get_db), user: models.User = guard):
+    card = db.query(models.JobCard).filter_by(id=job_card_id).with_for_update().first()
+    if card is None:
+        raise HTTPException(404, "Job card not found")
+    if card.status != "In Progress":
+        raise HTTPException(409, "Only an in-progress job card can be stopped")
+    active_log = db.query(models.JobCardTimeLog).filter_by(job_card_id=card.id, end_time=None).with_for_update().first()
+    if active_log is None:
+        raise HTTPException(409, "No active time log exists for this job card")
+    now = datetime.now(timezone.utc)
+    active_log.end_time = now
+    active_log.duration_minutes = round(max((now - active_log.start_time).total_seconds() / 60, 0), 2)
+    card.status = "Pending" if card.completed_qty <= 0 else "In Progress"
+    log_audit(db, user.username, "STOP", "job_card", card.id)
+    db.commit()
+    db.refresh(card)
+    return _job_card_payload(db, card)
+
+
+@router.post("/job-cards/{job_card_id}/time-logs", response_model=schemas.JobCardTimeLogOut, status_code=201)
+def add_job_card_time_log(job_card_id: str, payload: schemas.JobCardTimeLogIn, db: Session = Depends(get_db), user: models.User = guard):
+    card = db.get(models.JobCard, job_card_id)
+    if card is None:
+        raise HTTPException(404, "Job card not found")
+    employee_id = payload.employee_id or card.assigned_employee_id
+    employee = db.get(models.Employee, employee_id) if employee_id else None
+    if employee is None or not employee.active:
+        raise HTTPException(400, "An active employee is required for a time log")
+    if payload.end_time is not None and payload.end_time <= payload.start_time:
+        raise HTTPException(400, "Time-log end must be later than start")
+    overlap = db.query(models.JobCardTimeLog).filter(
+        models.JobCardTimeLog.employee_id == employee.id,
+        models.JobCardTimeLog.start_time < (payload.end_time or datetime.max.replace(tzinfo=timezone.utc)),
+        (models.JobCardTimeLog.end_time.is_(None)) | (models.JobCardTimeLog.end_time > payload.start_time),
+    ).first()
+    if overlap is not None:
+        raise HTTPException(409, "Employee already has an overlapping job-card time log")
+    duration = round((payload.end_time - payload.start_time).total_seconds() / 60, 2) if payload.end_time else 0
+    row = models.JobCardTimeLog(job_card_id=card.id, employee_id=employee.id, start_time=payload.start_time,
+        end_time=payload.end_time, duration_minutes=duration, completed_qty=payload.completed_qty, remarks=payload.remarks)
+    db.add(row)
+    log_audit(db, user.username, "CREATE", "job_card_time_log", card.id)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.post("/job-cards/{job_card_id}/complete", response_model=schemas.JobCardOut)
+def complete_job_card(job_card_id: str, db: Session = Depends(get_db), user: models.User = guard):
+    card = db.query(models.JobCard).filter_by(id=job_card_id).with_for_update().first()
+    if card is None:
+        raise HTTPException(404, "Job card not found")
+    if card.status == "Completed":
+        raise HTTPException(409, "Job card is already completed")
+    if card.completed_qty + 0.0001 < card.planned_qty:
+        raise HTTPException(409, f"Job card output is incomplete ({card.completed_qty} of {card.planned_qty})")
+    active_log = db.query(models.JobCardTimeLog).filter_by(job_card_id=card.id, end_time=None).first()
+    if active_log is not None:
+        raise HTTPException(409, "Stop the active time log before completing the job card")
+    card.status = "Completed"
+    card.completed_at = datetime.now(timezone.utc)
+    operation_row = db.get(models.ProductionOrderOperation, card.production_order_operation_id)
+    if operation_row is not None:
+        operation_row.status = "Completed"
+        operation_row.completed_qty = max(operation_row.completed_qty, card.completed_qty)
+    log_audit(db, user.username, "COMPLETE", "job_card", card.id)
+    db.commit()
+    db.refresh(card)
+    return _job_card_payload(db, card)
 
 
 @router.patch("/production/{production_id}/quality", response_model=schemas.ProductionOut)

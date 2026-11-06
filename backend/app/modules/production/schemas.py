@@ -67,6 +67,7 @@ class ProductionIn(BaseModel):
     routing_id: str | None = None
     operation_id: str | None = None
     production_order_id: str | None = None
+    job_card_id: str | None = None
     employee_id: str | None = None
     operator: str = ""
     shift: str = "A"
@@ -89,6 +90,7 @@ class ProductionOut(ORMModel):
     routing_id: str | None = None
     operation_id: str | None = None
     production_order_id: str | None = None
+    job_card_id: str | None = None
     employee_id: str | None = None
     operator: str
     shift: str
@@ -281,3 +283,36 @@ class ProductionOrderReservationOut(BaseModel):
 
 class ProductionOrderTransitionIn(BaseModel):
     action: str = Field(pattern="^(release|start|complete|cancel)$")
+
+
+class JobCardTimeLogIn(BaseModel):
+    employee_id: str | None = None
+    start_time: datetime
+    end_time: datetime | None = None
+    completed_qty: float = Field(default=0, ge=0)
+    remarks: str = ""
+
+class JobCardTimeLogOut(ORMModel):
+    id: str
+    job_card_id: str
+    employee_id: str
+    start_time: datetime
+    end_time: datetime | None
+    duration_minutes: float
+    completed_qty: float
+    remarks: str
+
+class JobCardOut(ORMModel):
+    id: str
+    production_order_id: str
+    production_order_operation_id: str
+    operation_id: str
+    workcenter_id: str
+    assigned_employee_id: str | None
+    planned_qty: float
+    completed_qty: float
+    status: str
+    started_at: datetime | None
+    completed_at: datetime | None
+    remarks: str
+    time_logs: list[JobCardTimeLogOut] = Field(default_factory=list)
