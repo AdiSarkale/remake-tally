@@ -47,7 +47,13 @@ def client(db_session):
     )
     customer = models.Party(kind="customer", name="Test Customer")
     supplier = models.Party(kind="supplier", name="Test Supplier")
-    db_session.add_all([user, customer, supplier])
+    db_session.add_all([
+        user, customer, supplier,
+        models.RolePermissionGrant(
+            role="Admin", module="finance", feature="access", action="read",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ),
+    ])
     db_session.flush()
 
     invoice = models.Invoice(
