@@ -94,3 +94,15 @@ Payroll limitations:
 - Statutory calculations are not yet certified or enabled as a compliance engine. PF/PT/TDS values remain manual/configured and must not be marketed as statutory-compliant.
 - The rule framework must be configured by tenant jurisdiction and effective date. It must include establishment applicability, employee eligibility, PF membership/wage basis, state-specific professional tax classification, tax regime and annual projected taxable income.
 - Do not activate statutory auto-calculation until the applicable rules and employee data have been reviewed by a qualified payroll/compliance professional. See source notes in the implementation review before adding jurisdiction defaults.
+
+
+### Statutory source review (India, checked 7 November 2026)
+
+These sources demonstrate why static PF/PT/TDS constants are unsafe:
+
+- EPFO/Ministry of Labour announcement: mandatory EPF wage ceiling raised from ₹15,000 to ₹25,000 effective 17 September 2026, subject to applicable membership and scheme conditions: https://www.pib.gov.in/PressReleasePage.aspx?PRID=2310973
+- Income Tax Department transition guidance: salary TDS for payments from 1 April 2026 is under section 392(1) of the Income-tax Act, 2025; tax computation must use projected income, deductions and the selected regime for Tax Year 2026-27: https://www.incometax.gov.in/iec/foportal/help/all-topics/e-filing-services/tds-compliance
+- Maharashtra GST Department PT schedule, published as updated to 31 March 2025: https://www.mahagst.gov.in/public/uploads/mvatservices/1761635685PT%20Rate%20Schedule%20updated_0%20%2801.04.2023%29_0.pdf
+- Maharashtra notification dated 28 February 2026 amends PT return/payment due-date rules; it is not itself a replacement salary-rate schedule: https://www.mahagst.gov.in/public/uploads/mvatservices/1772710759_PT%20Notification%2028.2.2026.pdf
+
+Before statutory auto-calculation can be enabled, each tenant must specify its operating state(s), establishment PF applicability and contribution category, employee PF membership/entry status and wage basis, Maharashtra PT exemption/category where applicable, and employee tax regime/declarations/prior-employer income. A compliance reviewer must approve the effective-dated rule set. TDS cannot be calculated correctly from a single fixed monthly amount alone.
