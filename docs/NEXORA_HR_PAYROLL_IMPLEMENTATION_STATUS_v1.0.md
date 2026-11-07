@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.3  
+**Version:** 1.4  
 **Status:** Active implementation tracker  
 **Baseline:** 8 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -351,6 +351,7 @@ A workstream may be marked **Implemented** only when all applicable items are co
 | 1.1 | 8 November 2026 | Updated after P0 integration into the PR #27 head branch: records branch/team scopes, granular authorization framework and monthly/pro-rata leave accrual as implemented, with operational and migration limitations explicitly retained. |
 | 1.2 | 8 November 2026 | Records follow-up branch-scope regression coverage, Playwright smoke selector corrections and actual CI outcomes. |
 | 1.3 | 8 November 2026 | Records the final Payroll smoke navigation fix integrated through PR #30 and the latest CI rerun status. |
+| 1.4 | 8 November 2026 | Records successful latest integrated CI: backend, tenant isolation, PostgreSQL migrations/provisioning, frontend typecheck/build and Playwright smoke suite passed. |
 
 ## 11. Integration and verification record
 
@@ -360,6 +361,6 @@ A workstream may be marked **Implemented** only when all applicable items are co
 - Final Payroll smoke navigation fix integrated through [PR #30](https://github.com/AdiSarkale/remake-tally/pull/30), merged on 8 November 2026.
 - Latest integration commit: `e4c2b40f5a1cc60a22574b5a674ec5c0a008a7bf`.
 - PR #27 remains open and unmerged; its target is `main`, but no merge to `main` has been performed.
-- CI on the first integration commit passed backend unit tests, backend tenant-isolation tests, PostgreSQL tenant migrations/provisioning, frontend typecheck and production build. The Playwright smoke job exposed stale selectors; PR #29 corrected the duplicate heading/Admin label selectors and PR #30 corrected the Payroll tab navigation. CI was triggered again for the latest integration commit; its final Playwright result is still pending at the time of this document update.
+- Latest integrated CI run completed successfully: backend tests and compilation passed; PostgreSQL control-plane/tenant migrations and tenant provisioning tests passed; frontend typecheck and production build passed; Playwright employee/HR/Admin/Finance smoke tests passed. The separate tenant-isolation workflow also passed. A separate duplicate Backend Tests workflow is still running, but the full Minitally CI backend job is green.
 
 **End of document.**
