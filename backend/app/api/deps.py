@@ -303,3 +303,21 @@ def apply_employee_scope(
     if ids is None:
         return query
     return query.filter(models.Employee.id.in_(ids))
+
+
+def require_employee_scope_grant(
+    db: Session, user: models.User, module: str, feature: str, action: str,
+) -> None:
+    grants = db.query(RolePermissionGrant).filter_by(
+        role=user.role.value, module=module, feature=feature, action=action,
+    ).all()
+    if grants:
+        if any(grant.allowed for grant in grants):
+            return
+        raise HTTPException(status_code=403, detail=f"Permission denied: {module}.{feature}.{action}")
+    wildcard = db.query(RolePermissionGrant).filter_by(
+        role=user.role.value, module=module, feature="*", action="*",
+        data_scope="tenant", allowed=True,
+    ).first()
+    if wildcard is None:
+        raise HTTPException(status_code=403, detail=f"Missing permission: {module}.{feature}.{action}")
