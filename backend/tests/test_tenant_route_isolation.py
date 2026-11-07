@@ -1373,3 +1373,26 @@ def test_hr_leave_request_approval_attendance_and_carry_forward(isolated_tenants
     carried_again = client.post("/api/v1/hr/leave/balances/carry-forward/2026", headers=admin_headers)
     assert carried_again.status_code == 200
     assert carried_again.json() == []
+
+    non_admin_grants = client.get("/api/v1/authorization/role-grants", headers=employee_headers)
+    assert non_admin_grants.status_code == 403
+    updated_grant = client.put(
+        "/api/v1/authorization/role-grants",
+        headers=admin_headers,
+        json={
+            "role": "Operator", "module": "hr", "feature": "leave_requests",
+            "action": "create", "data_scope": "self", "allowed": False,
+        },
+    )
+    assert updated_grant.status_code == 200, updated_grant.text
+    assert updated_grant.json()["allowed"] is False
+    assert updated_grant.json()["updated_by"] == "admin"
+    revoked_request = client.post(
+        "/api/v1/hr/leave/requests",
+        headers=employee_headers,
+        json={
+            "leave_type_id": leave_type_id, "start_date": "2026-10-12",
+            "end_date": "2026-10-12", "reason": "Permission revocation test",
+        },
+    )
+    assert revoked_request.status_code == 403
