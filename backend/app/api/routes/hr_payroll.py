@@ -23,13 +23,39 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api.deps import require_area
+from app.api.deps import current_user, require_area
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
 
 router = APIRouter(prefix="/hr", tags=["hr", "payroll"])
 hr_access = Depends(require_area("hr"))
 _CENT = Decimal("0.01")
+
+
+
+
+def _ensure_period_not_prepared(db: Session, year: int, month: int) -> None:
+    frozen = db.query(models.HRPayrollRun).filter(
+        models.HRPayrollRun.year == year,
+        models.HRPayrollRun.month == month,
+        models.HRPayrollRun.status.in_(["prepared", "approved", "finalized", "locked"]),
+    ).first()
+    if frozen is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="This payroll period has a prepared or finalized snapshot. Reverse it through the controlled payroll workflow before changing its attendance or calendar inputs.",
+        )
+
+
+def _ensure_no_pending_payroll_snapshot(db: Session) -> None:
+    frozen = db.query(models.HRPayrollRun).filter(
+        models.HRPayrollRun.status.in_(["prepared", "approved"])
+    ).first()
+    if frozen is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="A prepared or approved payroll snapshot exists. Finalize or reverse it before changing salary profiles or payroll settings.",
+        )
 
 
 def _dec(value: Any) -> Decimal:
@@ -657,6 +683,7 @@ def update_hr_calendar_day(
     work_date: date, payload: schemas.CalendarDayIn,
     db: Session = Depends(get_db), user: models.User = hr_access,
 ):
+    _ensure_period_not_prepared(db, work_date.year, work_date.month)
     _ensure_settings(db)
     row = db.query(models.HRCalendarDay).filter_by(work_date=work_date).first()
     if row is None:
@@ -675,6 +702,7 @@ def update_hr_calendar_day(
 def delete_hr_calendar_override(
     work_date: date, db: Session = Depends(get_db), user: models.User = hr_access
 ):
+    _ensure_period_not_prepared(db, work_date.year, work_date.month)
     row = db.query(models.HRCalendarDay).filter_by(work_date=work_date).first()
     if row is not None:
         db.delete(row)
@@ -802,6 +830,7 @@ async def import_attendance_from_excel(
     user: models.User = hr_access,
 ):
     _validate_period(year, month)
+    _ensure_period_not_prepared(db, year, month)
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=415, detail="Upload an .xlsx Excel workbook using the MiniTally attendance template.")
     content = await file.read(_MAX_ATTENDANCE_IMPORT_BYTES + 1)
@@ -867,6 +896,7 @@ async def import_attendance_from_excel(
 def upsert_daily_attendance(
     payload: schemas.EmployeeAttendanceIn, db: Session = Depends(get_db), user: models.User = hr_access
 ):
+    _ensure_period_not_prepared(db, payload.work_date.year, payload.work_date.month)
     employee = db.get(models.Employee, payload.employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -1162,7 +1192,7 @@ def reverse_monthly_payroll(
 
 @router.get("/payroll/slips/{employee_id}/{year}/{month}")
 def download_salary_slip(
-    employee_id: str, year: int, month: int, db: Session = Depends(get_db), user: models.User = Depends(__import__("app.api.deps", fromlist=["current_user"]).current_user)
+    employee_id: str, year: int, month: int, db: Session = Depends(get_db), user: models.User = Depends(current_user)
 ):
     _validate_period(year, month)
     run = db.query(models.HRPayrollRun).filter(
