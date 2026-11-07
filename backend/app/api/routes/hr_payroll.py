@@ -18,6 +18,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils.datetime import from_excel
 from openpyxl.utils.exceptions import InvalidFileException
 from zipfile import BadZipFile
+from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -1053,10 +1054,6 @@ def _snapshot_payroll_run(
     return run
 
 
-class PayrollReversalIn(schemas.BaseModel if hasattr(schemas, "BaseModel") else object):
-    pass
-
-
 @router.post("/payroll/runs/{year}/{month}/prepare", response_model=schemas.PayrollRunOut)
 def prepare_monthly_payroll(
     year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
@@ -1137,8 +1134,8 @@ def lock_monthly_payroll(
     return _run_output(db, run)
 
 
-class PayrollReversalPayload(schemas.BaseModel if hasattr(schemas, "BaseModel") else __import__("pydantic").BaseModel):
-    reason: str
+class PayrollReversalPayload(BaseModel):
+    reason: str = Field(min_length=10, max_length=2000)
 
 
 @router.post("/payroll/runs/{run_id}/reverse", response_model=schemas.PayrollRunOut)
@@ -1165,10 +1162,13 @@ def reverse_monthly_payroll(
 
 @router.get("/payroll/slips/{employee_id}/{year}/{month}")
 def download_salary_slip(
-    employee_id: str, year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
+    employee_id: str, year: int, month: int, db: Session = Depends(get_db), user: models.User = Depends(__import__("app.api.deps", fromlist=["current_user"]).current_user)
 ):
     _validate_period(year, month)
-    run = db.query(models.HRPayrollRun).filter_by(year=year, month=month, status="finalized").first()
+    run = db.query(models.HRPayrollRun).filter(
+        models.HRPayrollRun.year == year, models.HRPayrollRun.month == month,
+        models.HRPayrollRun.status.in_(["finalized", "locked"]),
+    ).order_by(models.HRPayrollRun.revision.desc()).first()
     if run is None:
         raise HTTPException(status_code=404, detail="Finalize payroll for this month before downloading salary slips")
     item = db.query(models.HRPayrollItem).filter_by(payroll_run_id=run.id, employee_id=employee_id).first()
