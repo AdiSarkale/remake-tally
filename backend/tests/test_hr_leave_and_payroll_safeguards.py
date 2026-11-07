@@ -11,6 +11,8 @@ if str(BACKEND_DIR) not in sys.path:
 from types import SimpleNamespace
 
 from app.api.routes.hr_payroll import _calculate_employee_monthly_payroll
+from app.api.routes.hr_leave import _monthly_accrual_amount
+from app.modules.hr.leave import HRLeaveAccrualLedger
 from app.modules.hr.payroll_schemas import AttendanceStatus
 
 
@@ -84,3 +86,44 @@ def test_leave_decision_does_not_allow_requestor_selected_approver():
     }
     assert "approver_username" not in fields
     assert "approver_username=department.hod_username" in source
+
+
+
+def test_monthly_leave_accrual_reaches_annual_entitlement_over_twelve_months():
+    period_end = date(2026, 1, 31)
+    monthly_amount = _monthly_accrual_amount(
+        12, "monthly", date(2026, 1, 1), period_end, period_end,
+    )
+    assert monthly_amount == 1.0
+    assert round(monthly_amount * 12, 2) == 12.0
+
+
+def test_monthly_prorated_leave_accrual_prorates_mid_month_joining():
+    period_end = date(2026, 4, 30)
+    amount = _monthly_accrual_amount(
+        12, "monthly_prorated", date(2026, 4, 16), period_end, period_end,
+    )
+    assert amount == 0.5
+
+
+def test_monthly_prorated_leave_accrual_prorates_mid_month_exit():
+    period_end = date(2026, 4, 30)
+    amount = _monthly_accrual_amount(
+        12, "monthly_prorated", date(2026, 4, 1), date(2026, 4, 15), period_end,
+    )
+    assert amount == 0.5
+
+
+def test_monthly_prorated_leave_accrual_respects_policy_effective_date():
+    period_end = date(2026, 4, 30)
+    amount = _monthly_accrual_amount(
+        12, "monthly_prorated", date(2026, 4, 21), period_end, period_end,
+    )
+    assert amount == 0.33
+
+
+def test_leave_accrual_ledger_has_one_entry_per_employee_type_and_month():
+    constraints = {
+        constraint.name for constraint in HRLeaveAccrualLedger.__table__.constraints
+    }
+    assert "uq_hr_leave_accrual_period" in constraints
