@@ -74,6 +74,8 @@ class LeaveDecisionIn(BaseModel):
 
 
 class LeaveRequestOut(BaseModel):
+    model_config = {"from_attributes": True}
+
     id: str
     employee_id: str
     leave_type_id: str
@@ -242,6 +244,8 @@ def create_leave_request(payload: LeaveRequestIn, db: Session = Depends(get_db),
         raise HTTPException(422, "This leave type does not permit the requested half-day format")
     total_days = _leave_days(db, leave_type, payload.start_date, payload.end_date)
     if payload.half_day:
+        if total_days <= 0:
+            raise HTTPException(422, "Half-day leave must fall on a date that counts under the leave policy")
         total_days = 0.5
     if total_days <= 0:
         raise HTTPException(422, "The selected dates do not contain any leave-counting days")
@@ -346,7 +350,7 @@ def decide_leave_request(
                 ).with_for_update().first()
                 if attendance is not None and attendance.status not in {"unmarked", "absent", "paid_leave", "unpaid_leave"}:
                     raise HTTPException(409, f"Attendance already exists for {current}; resolve it before approving leave")
-                status = "paid_leave" if leave_type.is_paid else "unpaid_leave"
+                status = ("paid_half_day" if leave_type.is_paid else "unpaid_half_day") if row.half_day else ("paid_leave" if leave_type.is_paid else "unpaid_leave")
                 if attendance is None:
                     attendance = EmployeeAttendance(
                         employee_id=row.employee_id, work_date=current, status=status,
