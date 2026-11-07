@@ -83,6 +83,48 @@ def test_salary_count_divisor_supports_fixed_calendar_and_working_days():
     assert _salary_count_divisor(2026, 10, "working_days", 26, [5, 6], overrides) == 22
 
 
+def test_partial_month_employment_prorates_gross_and_statutory_deductions():
+    employee = SimpleNamespace(
+        id="emp-join", emp_code="EMP-JOIN", name="Mid-month Joiner",
+        department="Production", joining_date=date(2026, 10, 16), end_date=None,
+    )
+    result = _calculate_employee_monthly_payroll(
+        employee, _profile(), [], 2026, 10, "calendar_days", 26, [5, 6], {}
+    )
+    assert result["monthly_gross"] == Decimal("25806.45")
+    assert result["employee_pf"] == Decimal("1548.39")
+    assert result["professional_tax"] == Decimal("103.23")
+    assert result["tds"] == Decimal("258.06")
+    assert result["net_pay"] == Decimal("23896.77")
+
+
+def test_employment_end_date_is_inclusive_and_prorates_salary():
+    employee = SimpleNamespace(
+        id="emp-exit", emp_code="EMP-EXIT", name="Leaving Employee",
+        department="Production", joining_date=date(2026, 10, 1), end_date=date(2026, 10, 15),
+    )
+    result = _calculate_employee_monthly_payroll(
+        employee, _profile(), [], 2026, 10, "calendar_days", 26, [5, 6], {}
+    )
+    assert result["monthly_gross"] == Decimal("24193.55")
+    assert result["employee_pf"] == Decimal("1451.61")
+    assert result["professional_tax"] == Decimal("96.77")
+    assert result["tds"] == Decimal("241.94")
+    assert result["net_pay"] == Decimal("22403.23")
+
+
+def test_employment_period_outside_payroll_month_has_zero_payable_gross():
+    employee = SimpleNamespace(
+        id="emp-ended", emp_code="EMP-ENDED", name="Former Employee",
+        department="Production", joining_date=date(2026, 9, 1), end_date=date(2026, 9, 30),
+    )
+    result = _calculate_employee_monthly_payroll(
+        employee, _profile(), [], 2026, 10, "calendar_days", 26, [5, 6], {}
+    )
+    assert result["monthly_gross"] == Decimal("0.00")
+    assert result["net_pay"] == Decimal("0.00")
+
+
 def test_unconfigured_employee_does_not_get_configured_salary():
     result = _calculate_employee_monthly_payroll(
         _employee(), None, [], 2026, 10, "fixed_days", 26, [5, 6], {}
