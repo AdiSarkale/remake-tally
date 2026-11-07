@@ -226,9 +226,13 @@ def list_leave_balances(
 
 
 @router.put("/balances", response_model=LeaveBalanceOut)
-def upsert_leave_balance(payload: LeaveBalanceIn, db: Session = Depends(get_db), user: models.User = Depends(require_permission("hr", "leave_balances", "write", "tenant"))):
+def upsert_leave_balance(payload: LeaveBalanceIn, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
     if not _is_hr(user):
         raise HTTPException(403, "Only HR or Admin can allocate or adjust leave balances")
+    require_employee_scope_grant(db, user, "hr", "leave_balances", "write")
+    scoped_ids = employee_scope_ids(db, user, "hr", "leave_balances", "write")
+    if scoped_ids is not None and payload.employee_id not in scoped_ids:
+        raise HTTPException(403, "Employee is outside your configured leave-balance write scope")
     employee = db.get(models.Employee, payload.employee_id)
     leave_type = db.get(HRLeaveType, payload.leave_type_id)
     if employee is None or leave_type is None:
@@ -483,7 +487,10 @@ def decide_leave_request(
     if row.requested_by == user.username:
         raise HTTPException(403, "A requester cannot approve or reject their own leave")
     if user.role in (models.Role.admin, models.Role.hr):
-        _require_grant(db, user, "leave_requests", "approve", "tenant")
+        require_employee_scope_grant(db, user, "hr", "leave_requests", "approve")
+        scoped_ids = employee_scope_ids(db, user, "hr", "leave_requests", "approve")
+        if scoped_ids is not None and row.employee_id not in scoped_ids:
+            raise HTTPException(403, "Leave request is outside your configured approval scope")
     else:
         _require_grant(db, user, "leave_requests", "approve", "department")
         if row.approver_username != user.username:
