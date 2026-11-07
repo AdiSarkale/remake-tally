@@ -963,7 +963,10 @@ def preview_monthly_payroll(
 
 @router.get("/payroll/runs", response_model=list[schemas.PayrollRunSummaryOut])
 def list_payroll_runs(db: Session = Depends(get_db), user: models.User = hr_access):
-    runs = db.query(models.HRPayrollRun).order_by(models.HRPayrollRun.year.desc(), models.HRPayrollRun.month.desc()).all()
+    runs = db.query(models.HRPayrollRun).order_by(
+        models.HRPayrollRun.year.desc(), models.HRPayrollRun.month.desc(),
+        models.HRPayrollRun.revision.desc(),
+    ).all()
     return [_run_output(db, run, include_items=False) for run in runs]
 
 
@@ -972,9 +975,9 @@ def get_payroll_run(
     year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
 ):
     _validate_period(year, month)
-    run = db.query(models.HRPayrollRun).filter_by(year=year, month=month).first()
+    run = _latest_payroll_run(db, year, month)
     if run is None:
-        raise HTTPException(status_code=404, detail="Finalized payroll run not found")
+        raise HTTPException(status_code=404, detail="Payroll run not found")
     return _run_output(db, run)
 
 
