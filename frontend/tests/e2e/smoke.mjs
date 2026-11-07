@@ -71,7 +71,7 @@ try {
     const { context, page } = await persona("HR", "hr-manager");
     await page.goto(base + "/hr");
     await page.getByRole("tab", { name: "Leave", exact: true }).click();
-    await page.getByText("Create leave policy", { exact: true }).waitFor();
+    await page.getByRole("heading", { name: "Create leave policy", exact: true }).waitFor();
     assert.equal(await page.getByRole("tab", { name: "Access Control", exact: true }).count(), 0);
     await page.getByRole("tab", { name: "Payroll", exact: true }).click();
     await page.getByText(/Payroll preview/).waitFor();
@@ -84,7 +84,7 @@ try {
     await page.goto(base + "/hr");
     await page.getByRole("tab", { name: "Access Control", exact: true }).click();
     await page.getByText("Branches and reporting structure", { exact: true }).waitFor();
-    await page.getByText("Employee reporting assignments", { exact: true }).waitFor();
+    await page.getByText("Assign employee organisation", { exact: true }).waitFor();
     await page.goto(base + "/finance");
     await page.getByRole("tab", { name: "Ledger & Payroll" }).click();
     await page.getByText("General Ledger & Payroll Posting", { exact: true }).waitFor();
