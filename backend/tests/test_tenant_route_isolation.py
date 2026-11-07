@@ -1217,3 +1217,159 @@ def test_employee_api_reads_and_mutations_are_tenant_scoped(isolated_tenants):
         json={"active": False},
     )
     assert cross_tenant_deactivation.status_code == 404
+
+
+def test_hr_leave_request_approval_attendance_and_carry_forward(isolated_tenants):
+    from app.api.routes.approvals import Department
+
+    client = isolated_tenants["client"]
+    admin_login = _login(client, "AA")
+    admin_headers = {"Authorization": f"Bearer {admin_login['access_token']}"}
+    tenant_a_session, _ = isolated_tenants["sessions"]
+
+    employee_id = "leave-employee-a"
+    tenant = tenant_a_session()
+    try:
+        employee_user = models.User(
+            username="leave-employee", full_name="Leave Employee",
+            password_hash=hash_password("Password@123"), role=models.Role.operator,
+            active=True, must_change_password=False,
+        )
+        approver = models.User(
+            username="leave-approver", full_name="Leave Approver",
+            password_hash=hash_password("Password@123"), role=models.Role.hr,
+            active=True, must_change_password=False,
+        )
+        employee = models.Employee(
+            id=employee_id, emp_code="LEAVE-A-001", name="Leave Employee",
+            employee_type="staff", department="Operations", designation="Operator",
+            joining_date=date(2026, 1, 1), active=True,
+        )
+        department = Department(code="OPS", name="Operations", hod_username="leave-approver", active=True)
+        tenant.add_all([employee_user, approver, employee, department])
+        tenant.commit()
+        employee_user_id = employee_user.id
+    finally:
+        tenant.close()
+
+    link = client.post(
+        "/api/v1/authorization/employee-links",
+        headers=admin_headers,
+        json={"user_id": employee_user_id, "employee_id": employee_id},
+    )
+    assert link.status_code == 201, link.text
+    duplicate_link = client.post(
+        "/api/v1/authorization/employee-links",
+        headers=admin_headers,
+        json={"user_id": employee_user_id, "employee_id": employee_id},
+    )
+    assert duplicate_link.status_code == 409
+
+    leave_type = client.post(
+        "/api/v1/hr/leave/types",
+        headers=admin_headers,
+        json={
+            "code": "CL", "name": "Casual Leave", "is_paid": True,
+            "annual_entitlement": 12, "carry_forward_limit": 4,
+            "count_week_offs": False, "count_holidays": False,
+            "allow_half_day": True, "active": True,
+        },
+    )
+    assert leave_type.status_code == 201, leave_type.text
+    leave_type_id = leave_type.json()["id"]
+
+    balance = client.put(
+        "/api/v1/hr/leave/balances",
+        headers=admin_headers,
+        json={
+            "employee_id": employee_id, "leave_type_id": leave_type_id,
+            "year": 2026, "opening_balance": 5, "accrued": 0, "adjusted": 0,
+        },
+    )
+    assert balance.status_code == 200, balance.text
+
+    employee_login = client.post(
+        "/api/v1/auth/login",
+        json={"company_code": "AA", "username": "leave-employee", "password": "Password@123"},
+    )
+    approver_login = client.post(
+        "/api/v1/auth/login",
+        json={"company_code": "AA", "username": "leave-approver", "password": "Password@123"},
+    )
+    assert employee_login.status_code == 200, employee_login.text
+    assert approver_login.status_code == 200, approver_login.text
+    employee_headers = {"Authorization": f"Bearer {employee_login.json()['access_token']}"}
+    approver_headers = {"Authorization": f"Bearer {approver_login.json()['access_token']}"}
+
+    request = client.post(
+        "/api/v1/hr/leave/requests",
+        headers=employee_headers,
+        json={
+            "leave_type_id": leave_type_id, "start_date": "2026-10-07",
+            "end_date": "2026-10-08", "reason": "Personal work",
+            "approver_username": "forged-approver",
+        },
+    )
+    assert request.status_code == 201, request.text
+    request_id = request.json()["id"]
+    assert request.json()["approver_username"] == "leave-approver"
+    assert request.json()["total_days"] == 2
+
+    overlapping = client.post(
+        "/api/v1/hr/leave/requests",
+        headers=employee_headers,
+        json={
+            "leave_type_id": leave_type_id, "start_date": "2026-10-08",
+            "end_date": "2026-10-08", "reason": "Duplicate request",
+        },
+    )
+    assert overlapping.status_code == 409
+
+    self_decision = client.patch(
+        f"/api/v1/hr/leave/requests/{request_id}",
+        headers=employee_headers,
+        json={"status": "approved", "decision_note": "Self approval"},
+    )
+    assert self_decision.status_code == 403
+
+    decision = client.patch(
+        f"/api/v1/hr/leave/requests/{request_id}",
+        headers=approver_headers,
+        json={"status": "approved", "decision_note": "Approved by HOD"},
+    )
+    assert decision.status_code == 200, decision.text
+    assert decision.json()["status"] == "approved"
+
+    half_day = client.post(
+        "/api/v1/hr/leave/requests",
+        headers=employee_headers,
+        json={
+            "leave_type_id": leave_type_id, "start_date": "2026-10-09",
+            "end_date": "2026-10-09", "half_day": True, "reason": "Personal appointment",
+        },
+    )
+    assert half_day.status_code == 201, half_day.text
+    half_day_decision = client.patch(
+        f"/api/v1/hr/leave/requests/{half_day.json()['id']}",
+        headers=approver_headers,
+        json={"status": "approved", "decision_note": "Half-day approved"},
+    )
+    assert half_day_decision.status_code == 200, half_day_decision.text
+
+    tenant = tenant_a_session()
+    try:
+        attendance = tenant.query(models.EmployeeAttendance).filter(
+            models.EmployeeAttendance.employee_id == employee_id
+        ).order_by(models.EmployeeAttendance.work_date).all()
+        assert [row.status for row in attendance] == ["paid_leave", "paid_leave", "paid_half_day"]
+    finally:
+        tenant.close()
+
+    carried = client.post("/api/v1/hr/leave/balances/carry-forward/2026", headers=admin_headers)
+    assert carried.status_code == 200, carried.text
+    assert len(carried.json()) == 1
+    assert carried.json()[0]["year"] == 2027
+    assert carried.json()[0]["opening_balance"] == 2.5
+    carried_again = client.post("/api/v1/hr/leave/balances/carry-forward/2026", headers=admin_headers)
+    assert carried_again.status_code == 200
+    assert carried_again.json() == []
