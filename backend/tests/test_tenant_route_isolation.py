@@ -1447,3 +1447,49 @@ def test_hr_leave_request_approval_attendance_and_carry_forward(isolated_tenants
         },
     )
     assert revoked_request.status_code == 403
+
+
+def test_admin_branch_and_effective_dated_reporting_assignment_apis(isolated_tenants):
+    client = isolated_tenants["client"]
+    TenantASession = isolated_tenants["sessions"][0]
+    admin = _login(client, "AA")
+    headers = {"Authorization": f"Bearer {admin['access_token']}"}
+    db = TenantASession()
+    try:
+        manager = models.Employee(id="org-manager", emp_code="ORG-001", name="Manager", joining_date=date(2026, 1, 1), active=True)
+        report = models.Employee(id="org-report", emp_code="ORG-002", name="Report", joining_date=date(2026, 1, 1), active=True)
+        db.add_all([manager, report])
+        db.commit()
+    finally:
+        db.close()
+
+    branch = client.post("/api/v1/authorization/branches", headers=headers, json={
+        "code": "PUNE", "name": "Pune Branch", "timezone": "Asia/Kolkata", "address": "Pune",
+    })
+    assert branch.status_code == 201, branch.text
+    branch_id = branch.json()["id"]
+
+    manager_assignment = client.post("/api/v1/authorization/employee-org-assignments", headers=headers, json={
+        "employee_id": "org-manager", "branch_id": branch_id, "department": "Operations",
+        "valid_from": "2026-01-01",
+    })
+    assert manager_assignment.status_code == 201, manager_assignment.text
+
+    report_assignment = client.post("/api/v1/authorization/employee-org-assignments", headers=headers, json={
+        "employee_id": "org-report", "branch_id": branch_id, "manager_employee_id": "org-manager",
+        "department": "Operations", "valid_from": "2026-01-01",
+    })
+    assert report_assignment.status_code == 201, report_assignment.text
+
+    cycle = client.post("/api/v1/authorization/employee-org-assignments", headers=headers, json={
+        "employee_id": "org-manager", "branch_id": branch_id, "manager_employee_id": "org-report",
+        "department": "Operations", "valid_from": "2026-02-01",
+    })
+    assert cycle.status_code == 422, cycle.text
+
+    team_grant = client.put("/api/v1/authorization/role-grants", headers=headers, json={
+        "role": "HR", "module": "hr", "feature": "employees", "action": "read",
+        "data_scope": "team", "allowed": True,
+    })
+    assert team_grant.status_code == 200, team_grant.text
+    assert team_grant.json()["data_scope"] == "team"
