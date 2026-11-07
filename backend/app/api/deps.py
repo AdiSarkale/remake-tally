@@ -69,48 +69,76 @@ def current_user(
         db.close()
 
 
+def _route_feature_action(request: Request) -> tuple[str, str]:
+    parts = [part for part in request.url.path.split("/") if part]
+    if len(parts) >= 2 and parts[0] == "api" and parts[1].startswith("v"):
+        parts = parts[2:]
+    resource = parts[1] if len(parts) > 1 else "overview"
+    if resource.startswith("{"):
+        resource = "overview"
+    action_segment = parts[-1] if parts else ""
+    if action_segment in {"prepare", "approve", "finalize", "lock", "reverse", "cancel", "submit", "post"}:
+        action = action_segment
+    else:
+        action = {
+            "GET": "read", "POST": "create", "PUT": "update",
+            "PATCH": "update", "DELETE": "delete",
+        }.get(request.method.upper(), "read")
+    return resource.replace("-", "_"), action
+
+
+def _check_module_route_grant(db: Session, user: models.User, module: str, request: Request) -> None:
+    feature, action = _route_feature_action(request)
+    exact = db.query(RolePermissionGrant).filter_by(
+        role=user.role.value, module=module, feature=feature,
+        action=action, data_scope="tenant",
+    ).first()
+    if exact is not None:
+        if not exact.allowed:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Permission denied: {module}.{feature}.{action}")
+        return
+    wildcard = db.query(RolePermissionGrant).filter_by(
+        role=user.role.value, module=module, feature="*", action="*",
+        data_scope="tenant", allowed=True,
+    ).first()
+    if wildcard is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Missing permission: {module}.{feature}.{action}")
+
+
 def require_area(area: str):
-    """Require a persisted module access grant for the authenticated role."""
+    """Require module access plus a persisted feature/action grant for the route."""
     def guard(
+        request: Request,
         user: models.User = Depends(current_user),
         db: Session = Depends(tenant_session_db),
     ) -> models.User:
-        # Direct calls are used only by legacy unit tests; HTTP requests always
-        # receive a real tenant session from FastAPI's dependency injection.
-        if not isinstance(db, Session):
-            if area not in ROLE_PERMISSIONS[user.role]:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"{user.role.value} cannot access {area}")
-            return user
-        grant = db.query(RolePermissionGrant).filter_by(
-            role=user.role.value, module=area, feature="access",
-            action="read", data_scope="tenant", allowed=True,
-        ).first()
-        if grant is None:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"{user.role.value} cannot access {area}")
+        _check_module_route_grant(db, user, area, request)
         return user
     return guard
 
 
 def require_any_area(*areas: str):
-    """Require at least one persisted module access grant."""
+    """Require a persisted feature/action grant for the matching route module."""
+    prefix_module = {
+        "hr": "hr", "manufacturing": "production", "production": "production",
+        "finance": "finance", "inventory": "inventory", "scrap": "scrap",
+        "sales": "sales", "sales-orders": "sales", "quotations": "sales",
+        "dispatches": "sales", "deliveries": "sales", "purchasing": "purchase_requests",
+        "purchase-requests": "purchase_requests", "masters": "masters",
+        "settings": "settings", "reports": "reports", "approvals": "approvals",
+    }
     def guard(
+        request: Request,
         user: models.User = Depends(current_user),
         db: Session = Depends(tenant_session_db),
     ) -> models.User:
-        if not isinstance(db, Session):
-            if any(area in ROLE_PERMISSIONS[user.role] for area in areas):
-                return user
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot access this area")
-        grant = db.query(RolePermissionGrant).filter(
-            RolePermissionGrant.role == user.role.value,
-            RolePermissionGrant.module.in_(areas),
-            RolePermissionGrant.feature == "access",
-            RolePermissionGrant.action == "read",
-            RolePermissionGrant.data_scope == "tenant",
-            RolePermissionGrant.allowed.is_(True),
-        ).first()
-        if grant is None:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot access this area")
+        parts = [part for part in request.url.path.split("/") if part]
+        prefix = parts[2] if len(parts) >= 3 and parts[0] == "api" else (parts[0] if parts else "")
+        module = prefix_module.get(prefix)
+        if module not in areas:
+            # Preserve a strict deny if a route cannot be mapped to one of its declared modules.
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Route is not mapped to an authorized module")
+        _check_module_route_grant(db, user, module, request)
         return user
     return guard
 
