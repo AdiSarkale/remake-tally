@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.modules.core.authorization import EmployeeUserLink, RolePermissionGrant
+from app.modules.hr.models import EmployeeOrgAssignment
 
 from app import models
 from app.db.control_models import TenantCompany
@@ -154,10 +155,39 @@ def enforce_employee_data_scope(
         if actor_link.employee_id != employee_id:
             raise HTTPException(status_code=403, detail="Employee self-service access is limited to your own record")
         return
+    actor = db.get(models.Employee, actor_link.employee_id)
+    target = db.get(models.Employee, employee_id)
+    if actor is None or target is None:
+        raise HTTPException(status_code=403, detail="Employee relationship is unavailable")
     if data_scope == "department":
-        actor = db.get(models.Employee, actor_link.employee_id)
-        target = db.get(models.Employee, employee_id)
-        if actor is None or target is None or not actor.department or actor.department != target.department:
+        if not actor.department or actor.department != target.department:
             raise HTTPException(status_code=403, detail="Department scope does not include this employee")
         return
+    today = __import__("datetime").date.today()
+    assignments = db.query(EmployeeOrgAssignment).filter(
+        EmployeeOrgAssignment.valid_from <= today,
+        (EmployeeOrgAssignment.valid_to.is_(None) | (EmployeeOrgAssignment.valid_to >= today)),
+    ).all()
+    current = {row.employee_id: row for row in assignments}
+    actor_assignment = current.get(actor_link.employee_id)
+    target_assignment = current.get(employee_id)
+    if data_scope == "branch":
+        if actor_assignment is None or target_assignment is None or not actor_assignment.branch_id or actor_assignment.branch_id != target_assignment.branch_id:
+            raise HTTPException(status_code=403, detail="Branch scope does not include this employee")
+        return
+    if data_scope == "team":
+        if actor_link.employee_id == employee_id:
+            return
+        descendants: set[str] = set()
+        frontier = {actor_link.employee_id}
+        while frontier:
+            children = {
+                row.employee_id for row in assignments
+                if row.manager_employee_id in frontier and row.employee_id not in descendants
+            }
+            if employee_id in children:
+                return
+            descendants.update(children)
+            frontier = children
+        raise HTTPException(status_code=403, detail="Team scope is limited to your direct and indirect reports")
     raise HTTPException(status_code=403, detail="This data scope is not supported by the current employee relationships")
