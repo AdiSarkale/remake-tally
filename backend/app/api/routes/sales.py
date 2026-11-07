@@ -16,7 +16,7 @@ from app.services.gst import (
     is_inter_state,
     round_off,
 )
-from app.services.inventory import log_audit
+from app.modules.core.audit import log_audit
 
 
 router = APIRouter(
