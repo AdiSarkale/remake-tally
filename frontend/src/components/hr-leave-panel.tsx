@@ -182,7 +182,7 @@ export function LeavePanel({ canManage, username }: { canManage: boolean; userna
         </div>
 
         <div className="rounded-lg border p-4 space-y-3">
-          <h3 className="font-semibold">My leave balances</h3>
+          <h3 className="font-semibold">{canManage ? "Leave balances" : "My leave balances"}</h3>
           {loading ? <p className="text-sm text-muted-foreground">Loading balances…</p> : balances.length ? <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left text-muted-foreground"><th className="py-2">Leave type</th><th className="py-2 text-right">Available</th><th className="py-2 text-right">Used</th></tr></thead><tbody>{balances.map((row) => <tr key={row.id} className="border-b last:border-0"><td className="py-2">{typeName(row.leave_type_id)}</td><td className="py-2 text-right font-medium tabular-nums">{row.available}</td><td className="py-2 text-right tabular-nums">{row.used}</td></tr>)}</tbody></table></div> : <p className="text-sm text-muted-foreground">No balances allocated for {year} yet.</p>}
         </div>
       </div>
