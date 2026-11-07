@@ -106,7 +106,7 @@ def test_employee_branch_and_hierarchical_team_scopes_are_relationship_backed():
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from fastapi import HTTPException
-    from app.api.deps import enforce_employee_data_scope
+    from app.api.deps import employee_scope_ids, enforce_employee_data_scope
 
     engine = create_engine("sqlite:///:memory:")
     models.Base.metadata.create_all(engine)
@@ -121,8 +121,22 @@ def test_employee_branch_and_hierarchical_team_scopes_are_relationship_backed():
         outsider = models.Employee(id="outsider", emp_code="A004", name="Outsider", department="Ops")
         db.add_all([branch, actor, report, indirect, outsider])
         db.flush()
+        user = models.User(
+            id="user-1", username="manager", full_name="Manager",
+            password_hash="test", role=models.Role.hr, active=True,
+            must_change_password=False,
+        )
+        db.add(user)
         db.add(models.EmployeeUserLink(user_id="user-1", employee_id="actor", created_by="admin"))
         db.add_all([
+            models.RolePermissionGrant(
+                role="HR", module="hr", feature="employees", action="read",
+                data_scope="branch", allowed=True, updated_by="test",
+            ),
+            models.RolePermissionGrant(
+                role="HR", module="hr", feature="leave_requests", action="read",
+                data_scope="team", allowed=True, updated_by="test",
+            ),
             models.EmployeeOrgAssignment(employee_id="actor", branch_id=branch.id, manager_employee_id=None, department="Ops", valid_from=today, created_by="admin"),
             models.EmployeeOrgAssignment(employee_id="report", branch_id=branch.id, manager_employee_id="actor", department="Ops", valid_from=today, created_by="admin"),
             models.EmployeeOrgAssignment(employee_id="indirect", branch_id=branch.id, manager_employee_id="report", department="Ops", valid_from=today, created_by="admin"),
@@ -132,7 +146,11 @@ def test_employee_branch_and_hierarchical_team_scopes_are_relationship_backed():
         db.flush()
         db.add(models.EmployeeOrgAssignment(employee_id="outsider", branch_id=other_branch.id, manager_employee_id=None, department="Ops", valid_from=today, created_by="admin"))
         db.commit()
-        user = SimpleNamespace(id="user-1")
+        user = db.get(models.User, "user-1")
+        branch_ids = set(employee_scope_ids(db, user, "hr", "employees", "read") or [])
+        team_ids = set(employee_scope_ids(db, user, "hr", "leave_requests", "read") or [])
+        assert branch_ids == {"actor", "report", "indirect"}
+        assert team_ids == {"actor", "report", "indirect"}
 
         enforce_employee_data_scope(db, user, "report", "branch")
         enforce_employee_data_scope(db, user, "indirect", "team")
