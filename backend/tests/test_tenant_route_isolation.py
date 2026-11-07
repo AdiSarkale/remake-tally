@@ -1046,3 +1046,71 @@ def test_payroll_run_and_salary_slip_validate_period_before_lookup(isolated_tena
 
     assert run.status_code == 422
     assert slip.status_code == 422
+
+
+def test_employee_api_reads_and_mutations_are_tenant_scoped(isolated_tenants):
+    client = isolated_tenants["client"]
+    tenant_a, tenant_b = isolated_tenants["sessions"]
+
+    a_db = tenant_a()
+    b_db = tenant_b()
+    try:
+        a_db.add(models.Employee(
+            id="employee-a",
+            emp_code="EMP-A01",
+            name="Company A Employee",
+            employee_type="shop_floor",
+            department="Production",
+            designation="Operator",
+            active=True,
+        ))
+        b_db.add(models.Employee(
+            id="employee-b",
+            emp_code="EMP-B01",
+            name="Company B Employee",
+            employee_type="shop_floor",
+            department="Production",
+            designation="Operator",
+            active=True,
+        ))
+        a_db.commit()
+        b_db.commit()
+    finally:
+        a_db.close()
+        b_db.close()
+
+    a = _login(client, "AA")
+    b = _login(client, "BB")
+    a_headers = {"Authorization": f"Bearer {a['access_token']}"}
+    b_headers = {"Authorization": f"Bearer {b['access_token']}"}
+
+    a_rows = client.get("/api/v1/manufacturing/employees", headers=a_headers)
+    b_rows = client.get("/api/v1/manufacturing/employees", headers=b_headers)
+    assert a_rows.status_code == 200, a_rows.text
+    assert b_rows.status_code == 200, b_rows.text
+
+    a_codes = {row["emp_code"] for row in a_rows.json()}
+    b_codes = {row["emp_code"] for row in b_rows.json()}
+    assert "EMP-A01" in a_codes
+    assert "EMP-B01" not in a_codes
+    assert "EMP-B01" in b_codes
+    assert "EMP-A01" not in b_codes
+
+    cross_tenant_update = client.put(
+        "/api/v1/manufacturing/employees/employee-a",
+        headers=b_headers,
+        json={
+            "name": "Company B attempted takeover",
+            "employee_type": "shop_floor",
+            "department": "Production",
+            "designation": "Operator",
+        },
+    )
+    assert cross_tenant_update.status_code == 404
+
+    cross_tenant_deactivation = client.patch(
+        "/api/v1/manufacturing/employees/employee-a/status",
+        headers=b_headers,
+        json={"active": False},
+    )
+    assert cross_tenant_deactivation.status_code == 404
