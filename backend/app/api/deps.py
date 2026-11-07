@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -189,7 +190,11 @@ def enforce_employee_data_scope(
     target = db.get(models.Employee, employee_id)
     if actor is None or target is None:
         raise HTTPException(status_code=403, detail="Employee relationship is unavailable")
-    today = date.today()
+    settings = db.get(models.HRPayrollSettings, 1)
+    try:
+        today = datetime.now(ZoneInfo(settings.timezone if settings else "Asia/Kolkata")).date()
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(status_code=500, detail="Tenant timezone is invalid") from exc
     assignments = db.query(EmployeeOrgAssignment).filter(
         EmployeeOrgAssignment.valid_from <= today,
         (EmployeeOrgAssignment.valid_to.is_(None) | (EmployeeOrgAssignment.valid_to >= today)),
