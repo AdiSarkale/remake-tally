@@ -1,6 +1,6 @@
 # P0 HR, Authorization and Payroll Workflows
 
-This document describes the current P0 backend implementation on
+This document describes the current P0 backend and frontend implementation on
 `feat/p0-hr-leave-payroll-authorization`. It is a working implementation note,
 not a release sign-off.
 
@@ -71,7 +71,7 @@ Payroll limitations:
 - PF/PT/TDS calculations remain configured/manual and are not represented as statutory-compliance certified.
 - No automatic bank payment, payslip email delivery or statutory filing is included.
 
-## Required verification before P0 sign-off
+## Frontend implementation\n\nThe HR workspace now includes a Leave panel for employee applications, balances, HR policy/balance management and HOD decisions; an Admin-only Access Control panel for account mapping and role grants; and payroll state-transition controls. Frontend typecheck and production build pass. Manual browser verification across employee, HOD, HR and Admin personas remains outstanding.\n\n## Required verification before P0 sign-off
 
 - Run full backend unit and integration tests.
 - Run tenant PostgreSQL migration tests against a real disposable PostgreSQL instance.
@@ -79,4 +79,4 @@ Payroll limitations:
 - Test department approver, self-approval rejection, overlap, insufficient balance and payroll freeze behavior.
 - Verify concurrent preparation/approval/reversal and database locking.
 - Verify migration upgrade and downgrade paths on supported databases.
-- Complete UI workflow integration and API contract review.
+- Run manual browser workflow verification for employee, HOD, HR and Admin personas; complete final API contract review.
