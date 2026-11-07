@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 
 interface LeaveType {
   id: string; code: string; name: string; is_paid: boolean; annual_entitlement: number;
-  carry_forward_limit: number; count_week_offs: boolean; count_holidays: boolean;
+  carry_forward_limit: number; accrual_method: "annual_upfront" | "monthly" | "monthly_prorated"; accrual_effective_from: string; count_week_offs: boolean; count_holidays: boolean;
   allow_half_day: boolean; active: boolean;
 }
 interface LeaveBalance {
@@ -22,6 +22,7 @@ interface Employee { id: string; emp_code: string; name: string; department: str
 
 export function LeavePanel({ canManage, username }: { canManage: boolean; username: string }) {
   const [year, setYear] = useState(new Date().getFullYear());
+  const [accrualMonth, setAccrualMonth] = useState(new Date().getMonth() + 1);
   const [types, setTypes] = useState<LeaveType[]>([]);
   const [balances, setBalances] = useState<LeaveBalance[]>([]);
   const [requests, setRequests] = useState<LeaveRequest[]>([]);
@@ -34,7 +35,7 @@ export function LeavePanel({ canManage, username }: { canManage: boolean; userna
   const [halfDay, setHalfDay] = useState(false);
   const [reason, setReason] = useState("");
   const [typeForm, setTypeForm] = useState({
-    code: "", name: "", is_paid: true, annual_entitlement: 12, carry_forward_limit: 0,
+    code: "", name: "", is_paid: true, annual_entitlement: 12, accrual_method: "annual_upfront" as const, accrual_effective_from: new Date().getFullYear() + "-01-01", carry_forward_limit: 0,
     count_week_offs: false, count_holidays: false, allow_half_day: true, active: true,
   });
   const [balanceForm, setBalanceForm] = useState({
@@ -102,7 +103,7 @@ export function LeavePanel({ canManage, username }: { canManage: boolean; userna
       await api.post("/hr/leave/types", typeForm);
       toast.success("Leave policy created");
       setTypeForm({
-        code: "", name: "", is_paid: true, annual_entitlement: 12, carry_forward_limit: 0,
+        code: "", name: "", is_paid: true, annual_entitlement: 12, accrual_method: "annual_upfront" as const, accrual_effective_from: new Date().getFullYear() + "-01-01", carry_forward_limit: 0,
         count_week_offs: false, count_holidays: false, allow_half_day: true, active: true,
       });
       await load();
@@ -121,6 +122,18 @@ export function LeavePanel({ canManage, username }: { canManage: boolean; userna
       toast.success("Leave balance saved");
       await load();
     } catch (err) { toast.error(err instanceof Error ? err.message : "Could not save leave balance"); }
+    finally { setBusy(false); }
+  };
+
+  const runAccrual = async () => {
+    setBusy(true);
+    try {
+      const result = await api.post<{ created_count: number; total_accrued: number; skipped_existing: number }>(
+        "/hr/leave/accruals/run/" + year + "/" + accrualMonth,
+      );
+      toast.success(result.created_count + " accrual entries created · " + result.total_accrued.toFixed(2) + " days; " + result.skipped_existing + " already processed");
+      await load();
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Leave accrual failed"); }
     finally { setBusy(false); }
   };
 
@@ -194,6 +207,8 @@ export function LeavePanel({ canManage, username }: { canManage: boolean; userna
             <label className="space-y-1 text-sm"><span>Code</span><Input value={typeForm.code} onChange={(event) => setTypeForm({ ...typeForm, code: event.target.value.toUpperCase() })} placeholder="CL" /></label>
             <label className="space-y-1 text-sm"><span>Name</span><Input value={typeForm.name} onChange={(event) => setTypeForm({ ...typeForm, name: event.target.value })} placeholder="Casual Leave" /></label>
             <label className="space-y-1 text-sm"><span>Annual entitlement</span><Input type="number" min="0" max="366" value={typeForm.annual_entitlement} onChange={(event) => setTypeForm({ ...typeForm, annual_entitlement: Number(event.target.value) })} /></label>
+            <label className="space-y-1 text-sm"><span>Accrual method</span><select className="h-9 w-full rounded-md border bg-background px-3" value={typeForm.accrual_method} onChange={(event) => setTypeForm({ ...typeForm, accrual_method: event.target.value as typeof typeForm.accrual_method })}><option value="annual_upfront">Annual upfront (HR allocated)</option><option value="monthly">Monthly</option><option value="monthly_prorated">Monthly, prorated for join/exit/effective date</option></select></label>
+            <label className="space-y-1 text-sm"><span>Policy effective from</span><Input type="date" value={typeForm.accrual_effective_from} onChange={(event) => setTypeForm({ ...typeForm, accrual_effective_from: event.target.value })} /></label>
             <label className="space-y-1 text-sm"><span>Carry-forward limit</span><Input type="number" min="0" max="366" value={typeForm.carry_forward_limit} onChange={(event) => setTypeForm({ ...typeForm, carry_forward_limit: Number(event.target.value) })} /></label>
           </div>
           <div className="flex flex-wrap gap-4 text-sm">
@@ -215,8 +230,13 @@ export function LeavePanel({ canManage, username }: { canManage: boolean; userna
             <label className="space-y-1 text-sm"><span>Accrued</span><Input type="number" min="0" step="0.5" value={balanceForm.accrued} onChange={(event) => setBalanceForm({ ...balanceForm, accrued: Number(event.target.value) })} /></label>
             <label className="space-y-1 text-sm"><span>Adjustment</span><Input type="number" step="0.5" value={balanceForm.adjusted} onChange={(event) => setBalanceForm({ ...balanceForm, adjusted: Number(event.target.value) })} /></label>
           </div>
-          <div className="flex flex-wrap gap-2"><Button size="sm" disabled={busy || !balanceForm.employee_id || !balanceForm.leave_type_id} onClick={() => void saveBalance()}>Save balance</Button><Button size="sm" variant="outline" disabled={busy} onClick={() => void carryForward()}>Carry forward from {year - 1}</Button></div>
-          <p className="text-xs text-muted-foreground">Annual accrual is allocated by HR; the system does not assume a monthly or pro-rata accrual policy.</p>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="space-y-1 text-sm"><span>Accrual month</span><select className="h-9 rounded-md border bg-background px-2" value={accrualMonth} onChange={(event) => setAccrualMonth(Number(event.target.value))}>{Array.from({ length: 12 }, (_, i) => i + 1).map((month) => <option key={month} value={month}>{new Date(2000, month - 1, 1).toLocaleString("en-IN", { month: "long" })}</option>)}</select></label>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => void runAccrual()}>Run monthly accrual</Button>
+            <Button size="sm" variant="outline" disabled={busy || !balanceForm.employee_id || !balanceForm.leave_type_id} onClick={() => void saveBalance()}>Save balance</Button>
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => void carryForward()}>Carry forward from {year - 1}</Button>
+          </div>
+          <p className="text-xs text-muted-foreground">Annual-upfront policies remain HR-allocated. Monthly policies accrue 1/12 per eligible month; monthly-prorated policies prorate by eligible calendar days. Each employee/type/month is recorded once in the accrual ledger.</p>
         </div>
       </div> : null}
 
