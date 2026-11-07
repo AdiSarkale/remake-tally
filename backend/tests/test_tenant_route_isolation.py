@@ -128,9 +128,10 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
         )
         payroll_grants = [
             models.RolePermissionGrant(
-                role="Admin", module="hr", feature="payroll", action=action,
+                role=role, module="hr", feature="payroll", action=action,
                 data_scope="tenant", allowed=True, updated_by="test",
             )
+            for role in ("Admin", "HR")
             for action in ("read", "write", "prepare", "approve", "finalize", "lock", "reverse")
         ]
         db.add_all([user, customer, supplier, product, material, invoice, requisition, payment, *payroll_grants])
@@ -931,6 +932,16 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
     finally:
         tenant_a.close()
 
+    tenant_a = tenant_a_session()
+    approver = models.User(
+        username="hr-approver", full_name="HR Approver",
+        password_hash=hash_password("Password@123"), role=models.Role.hr,
+        active=True, must_change_password=False,
+    )
+    tenant_a.add(approver)
+    tenant_a.commit()
+    tenant_a.close()
+    approver_token = _login(client, "AA") if False else None
     settings = client.put(
         "/api/v1/hr/payroll/settings",
         headers=headers,
