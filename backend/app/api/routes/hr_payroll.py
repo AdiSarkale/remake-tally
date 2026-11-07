@@ -1088,7 +1088,7 @@ def _snapshot_payroll_run(
 
 @router.post("/payroll/runs/{year}/{month}/prepare", response_model=schemas.PayrollRunOut)
 def prepare_monthly_payroll(
-    year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
+    year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access,
     permission: models.User = Depends(require_permission("hr", "payroll", "prepare", "tenant")),
 ):
     _validate_period(year, month)
@@ -1111,7 +1111,7 @@ def prepare_monthly_payroll(
 
 @router.post("/payroll/runs/{run_id}/approve", response_model=schemas.PayrollRunOut)
 def approve_monthly_payroll(
-    run_id: str, db: Session = Depends(get_db), user: models.User = hr_access
+    run_id: str, db: Session = Depends(get_db), user: models.User = hr_access,
     permission: models.User = Depends(require_permission("hr", "payroll", "approve", "tenant")),
 ):
     run = db.query(models.HRPayrollRun).filter_by(id=run_id).with_for_update().first()
@@ -1132,7 +1132,7 @@ def approve_monthly_payroll(
 
 @router.post("/payroll/runs/{year}/{month}/finalize", response_model=schemas.PayrollRunOut)
 def finalize_monthly_payroll(
-    year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
+    year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access,
     permission: models.User = Depends(require_permission("hr", "payroll", "finalize", "tenant")),
 ):
     _validate_period(year, month)
@@ -1154,7 +1154,7 @@ def finalize_monthly_payroll(
 
 @router.post("/payroll/runs/{run_id}/lock", response_model=schemas.PayrollRunOut)
 def lock_monthly_payroll(
-    run_id: str, db: Session = Depends(get_db), user: models.User = hr_access
+    run_id: str, db: Session = Depends(get_db), user: models.User = hr_access,
     permission: models.User = Depends(require_permission("hr", "payroll", "lock", "tenant")),
 ):
     run = db.query(models.HRPayrollRun).filter_by(id=run_id).with_for_update().first()
