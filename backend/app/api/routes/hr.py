@@ -184,7 +184,15 @@ def update_employee(employee_id: str, payload: schemas.EmployeeUpdate, db: Sessi
     name = payload.name.strip()
     if not name:
         raise HTTPException(422, "Employee name is required")
-    if payload.end_date is not None and (payload.joining_date is None or payload.end_date < payload.joining_date):
+    # PUT updates may omit employment dates; omission preserves the current
+    # values. Explicit null is accepted only for end_date (to clear it), while
+    # a known joining date cannot be cleared through this endpoint.
+    fields_set = payload.model_fields_set
+    joining_date = payload.joining_date if "joining_date" in fields_set else row.joining_date
+    end_date = payload.end_date if "end_date" in fields_set else row.end_date
+    if "joining_date" in fields_set and joining_date is None:
+        raise HTTPException(422, "Joining date cannot be cleared")
+    if end_date is not None and (joining_date is None or end_date < joining_date):
         raise HTTPException(422, "End date requires a valid joining date and cannot be earlier than it")
     if payload.employee_type.strip().lower() != row.employee_type:
         _validate_employee_type(db, payload.employee_type)
@@ -192,8 +200,8 @@ def update_employee(employee_id: str, payload: schemas.EmployeeUpdate, db: Sessi
     row.employee_type = payload.employee_type.strip().lower()
     row.department = payload.department.strip()
     row.designation = payload.designation.strip()
-    row.joining_date = payload.joining_date
-    row.end_date = payload.end_date
+    row.joining_date = joining_date
+    row.end_date = end_date
     log_audit(db, user.username, "UPDATE", "employee", f"{row.emp_code}; details updated")
     db.commit()
     db.refresh(row)
