@@ -56,7 +56,7 @@ export function LeavePanel({ canManage, username }: { canManage: boolean; userna
       setLeaveTypeId((current) => current && typeRows.some((row) => row.id === current) ? current : typeRows[0]?.id ?? "");
       setBalanceForm((current) => ({ ...current, leave_type_id: current.leave_type_id || typeRows[0]?.id || "" }));
       if (canManage) {
-        const employeeRows = await api.get<Employee[]>("/manufacturing/employees?include_inactive=true");
+        const employeeRows = await api.get<Employee[]>("/hr/employees?include_inactive=true");
         setEmployees(employeeRows);
         setBalanceForm((current) => ({ ...current, employee_id: current.employee_id || employeeRows.find((row) => row.active)?.id || "" }));
       }
