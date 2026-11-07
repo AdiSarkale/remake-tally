@@ -154,20 +154,54 @@ def _calculate_employee_monthly_payroll(
     calendar_overrides: dict[date, str],
 ) -> dict[str, Any]:
     components = _salary_components(profile)
+    month_start = date(year, month, 1)
+    month_end = date(year, month, calendar.monthrange(year, month)[1])
+    employment_start = max(month_start, employee.joining_date) if employee.joining_date else month_start
+    employment_end = min(month_end, employee.end_date) if employee.end_date else month_end
+    employment_active = employment_start <= employment_end
     divisor = _salary_count_divisor(
         year, month, salary_count_mode, monthly_salary_days, week_off_days, calendar_overrides
     )
+    scheduled_days = [
+        date(year, month, number)
+        for number in range(1, month_end.day + 1)
+        if _calendar_type(date(year, month, number), week_off_days, calendar_overrides) == "working_day"
+    ]
+    eligible_working_days = [
+        day for day in scheduled_days
+        if employment_active and employment_start <= day <= employment_end
+    ]
+    eligible_calendar_days = max(0, (employment_end - employment_start).days + 1) if employment_active else 0
+
+    # Prorate the monthly gross for partial-month employment using the configured
+    # salary basis. Fixed-days mode retains its configured divisor; the employee's
+    # eligible scheduled days determine the paid fraction of the standard month.
+    if not employment_active:
+        employment_fraction = Decimal("0")
+    elif salary_count_mode == "calendar_days":
+        employment_fraction = Decimal(eligible_calendar_days) / Decimal(month_end.day)
+    elif salary_count_mode == "fixed_days":
+        employment_fraction = min(Decimal("1"), Decimal(len(eligible_working_days)) / Decimal(divisor))
+    else:
+        full_month_working_days = len(scheduled_days)
+        employment_fraction = (
+            Decimal(len(eligible_working_days)) / Decimal(full_month_working_days)
+            if full_month_working_days else Decimal("0")
+        )
+    employment_fraction = min(Decimal("1"), max(Decimal("0"), employment_fraction))
+    effective_gross = _money(components["monthly_gross"] * employment_fraction)
     present_days = half_days = absent_days = paid_leave_days = unpaid_leave_days = Decimal("0")
     unpaid_equivalent_days = Decimal("0")
     overtime_minutes = 0
     for row in attendance_rows:
-        # Attendance on an overridden holiday or configured week-off is not a
-        # scheduled absence. Still show the recorded attendance in the summary.
         work_date = getattr(row, "work_date", None)
+        in_employment_period = (
+            work_date is not None and employment_active
+            and employment_start <= work_date <= employment_end
+        )
         scheduled_workday = (
-            _calendar_type(work_date, week_off_days, calendar_overrides) == "working_day"
-            if work_date is not None
-            else True
+            in_employment_period
+            and _calendar_type(work_date, week_off_days, calendar_overrides) == "working_day"
         )
         if row.status == "present":
             present_days += Decimal("1")
@@ -185,34 +219,39 @@ def _calculate_employee_monthly_payroll(
             unpaid_leave_days += Decimal("1")
             if scheduled_workday:
                 unpaid_equivalent_days += Decimal("1")
-        # Rejecting or ignoring overtime for absence/leave rows avoids paying
-        # overtime that cannot be reconciled to actual attendance.
-        if row.status in {"present", "half_day"}:
+        if in_employment_period and row.status in {"present", "half_day"}:
             overtime_minutes += max(0, int(row.overtime_minutes or 0))
 
-    daily_rate = components["monthly_gross"] / Decimal(divisor)
-    absence_deduction = min(
-        components["monthly_gross"],
-        _money(daily_rate * unpaid_equivalent_days),
+    absence_divisor = (
+        Decimal(eligible_calendar_days) if salary_count_mode == "calendar_days"
+        else Decimal(len(eligible_working_days)) if salary_count_mode == "working_days"
+        else Decimal(divisor)
     )
+    if salary_count_mode == "fixed_days":
+        absence_divisor = Decimal(divisor)
+    daily_rate = effective_gross / absence_divisor if absence_divisor > 0 else Decimal("0")
+    absence_deduction = min(effective_gross, _money(daily_rate * unpaid_equivalent_days))
     overtime_pay = _money((daily_rate / Decimal("8")) * Decimal(overtime_minutes) / Decimal("60"))
+    # Statutory/contractual deductions are prorated with employment fraction too;
+    # jurisdiction-specific compliance and effective-dated structures remain separate work.
+    prorated_pf = _money(components["employee_pf"] * employment_fraction)
+    prorated_pt = _money(components["professional_tax"] * employment_fraction)
+    prorated_tds = _money(components["tds"] * employment_fraction)
     net_pay = max(
         Decimal("0.00"),
-        _money(
-            components["monthly_gross"] - absence_deduction - components["employee_pf"]
-            - components["professional_tax"] - components["tds"] + overtime_pay
-        ),
+        _money(effective_gross - absence_deduction - prorated_pf - prorated_pt - prorated_tds + overtime_pay),
     )
     return {
         "employee_id": employee.id, "employee_code": employee.emp_code, "employee_name": employee.name,
         "department": employee.department or "", "configured": profile is not None and components["annual_salary"] > 0,
         **components,
+        "monthly_gross": effective_gross,
+        "employee_pf": prorated_pf, "professional_tax": prorated_pt, "tds": prorated_tds,
         "present_days": _money(present_days), "half_days": _money(half_days),
         "absent_days": _money(absent_days), "paid_leave_days": _money(paid_leave_days),
         "unpaid_leave_days": _money(unpaid_leave_days), "overtime_minutes": overtime_minutes,
         "absence_deduction": absence_deduction, "overtime_pay": overtime_pay, "net_pay": net_pay,
     }
-
 
 def _validate_period(year: int, month: int) -> None:
     if month < 1 or month > 12 or year < 2000 or year > 2100:
