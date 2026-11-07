@@ -21,12 +21,8 @@ def upgrade() -> None:
         "employees",
         sa.Column("end_date", sa.Date(), nullable=True),
     )
-    # Existing rows are demo records. Give them a stable seed date so demo
-    # payroll can run; preserve any date already populated. End dates remain
-    # unknown (NULL) unless the demo data explicitly supplies one.
-    op.execute(
-        sa.text("UPDATE employees SET joining_date = '2025-01-01' WHERE joining_date IS NULL")
-    )
+    # Preserve unknown legacy employment dates. HR must verify and populate
+    # joining dates before payroll finalization for affected active employees.
     op.add_column(
         "hr_payroll_settings",
         sa.Column("timezone", sa.String(length=64), nullable=False, server_default="Asia/Kolkata"),
