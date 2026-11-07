@@ -68,17 +68,35 @@ def current_user(
 
 
 def require_area(area: str):
-    def guard(user: models.User = Depends(current_user)) -> models.User:
-        if area not in ROLE_PERMISSIONS[user.role]:
+    def guard(
+        user: models.User = Depends(current_user),
+        db: Session = Depends(get_db),
+    ) -> models.User:
+        grant = db.query(RolePermissionGrant).filter_by(
+            role=user.role.value, module=area, feature="access",
+            action="read", data_scope="tenant", allowed=True,
+        ).first()
+        if grant is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"{user.role.value} cannot access {area}")
         return user
     return guard
 
 
 def require_any_area(*areas: str):
-    def guard(user: models.User = Depends(current_user)) -> models.User:
-        if not any(area in ROLE_PERMISSIONS[user.role] for area in areas):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"{user.role.value} cannot access this area")
+    def guard(
+        user: models.User = Depends(current_user),
+        db: Session = Depends(get_db),
+    ) -> models.User:
+        grant = db.query(RolePermissionGrant).filter(
+            RolePermissionGrant.role == user.role.value,
+            RolePermissionGrant.module.in_(areas),
+            RolePermissionGrant.feature == "access",
+            RolePermissionGrant.action == "read",
+            RolePermissionGrant.data_scope == "tenant",
+            RolePermissionGrant.allowed.is_(True),
+        ).first()
+        if grant is None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot access this area")
         return user
     return guard
 
