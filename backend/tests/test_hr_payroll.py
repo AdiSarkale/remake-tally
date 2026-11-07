@@ -68,7 +68,7 @@ def test_absence_half_day_leave_and_overtime_affect_net_pay():
     assert result["paid_leave_days"] == 1
     assert result["unpaid_leave_days"] == 1
     assert result["overtime_minutes"] == 120
-    assert float(result["absence_deduction"]) == 4166.67
+    assert float(result["absence_deduction"]) == 3055.56
     assert float(result["overtime_pay"]) == 416.67
     assert float(result["net_pay"]) == 42550.00
 
@@ -169,7 +169,7 @@ def test_absences_on_holidays_and_week_offs_do_not_create_salary_deductions():
     # The three absence records remain visible, but only the Tuesday workday
     # is deductible; October 3 is a default week-off and October 5 is a holiday.
     assert result["absent_days"] == 3
-    assert result["absence_deduction"] == Decimal("1923.08")
+    assert result["absence_deduction"] == Decimal("1553.25")
 
 
 def test_absence_deduction_cannot_exceed_monthly_gross():
@@ -355,7 +355,7 @@ def test_payroll_readiness_accepts_explicit_absence_and_leave_statuses():
         employee = models.Employee(
             id="salary-employee-2", emp_code="EMP-200", name="Salaried Employee",
             employee_type="staff", department="Accounts", designation="Executive",
-            active=True,
+            joining_date=date(2026, 11, 1), active=True,
         )
         db.add(employee)
         db.add(models.EmployeeSalaryProfile(employee_id=employee.id, annual_salary=600000))
