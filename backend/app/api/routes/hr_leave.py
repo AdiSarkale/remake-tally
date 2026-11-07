@@ -245,6 +245,46 @@ def upsert_leave_balance(payload: LeaveBalanceIn, db: Session = Depends(get_db),
     return _balance_output(row)
 
 
+@router.post("/balances/carry-forward/{year}", response_model=list[LeaveBalanceOut])
+def carry_forward_leave_balances(
+    year: int, db: Session = Depends(get_db), user: models.User = Depends(current_user),
+):
+    if not _is_hr(user):
+        raise HTTPException(403, "Only HR or Admin can carry forward leave balances")
+    _require_grant(db, user, "leave_balances", "write", "tenant")
+    if year < 2000 or year >= 2100:
+        raise HTTPException(422, "Carry-forward source year must be between 2000 and 2099")
+    source_rows = db.query(HRLeaveBalance).filter_by(year=year).with_for_update().all()
+    created: list[HRLeaveBalance] = []
+    for source in source_rows:
+        leave_type = db.get(HRLeaveType, source.leave_type_id)
+        employee = db.get(models.Employee, source.employee_id)
+        if leave_type is None or not leave_type.active or employee is None or not employee.active:
+            continue
+        if leave_type.carry_forward_limit <= 0:
+            continue
+        existing = db.query(HRLeaveBalance).filter_by(
+            employee_id=source.employee_id, leave_type_id=source.leave_type_id, year=year + 1
+        ).first()
+        if existing is not None:
+            continue
+        available = source.opening_balance + source.accrued + source.adjusted - source.used
+        carry = min(max(available, 0), leave_type.carry_forward_limit)
+        row = HRLeaveBalance(
+            employee_id=source.employee_id, leave_type_id=source.leave_type_id,
+            year=year + 1, opening_balance=carry, accrued=0, adjusted=0, used=0,
+            updated_by=user.username,
+        )
+        db.add(row)
+        created.append(row)
+    log_audit(db, user.username, "CARRY_FORWARD", "hr_leave_balance",
+              f"source_year={year}; destination_year={year + 1}; rows={len(created)}")
+    db.commit()
+    for row in created:
+        db.refresh(row)
+    return [_balance_output(row) for row in created]
+
+
 @router.post("/requests", response_model=LeaveRequestOut, status_code=201)
 def create_leave_request(payload: LeaveRequestIn, db: Session = Depends(get_db), user: models.User = Depends(require_permission("hr", "leave_requests", "create", "self"))):
     employee = _employee_for_user(db, user)
