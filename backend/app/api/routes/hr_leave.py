@@ -16,7 +16,7 @@ from app.api.deps import current_user, enforce_employee_data_scope, require_perm
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
 from app.modules.core.authorization import RolePermissionGrant
-from app.modules.hr.leave import HRLeaveBalance, HRLeaveRequest, HRLeaveType
+from app.modules.hr.leave import HRLeaveAccrualLedger, HRLeaveBalance, HRLeaveRequest, HRLeaveType
 from app.modules.hr.payroll import EmployeeAttendance, HRCalendarDay, HRPayrollSettings
 from app.api.routes.approvals import Department
 
@@ -28,6 +28,8 @@ class LeaveTypeIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     is_paid: bool = True
     annual_entitlement: float = Field(default=0, ge=0, le=366)
+    accrual_method: Literal["annual_upfront", "monthly", "monthly_prorated"] = "annual_upfront"
+    accrual_effective_from: date = date(2000, 1, 1)
     carry_forward_limit: float = Field(default=0, ge=0, le=366)
     count_week_offs: bool = False
     count_holidays: bool = False
@@ -283,6 +285,94 @@ def carry_forward_leave_balances(
     for row in created:
         db.refresh(row)
     return [_balance_output(row) for row in created]
+
+
+class LeaveAccrualRunOut(BaseModel):
+    year: int
+    month: int
+    created_count: int
+    total_accrued: float
+    skipped_existing: int
+
+
+@router.post("/accruals/run/{year}/{month}", response_model=LeaveAccrualRunOut)
+def run_monthly_leave_accrual(
+    year: int, month: int, db: Session = Depends(get_db),
+    user: models.User = Depends(current_user),
+):
+    if not _is_hr(user):
+        raise HTTPException(403, "Only HR or Admin can run leave accrual")
+    _require_grant(db, user, "leave_balances", "write", "tenant")
+    if year < 2000 or year > 2100 or month < 1 or month > 12:
+        raise HTTPException(422, "Invalid accrual period")
+    today = date.today()
+    if date(year, month, 1) > today.replace(day=1):
+        raise HTTPException(422, "Leave accrual cannot be run for a future month")
+    period_start = date(year, month, 1)
+    period_end = date(year, month, calendar.monthrange(year, month)[1])
+    types = db.query(HRLeaveType).filter(
+        HRLeaveType.active.is_(True),
+        HRLeaveType.accrual_method.in_(["monthly", "monthly_prorated"]),
+        HRLeaveType.accrual_effective_from <= period_end,
+    ).with_for_update().all()
+    employees = db.query(models.Employee).filter(models.Employee.joining_date.is_not(None)).all()
+    created_count = 0
+    skipped_existing = 0
+    total_accrued = 0.0
+    for leave_type in types:
+        for employee in employees:
+            if employee.joining_date is None:
+                continue
+            if not employee.active and (employee.end_date is None or employee.end_date < period_start):
+                continue
+            eligible_start = max(period_start, employee.joining_date, leave_type.accrual_effective_from)
+            eligible_end = min(period_end, employee.end_date) if employee.end_date else period_end
+            if eligible_start > eligible_end:
+                continue
+            existing = db.query(HRLeaveAccrualLedger).filter_by(
+                employee_id=employee.id, leave_type_id=leave_type.id, year=year, month=month,
+            ).with_for_update().first()
+            if existing is not None:
+                skipped_existing += 1
+                continue
+            monthly_amount = float(leave_type.annual_entitlement) / 12.0
+            if leave_type.accrual_method == "monthly_prorated":
+                eligible_days = (eligible_end - eligible_start).days + 1
+                monthly_amount *= eligible_days / period_end.day
+            amount = round(monthly_amount, 2)
+            if amount <= 0:
+                continue
+            balance = db.query(HRLeaveBalance).filter_by(
+                employee_id=employee.id, leave_type_id=leave_type.id, year=year,
+            ).with_for_update().first()
+            if balance is None:
+                balance = HRLeaveBalance(
+                    employee_id=employee.id, leave_type_id=leave_type.id, year=year,
+                    opening_balance=0, accrued=0, adjusted=0, used=0, updated_by=user.username,
+                )
+                db.add(balance)
+                db.flush()
+            balance.accrued = round(balance.accrued + amount, 2)
+            balance.updated_by = user.username
+            db.add(HRLeaveAccrualLedger(
+                employee_id=employee.id, leave_type_id=leave_type.id,
+                year=year, month=month, amount=amount, run_by=user.username,
+            ))
+            created_count += 1
+            total_accrued += amount
+    log_audit(
+        db, user.username, "RUN_ACCRUAL", "hr_leave_accrual",
+        f"period={year}-{month:02d}; created={created_count}; total={total_accrued:.2f}; skipped={skipped_existing}",
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Concurrent leave accrual run detected; retry to read the committed result") from exc
+    return LeaveAccrualRunOut(
+        year=year, month=month, created_count=created_count,
+        total_accrued=round(total_accrued, 2), skipped_existing=skipped_existing,
+    )
 
 
 @router.post("/requests", response_model=LeaveRequestOut, status_code=201)
