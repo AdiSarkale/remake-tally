@@ -2,7 +2,7 @@ name: Minitally CI
 
 on:
   push:
-    branches: ["main", "production", "phase-*"]
+    branches: ["main", "production", "phase-*", "feat/p0-hr-leave-payroll-authorization"]
     paths:
       - "backend/**"
       - "frontend/**"
