@@ -6,6 +6,8 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.modules.core.authorization import EmployeeUserLink, RolePermissionGrant
+
 from app import models
 from app.db.control_models import TenantCompany
 from app.core.security import decode_access_token
@@ -79,3 +81,52 @@ def require_any_area(*areas: str):
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"{user.role.value} cannot access this area")
         return user
     return guard
+
+
+
+def require_permission(module: str, feature: str, action: str, data_scope: str = "tenant"):
+    """Require an explicit role grant for one module/feature/action/data-scope tuple."""
+    def guard(
+        user: models.User = Depends(current_user),
+        db: Session = Depends(get_db),
+    ) -> models.User:
+        grant = db.query(RolePermissionGrant).filter_by(
+            role=user.role.value,
+            module=module,
+            feature=feature,
+            action=action,
+            data_scope=data_scope,
+            allowed=True,
+        ).first()
+        if grant is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Missing permission: {module}.{feature}.{action} ({data_scope})",
+            )
+        return user
+    return guard
+
+
+def enforce_employee_data_scope(
+    db: Session,
+    user: models.User,
+    employee_id: str,
+    data_scope: str,
+) -> None:
+    """Enforce only scopes backed by persisted employee relationships."""
+    if data_scope == "tenant":
+        return
+    actor_link = db.query(EmployeeUserLink).filter_by(user_id=user.id).first()
+    if actor_link is None:
+        raise HTTPException(status_code=403, detail="Your login is not linked to an employee record")
+    if data_scope == "self":
+        if actor_link.employee_id != employee_id:
+            raise HTTPException(status_code=403, detail="Employee self-service access is limited to your own record")
+        return
+    if data_scope == "department":
+        actor = db.get(models.Employee, actor_link.employee_id)
+        target = db.get(models.Employee, employee_id)
+        if actor is None or target is None or not actor.department or actor.department != target.department:
+            raise HTTPException(status_code=403, detail="Department scope does not include this employee")
+        return
+    raise HTTPException(status_code=403, detail="This data scope is not supported by the current employee relationships")
