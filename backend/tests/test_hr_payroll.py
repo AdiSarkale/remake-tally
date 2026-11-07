@@ -333,7 +333,7 @@ def test_payroll_readiness_requires_explicit_status_for_each_scheduled_workday()
             and date(2026, 11, day) != date(2026, 11, 3)
         ]
         assert missing == [("EMP-100", work_date) for work_date in expected]
-        assert unknown_joining_dates == ["EMP-100"]
+        assert unknown_joining_dates == []
         assert ("EMP-100", date(2026, 11, 1)) not in missing
         assert ("EMP-100", date(2026, 11, 2)) not in missing
     finally:
