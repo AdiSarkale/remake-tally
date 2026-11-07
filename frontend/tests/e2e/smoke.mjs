@@ -42,6 +42,8 @@ try {
   {
     const { context, page } = await persona("Operator", "employee");
     await page.goto(base + "/hr");
+    await page.waitForTimeout(1500);
+    process.stdout.write("Operator HR page URL: " + page.url() + "\\n" + (await page.locator("body").innerText()).slice(0, 1800) + "\\n");
     await page.getByRole("button", { name: "Leave", exact: true }).click();
     await page.getByText("Apply for leave", { exact: true }).waitFor();
     await page.getByText("My leave balances", { exact: true }).waitFor();
