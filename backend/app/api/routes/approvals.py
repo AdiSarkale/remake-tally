@@ -80,7 +80,6 @@ class ApprovalCreate(BaseModel):
     reference_no: str = ""
     title: str
     amount: float = Field(default=0, ge=0)
-    requested_by: str = ""
     remarks: str = ""
 
 
@@ -168,7 +167,7 @@ def create_approval(payload: ApprovalCreate, db: Session = Depends(get_db), user
         reference_no=payload.reference_no,
         title=payload.title,
         amount=payload.amount,
-        requested_by=payload.requested_by or user.username,
+        requested_by=user.username,
         remarks=payload.remarks,
         status="Pending",
     )
