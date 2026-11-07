@@ -23,12 +23,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api.deps import current_user, require_area
+from app.api.deps import current_user, require_area, require_permission
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
 
 router = APIRouter(prefix="/hr", tags=["hr", "payroll"])
-hr_access = Depends(require_area("hr"))
+hr_access = Depends(require_permission("hr", "payroll", "read", "tenant"))
 _CENT = Decimal("0.01")
 
 
@@ -750,6 +750,7 @@ def list_employee_salaries(db: Session = Depends(get_db), user: models.User = hr
 def upsert_employee_salary(
     employee_id: str, payload: schemas.EmployeeSalaryIn,
     db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "write", "tenant")),
 ):
     employee = db.get(models.Employee, employee_id)
     if employee is None:
@@ -1087,6 +1088,7 @@ def _snapshot_payroll_run(
 @router.post("/payroll/runs/{year}/{month}/prepare", response_model=schemas.PayrollRunOut)
 def prepare_monthly_payroll(
     year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
+    permission: models.User = Depends(require_permission("hr", "payroll", "prepare", "tenant")),
 ):
     _validate_period(year, month)
     existing = _latest_payroll_run(db, year, month)
@@ -1109,6 +1111,7 @@ def prepare_monthly_payroll(
 @router.post("/payroll/runs/{run_id}/approve", response_model=schemas.PayrollRunOut)
 def approve_monthly_payroll(
     run_id: str, db: Session = Depends(get_db), user: models.User = hr_access
+    permission: models.User = Depends(require_permission("hr", "payroll", "approve", "tenant")),
 ):
     run = db.query(models.HRPayrollRun).filter_by(id=run_id).with_for_update().first()
     if run is None:
@@ -1129,6 +1132,7 @@ def approve_monthly_payroll(
 @router.post("/payroll/runs/{year}/{month}/finalize", response_model=schemas.PayrollRunOut)
 def finalize_monthly_payroll(
     year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
+    permission: models.User = Depends(require_permission("hr", "payroll", "finalize", "tenant")),
 ):
     _validate_period(year, month)
     run = _latest_payroll_run(db, year, month)
@@ -1150,6 +1154,7 @@ def finalize_monthly_payroll(
 @router.post("/payroll/runs/{run_id}/lock", response_model=schemas.PayrollRunOut)
 def lock_monthly_payroll(
     run_id: str, db: Session = Depends(get_db), user: models.User = hr_access
+    permission: models.User = Depends(require_permission("hr", "payroll", "lock", "tenant")),
 ):
     run = db.query(models.HRPayrollRun).filter_by(id=run_id).with_for_update().first()
     if run is None:
@@ -1172,6 +1177,7 @@ class PayrollReversalPayload(BaseModel):
 def reverse_monthly_payroll(
     run_id: str, payload: PayrollReversalPayload,
     db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "reverse", "tenant")),
 ):
     reason = payload.reason.strip()
     if len(reason) < 10 or len(reason) > 2000:
