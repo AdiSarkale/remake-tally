@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.deps import current_user, enforce_employee_data_scope, require_permission
+from app.api.deps import current_user, employee_scope_ids, enforce_employee_data_scope, require_employee_scope_grant, require_permission
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
 from app.modules.core.authorization import RolePermissionGrant
@@ -207,9 +207,14 @@ def list_leave_balances(
     db: Session = Depends(get_db), user: models.User = Depends(current_user),
 ):
     if _is_hr(user):
-        _require_grant(db, user, "leave_balances", "read", "tenant")
+        require_employee_scope_grant(db, user, "hr", "leave_balances", "read")
+        scoped_ids = employee_scope_ids(db, user, "hr", "leave_balances", "read")
         query = db.query(HRLeaveBalance).filter(HRLeaveBalance.year == year)
+        if scoped_ids is not None:
+            query = query.filter(HRLeaveBalance.employee_id.in_(scoped_ids))
         if employee_id:
+            if scoped_ids is not None and employee_id not in scoped_ids:
+                raise HTTPException(403, "Employee is outside your configured leave-balance scope")
             query = query.filter(HRLeaveBalance.employee_id == employee_id)
     else:
         _require_grant(db, user, "leave_balances", "read", "self")
@@ -446,7 +451,10 @@ def list_leave_requests(
 ):
     query = db.query(HRLeaveRequest)
     if _is_hr(user):
-        _require_grant(db, user, "leave_requests", "read", "tenant")
+        require_employee_scope_grant(db, user, "hr", "leave_requests", "read")
+        scoped_ids = employee_scope_ids(db, user, "hr", "leave_requests", "read")
+        if scoped_ids is not None:
+            query = query.filter(HRLeaveRequest.employee_id.in_(scoped_ids))
     else:
         _require_grant(db, user, "leave_requests", "read", "self")
         employee = _employee_for_user(db, user)
