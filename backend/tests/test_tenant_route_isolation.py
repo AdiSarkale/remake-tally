@@ -6,6 +6,7 @@ route modules. That proves the HTTP route layer, not only authentication, is
 resolved against the JWT-selected tenant database.
 """
 
+from datetime import date
 from pathlib import Path
 import sys
 
@@ -557,6 +558,7 @@ def test_admin_can_create_employees_and_manage_employee_skills(isolated_tenants)
             "department": "Production",
             "designation": "Operator",
             "active": True,
+            "joining_date": "2026-01-01",
         },
     )
     assert created.status_code == 201, created.text
@@ -642,6 +644,7 @@ def test_hr_employee_api_generates_immutable_codes_and_handles_lifecycle(isolate
             # These extra fields must not let clients control codes or status.
             "emp_code": "CLIENT-OVERRIDE",
             "active": False,
+            "joining_date": "2026-01-01",
         },
     )
     assert created.status_code == 201, created.text
@@ -753,6 +756,7 @@ def test_hr_api_authorization_separates_hr_management_from_production(isolated_t
             "employee_type": "shop_floor",
             "department": "Production",
             "designation": "Operator",
+            "joining_date": "2026-01-01",
         },
     )
     assert created.status_code == 201, created.text
@@ -847,6 +851,7 @@ def test_hr_type_codes_are_immutable_and_code_patterns_are_validated(isolated_te
             "employee_type": "contractor",
             "department": "Field Ops",
             "designation": "Technician",
+            "joining_date": "2026-01-01",
         },
     )
     assert employee.status_code == 201, employee.text
@@ -1062,7 +1067,7 @@ def test_employee_api_reads_and_mutations_are_tenant_scoped(isolated_tenants):
         a_db.add(models.Employee(
             id="employee-a", emp_code="EMP-A01", name="Company A Employee",
             employee_type="shop_floor", department="Production",
-            designation="Operator", active=True,
+            designation="Operator", joining_date=date(2026, 1, 1), active=True,
         ))
         b_db.add(models.Employee(
             id="employee-b", emp_code="EMP-B01", name="Company B Employee",
