@@ -142,6 +142,20 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
             for role in ("Admin", "HR")
             for action in ("read", "write", "prepare", "approve", "finalize", "lock", "reverse")
         ]
+        finance_accounts = [
+            models.FinanceAccount(id=f"salary-expense-{suffix}", code="5100", name="Salary Expense", account_type="expense", active=True, system_account=True, created_by="test"),
+            models.FinanceAccount(id=f"salary-payable-{suffix}", code="2100", name="Salary Payable", account_type="liability", active=True, system_account=True, created_by="test"),
+            models.FinanceAccount(id=f"pf-payable-{suffix}", code="2110", name="PF Payable", account_type="liability", active=True, system_account=True, created_by="test"),
+            models.FinanceAccount(id=f"pt-payable-{suffix}", code="2120", name="PT Payable", account_type="liability", active=True, system_account=True, created_by="test"),
+            models.FinanceAccount(id=f"tds-payable-{suffix}", code="2130", name="TDS Payable", account_type="liability", active=True, system_account=True, created_by="test"),
+        ]
+        payroll_mapping = models.FinancePayrollAccountMapping(
+            id=1, salary_expense_account_id=f"salary-expense-{suffix}",
+            salary_payable_account_id=f"salary-payable-{suffix}",
+            employee_pf_payable_account_id=f"pf-payable-{suffix}",
+            professional_tax_payable_account_id=f"pt-payable-{suffix}",
+            tds_payable_account_id=f"tds-payable-{suffix}", updated_by="test",
+        )
         leave_grants = []
         for role in ("Admin", "HR"):
             for feature, action, scope in (
@@ -164,7 +178,7 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
                 role="Operator", module="hr", feature=feature, action=action,
                 data_scope=scope, allowed=True, updated_by="test",
             ))
-        db.add_all([user, customer, supplier, product, material, invoice, requisition, payment, *module_grants, *payroll_grants, *leave_grants])
+        db.add_all([user, customer, supplier, product, material, invoice, requisition, payment, *module_grants, *payroll_grants, *leave_grants, *finance_accounts, payroll_mapping])
         db.commit()
         db.close()
 
