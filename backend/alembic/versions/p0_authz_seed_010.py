@@ -52,6 +52,11 @@ def upgrade() -> None:
                 "feature": feature, "action": action, "data_scope": "self",
                 "allowed": True, "updated_by": "system",
             })
+    grants.append({
+        "id": str(uuid.uuid4()), "role": "Operator", "module": "hr",
+        "feature": "leave_requests", "action": "approve", "data_scope": "department",
+        "allowed": True, "updated_by": "system",
+    })
     for feature, action in (
         ("leave_types", "read"), ("leave_balances", "read"),
         ("leave_requests", "read"), ("leave_requests", "create"),
