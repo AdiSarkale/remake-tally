@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException
@@ -280,7 +281,7 @@ class FinanceJournalLineOut(BaseModel):
 class FinanceJournalOut(BaseModel):
     id: str
     journal_no: str
-    entry_date: object
+    entry_date: date
     narration: str
     source_type: str
     source_id: str
