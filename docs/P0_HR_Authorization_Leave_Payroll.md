@@ -14,12 +14,11 @@ not a release sign-off.
   - `DELETE /api/v1/authorization/employee-links/{link_id}`
   - `GET/PUT /api/v1/authorization/role-grants`
 - The generic dependency `require_permission` checks explicit grants.
-- Employee data scope enforcement currently supports:
-  - `tenant`
-  - `self`, requiring an explicit account-to-employee link
-  - `department`, requiring a mapped actor and a matching persisted employee department
-- Branch and team scopes are deliberately not enabled: the current schema does not yet provide reliable branch or manager/team relationships.
-- Existing module guards now check persisted module-access grants seeded from the prior role matrix. Feature/action/data-scope enforcement is wired into P0 leave and payroll workflows; migration of every other module to granular feature/action grants remains outstanding.
+- Employee data scope enforcement supports `tenant`, `self`, `department`, `branch` and hierarchical `team` scopes. Self requires an account-to-employee link; branch/team require effective-dated organisation assignments.
+- `hr_branches` stores tenant-local branches. `employee_org_assignments` stores effective-dated branch, department and manager relationships. New assignments close the prior active assignment and reject reporting cycles.
+- Admin APIs manage branches and employee organisation assignments. Existing employees are intentionally not auto-assigned; HR/Admin must configure their real relationships.
+- Route-level authorization derives a feature from the resource path and an action from the HTTP method or explicit workflow transition. Exact feature/action grants override a compatibility wildcard grant seeded from the old role matrix.
+- This is a safe migration path, not yet a fully least-privilege redesign: legacy module roles still receive wildcard defaults until the business approves a role-by-role feature matrix. Admin can explicitly deny individual feature/action grants.
 
 ## Leave management
 
@@ -41,7 +40,7 @@ Controls implemented:
 - Approved leave cannot be applied to a payroll period with a prepared or finalized snapshot.
 
 Policy limitations requiring business decisions:
-- Annual entitlement is stored on the leave type, but accrual is allocated through HR-managed balance records; automatic monthly/pro-rata accrual is not inferred.
+- Annual entitlement supports `annual_upfront`, `monthly` and `monthly_prorated` methods. HR can run monthly accrual for a period; an idempotent ledger prevents duplicate employee/type/month accrual. Monthly-prorated policy uses eligible employment/effective-date calendar days in that month.
 - HR can trigger a policy-limited carry-forward from one calendar year to the next; it is idempotent and not scheduled automatically.
 - Leave year is calendar-year based; requests crossing calendar years are rejected. Annual entitlement accrual remains HR-managed through balance allocation; monthly/pro-rata accrual is not inferred.
 - Department HOD matching currently uses employee department name against the configured department name.
@@ -67,11 +66,11 @@ Additional controls:
 
 Payroll limitations:
 - Existing legacy finalized runs remain legacy-finalized and are not retroactively assigned an approver.
-- Reversal does not yet create a Finance reversal journal; HR-to-Finance posting/reversal is a separate integration requirement.
+- Payroll finalization posts a balanced Finance journal using tenant payroll account mappings. Payroll reversal posts a linked opposite journal in the same transaction; legacy finalized payroll without an original journal cannot be reversed through this integrated path.
 - PF/PT/TDS calculations remain configured/manual and are not represented as statutory-compliance certified.
 - No automatic bank payment, payslip email delivery or statutory filing is included.
 
-## Frontend implementation\n\nThe HR workspace now includes a Leave panel for employee applications, balances, HR policy/balance management and HOD decisions; an Admin-only Access Control panel for account mapping and role grants; and payroll state-transition controls. Frontend typecheck and production build pass. Manual browser verification across employee, HOD, HR and Admin personas remains outstanding.\n\n## Required verification before P0 sign-off
+## Frontend implementation\n\nThe HR workspace includes Leave, Admin Access Control (branch, reporting assignments and role grants), and payroll state-transition controls. Finance includes chart-of-accounts, payroll account mapping and journal history. Frontend typecheck and production build have passed on earlier commits; the latest changes are under CI verification. Manual browser verification across employee, HOD, HR, Admin and Finance personas remains outstanding.\n\n## Required verification before P0 sign-off
 
 - Run full backend unit and integration tests.
 - Run tenant PostgreSQL migration tests against a real disposable PostgreSQL instance.
@@ -80,3 +79,18 @@ Payroll limitations:
 - Verify concurrent preparation/approval/reversal and database locking.
 - Verify migration upgrade and downgrade paths on supported databases.
 - Run manual browser workflow verification for employee, HOD, HR and Admin personas; complete final API contract review.
+
+
+## Finance journal integration
+
+- Minimal tenant chart of accounts and immutable journal header/line tables were added because the previous Finance module only exposed receivables, payables and payment records; it had no general ledger.
+- Migration seeds five default payroll accounts and a tenant mapping. Finance can add accounts and change the mapping.
+- Payroll finalization debits gross salary expense and credits net salary payable, employee PF payable, professional tax payable and salary TDS payable.
+- Journal posting validates reconciliation and is atomic with payroll finalization. Reversal swaps debit/credit lines and links to the original journal. No direct journal edit/delete API is exposed.
+- Employer statutory contributions are not yet calculated or posted. The journal currently records the existing employee deduction components only.
+
+## Payroll statutory compliance status
+
+- Statutory calculations are not yet certified or enabled as a compliance engine. PF/PT/TDS values remain manual/configured and must not be marketed as statutory-compliant.
+- The rule framework must be configured by tenant jurisdiction and effective date. It must include establishment applicability, employee eligibility, PF membership/wage basis, state-specific professional tax classification, tax regime and annual projected taxable income.
+- Do not activate statutory auto-calculation until the applicable rules and employee data have been reviewed by a qualified payroll/compliance professional. See source notes in the implementation review before adding jurisdiction defaults.
