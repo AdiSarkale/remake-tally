@@ -339,9 +339,15 @@ def decide_leave_request(
         raise HTTPException(409, "Only pending leave requests can be decided")
     if row.requested_by == user.username:
         raise HTTPException(403, "A requester cannot approve or reject their own leave")
-    if user.role != models.Role.admin and user.role != models.Role.hr and row.approver_username != user.username:
-        raise HTTPException(403, "Only the assigned department approver, HR or Admin can decide this request")
+    if user.role in (models.Role.admin, models.Role.hr):
+        _require_grant(db, user, "leave_requests", "approve", "tenant")
+    else:
+        _require_grant(db, user, "leave_requests", "approve", "department")
+        if row.approver_username != user.username:
+            raise HTTPException(403, "Only the assigned department approver can decide this request")
     employee = db.get(models.Employee, row.employee_id)
+    if user.role not in (models.Role.admin, models.Role.hr):
+        enforce_employee_data_scope(db, user, employee.id, "department")
     leave_type = db.get(HRLeaveType, row.leave_type_id)
     if employee is None or leave_type is None:
         raise HTTPException(409, "Leave request references missing employee or leave type")
