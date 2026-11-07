@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -170,6 +171,10 @@ def list_branches(db: Session = Depends(get_db), user: models.User = Depends(cur
 @router.post("/branches", response_model=BranchOut, status_code=201)
 def create_branch(payload: BranchIn, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
     _require_admin(user)
+    try:
+        ZoneInfo(payload.timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(422, "Branch timezone must be a valid IANA timezone") from exc
     row = HRBranch(**payload.model_dump())
     db.add(row)
     log_audit(db, user.username, "CREATE", "hr_branch", f"{payload.code}; {payload.name}")
@@ -188,6 +193,10 @@ def update_branch(branch_id: str, payload: BranchIn, db: Session = Depends(get_d
     row = db.get(HRBranch, branch_id)
     if row is None:
         raise HTTPException(404, "Branch not found")
+    try:
+        ZoneInfo(payload.timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(422, "Branch timezone must be a valid IANA timezone") from exc
     for key, value in payload.model_dump().items():
         setattr(row, key, value)
     log_audit(db, user.username, "UPDATE", "hr_branch", f"{row.code}; active={row.active}")
@@ -221,8 +230,8 @@ def create_employee_org_assignment(
     if payload.valid_to is not None and payload.valid_to < payload.valid_from:
         raise HTTPException(422, "Assignment end date cannot precede start date")
     employee = db.query(models.Employee).filter_by(id=payload.employee_id).with_for_update().first()
-    if employee is None:
-        raise HTTPException(404, "Employee not found")
+    if employee is None or not employee.active:
+        raise HTTPException(404, "Active employee not found")
     if payload.manager_employee_id == payload.employee_id:
         raise HTTPException(422, "An employee cannot report to themselves")
     if payload.branch_id:
