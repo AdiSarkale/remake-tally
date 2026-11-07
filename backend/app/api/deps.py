@@ -121,28 +121,23 @@ def require_area(area: str):
 
 
 def require_any_area(*areas: str):
-    """Require a persisted feature/action grant for the matching route module."""
-    prefix_module = {
-        "hr": "hr", "manufacturing": "production", "production": "production",
-        "finance": "finance", "inventory": "inventory", "scrap": "scrap",
-        "sales": "sales", "sales-orders": "sales", "quotations": "sales",
-        "dispatches": "sales", "deliveries": "sales", "purchasing": "purchase_requests",
-        "purchase-requests": "purchase_requests", "masters": "masters",
-        "settings": "settings", "reports": "reports", "approvals": "approvals",
-    }
+    """Require a feature/action grant in any one of the declared modules."""
     def guard(
         request: Request,
         user: models.User = Depends(current_user),
         db: Session = Depends(tenant_session_db),
     ) -> models.User:
-        parts = [part for part in request.url.path.split("/") if part]
-        prefix = parts[2] if len(parts) >= 3 and parts[0] == "api" else (parts[0] if parts else "")
-        module = prefix_module.get(prefix)
-        if module not in areas:
-            # Preserve a strict deny if a route cannot be mapped to one of its declared modules.
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Route is not mapped to an authorized module")
-        _check_module_route_grant(db, user, module, request)
-        return user
+        denied = []
+        for module in areas:
+            try:
+                _check_module_route_grant(db, user, module, request)
+                return user
+            except HTTPException as exc:
+                denied.append(exc)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot access this route through any of its authorized modules",
+        )
     return guard
 
 
@@ -228,3 +223,83 @@ def enforce_employee_data_scope(
             frontier = children
         raise HTTPException(status_code=403, detail="Team scope is limited to your direct and indirect reports")
     raise HTTPException(status_code=403, detail="This data scope is not supported by the current employee relationships")
+
+
+def employee_scope_ids(
+    db: Session, user: models.User, module: str, feature: str, action: str,
+) -> list[str] | None:
+    """Return employee IDs for exact scoped grants; None means tenant-wide."""
+    exact_grants = db.query(RolePermissionGrant).filter_by(
+        role=user.role.value, module=module, feature=feature, action=action,
+    ).all()
+    if not exact_grants:
+        wildcard = db.query(RolePermissionGrant).filter_by(
+            role=user.role.value, module=module, feature="*", action="*",
+            data_scope="tenant", allowed=True,
+        ).first()
+        return None if wildcard else []
+
+    allowed_scopes = {grant.data_scope for grant in exact_grants if grant.allowed}
+    if "tenant" in allowed_scopes:
+        return None
+    if not allowed_scopes:
+        return []
+
+    link = db.query(EmployeeUserLink).filter_by(user_id=user.id).first()
+    if link is None:
+        return []
+    employees = db.query(models.Employee).all()
+    employee_by_id = {employee.id: employee for employee in employees}
+    settings = db.get(models.HRPayrollSettings, 1)
+    try:
+        today = datetime.now(ZoneInfo(settings.timezone if settings else "Asia/Kolkata")).date()
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(status_code=500, detail="Tenant timezone is invalid") from exc
+    assignments = db.query(EmployeeOrgAssignment).filter(
+        EmployeeOrgAssignment.valid_from <= today,
+        (EmployeeOrgAssignment.valid_to.is_(None) | (EmployeeOrgAssignment.valid_to >= today)),
+    ).all()
+    current = {row.employee_id: row for row in assignments}
+    actor = employee_by_id.get(link.employee_id)
+    if actor is None:
+        return []
+    actor_assignment = current.get(link.employee_id)
+    result: set[str] = set()
+
+    if "self" in allowed_scopes:
+        result.add(link.employee_id)
+    if "department" in allowed_scopes:
+        actor_department = actor_assignment.department if actor_assignment else actor.department
+        if actor_department:
+            for employee in employees:
+                assignment = current.get(employee.id)
+                department = assignment.department if assignment else employee.department
+                if department and department.casefold() == actor_department.casefold():
+                    result.add(employee.id)
+    if "branch" in allowed_scopes and actor_assignment and actor_assignment.branch_id:
+        result.update(
+            row.employee_id for row in assignments
+            if row.branch_id == actor_assignment.branch_id
+        )
+    if "team" in allowed_scopes:
+        descendants: set[str] = {link.employee_id}
+        frontier = {link.employee_id}
+        while frontier:
+            children = {
+                row.employee_id for row in assignments
+                if row.manager_employee_id in frontier and row.employee_id not in descendants
+            }
+            descendants.update(children)
+            frontier = children
+        result.update(descendants)
+    return sorted(result)
+
+
+def apply_employee_scope(
+    query, db: Session, user: models.User, module: str, feature: str, action: str,
+):
+    """Apply employee scope to an Employee-backed query, failing closed."""
+    ids = employee_scope_ids(db, user, module, feature, action)
+    if ids is None:
+        return query
+    return query.filter(models.Employee.id.in_(ids))
