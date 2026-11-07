@@ -62,7 +62,7 @@ def test_employee_scope_rejects_unknown_scope():
             return Query()
 
         def get(self, model, employee_id):
-            return SimpleNamespace(department="Operations")
+            return SimpleNamespace(department="Operations", timezone="Asia/Kolkata")
 
     class User:
         id = "mapped-user"
