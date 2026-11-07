@@ -24,6 +24,8 @@ class EmployeeLinkIn(BaseModel):
 
 
 class EmployeeLinkOut(BaseModel):
+    model_config = {"from_attributes": True}
+
     id: str
     user_id: str
     employee_id: str
@@ -40,6 +42,8 @@ class RoleGrantIn(BaseModel):
 
 
 class RoleGrantOut(RoleGrantIn):
+    model_config = {"from_attributes": True}
+
     id: str
     updated_by: str
 
