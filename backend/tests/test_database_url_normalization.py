@@ -3,6 +3,12 @@
 PostgreSQL-specific URL handling must not rewrite SQLite URLs used by tests.
 """
 
+import sys
+from pathlib import Path
+
+# Match the backend test-suite import setup used by existing integration tests.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from app.core.config import Settings
 
 
