@@ -1072,7 +1072,7 @@ def test_employee_api_reads_and_mutations_are_tenant_scoped(isolated_tenants):
         b_db.add(models.Employee(
             id="employee-b", emp_code="EMP-B01", name="Company B Employee",
             employee_type="shop_floor", department="Production",
-            designation="Operator", active=True,
+            designation="Operator", joining_date=date(2026, 1, 1), active=True,
         ))
         a_db.commit()
         b_db.commit()
