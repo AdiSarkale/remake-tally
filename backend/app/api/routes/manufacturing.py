@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.api.deps import require_any_area, require_area
 from app.db.session import get_db
-from app.services.inventory import log_audit, next_batch_no
+from app.modules.core.audit import log_audit
+from app.services.inventory import next_batch_no
 
 router = APIRouter(prefix="/manufacturing", tags=["manufacturing"])
 guard = Depends(require_area("production"))
