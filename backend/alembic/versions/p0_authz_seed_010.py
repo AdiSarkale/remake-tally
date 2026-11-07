@@ -26,6 +26,19 @@ def upgrade() -> None:
         sa.column("updated_by", sa.String(64)),
     )
     grants = []
+    legacy_access = {
+        "Admin": {"masters", "inventory", "production", "scrap", "sales", "finance", "settings", "reports", "approvals", "purchase_requests", "hr"},
+        "Accountant": {"masters", "inventory", "sales", "reports", "approvals", "purchase_requests"},
+        "Operator": {"production", "scrap", "inventory", "approvals", "purchase_requests"},
+        "HR": {"hr"},
+    }
+    for role, modules in legacy_access.items():
+        for module in modules:
+            grants.append({
+                "id": str(uuid.uuid4()), "role": role, "module": module,
+                "feature": "access", "action": "read", "data_scope": "tenant",
+                "allowed": True, "updated_by": "system",
+            })
     for role in ("Admin", "HR"):
         for action in ("read", "write", "prepare", "approve", "finalize", "lock", "reverse"):
             grants.append({
@@ -72,5 +85,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute(sa.text(
         "DELETE FROM role_permission_grants WHERE updated_by = 'system' "
-        "AND module = 'hr' AND feature IN ('leave_types', 'leave_balances', 'leave_requests', 'payroll')"
+        "AND module = 'hr' AND (feature = 'access' OR feature IN ('leave_types', 'leave_balances', 'leave_requests', 'payroll'))"
     ))
