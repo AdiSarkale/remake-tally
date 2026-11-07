@@ -44,11 +44,11 @@ try {
     await page.goto(base + "/hr");
     await page.waitForTimeout(1500);
     process.stdout.write("Operator HR page URL: " + page.url() + "\\n" + (await page.locator("body").innerText()).slice(0, 1800) + "\\n");
-    await page.getByRole("button", { name: "Leave", exact: true }).click();
+    await page.getByRole("tab", { name: "Leave", exact: true }).click();
     await page.getByText("Apply for leave", { exact: true }).waitFor();
     await page.getByText("My leave balances", { exact: true }).waitFor();
     assert.equal(await page.getByText("Create leave policy", { exact: true }).count(), 0);
-    assert.equal(await page.getByRole("button", { name: "Access Control", exact: true }).count(), 0);
+    assert.equal(await page.getByRole("tab", { name: "Access Control", exact: true }).count(), 0);
     await context.close();
   }
 
@@ -56,10 +56,10 @@ try {
   {
     const { context, page } = await persona("HR", "hr-manager");
     await page.goto(base + "/hr");
-    await page.getByRole("button", { name: "Leave", exact: true }).click();
+    await page.getByRole("tab", { name: "Leave", exact: true }).click();
     await page.getByText("Create leave policy", { exact: true }).waitFor();
-    assert.equal(await page.getByRole("button", { name: "Access Control", exact: true }).count(), 0);
-    await page.getByRole("button", { name: "Payroll", exact: true }).click();
+    assert.equal(await page.getByRole("tab", { name: "Access Control", exact: true }).count(), 0);
+    await page.getByRole("tab", { name: "Payroll", exact: true }).click();
     await page.getByText(/Payroll preview/).waitFor();
     await context.close();
   }
@@ -68,7 +68,7 @@ try {
   {
     const { context, page } = await persona("Admin", "admin");
     await page.goto(base + "/hr");
-    await page.getByRole("button", { name: "Access Control", exact: true }).click();
+    await page.getByRole("tab", { name: "Access Control", exact: true }).click();
     await page.getByText("Branches and reporting structure", { exact: true }).waitFor();
     await page.getByText("Employee reporting assignments", { exact: true }).waitFor();
     await page.goto(base + "/finance");
