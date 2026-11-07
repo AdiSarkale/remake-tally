@@ -85,7 +85,7 @@ def test_tenant_hr_migration_chain_has_single_latest_head():
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["p0_granular_authz_012"]
+    assert script.get_heads() == ["p0_leave_accrual_013"]
     assert script.get_revision("hr_role_001").down_revision == "employee_type_001"
     assert script.get_revision("hr_employee_types_002").down_revision == "hr_role_001"
     assert script.get_revision("hr_employee_codes_003").down_revision == "hr_employee_types_002"
@@ -97,6 +97,7 @@ def test_tenant_hr_migration_chain_has_single_latest_head():
     assert script.get_revision("p0_authz_seed_010").down_revision == "p0_payroll_009"
     assert script.get_revision("p0_org_structure_011").down_revision == "p0_authz_seed_010"
     assert script.get_revision("p0_granular_authz_012").down_revision == "p0_org_structure_011"
+    assert script.get_revision("p0_leave_accrual_013").down_revision == "p0_granular_authz_012"
 
 
 def test_employee_branch_and_hierarchical_team_scopes_are_relationship_backed():
