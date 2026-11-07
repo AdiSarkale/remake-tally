@@ -3,10 +3,10 @@
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import Request
 
 from app import models
-from app.api.deps import ROLE_PERMISSIONS, require_area
+from app.api.deps import ROLE_PERMISSIONS, _route_feature_action
 
 
 def test_admin_and_hr_have_hr_management_permission():
@@ -20,22 +20,22 @@ def test_hr_role_is_isolated_from_finance_and_system_administration():
     assert ROLE_PERMISSIONS[models.Role.hr] == {"hr"}
 
 
-def test_hr_guard_allows_admin():
-    guard = require_area("hr")
-    user = SimpleNamespace(role=models.Role.admin)
+def test_route_permission_maps_resource_and_action():
+    request = Request({
+        "type": "http", "method": "POST", "path": "/api/v1/finance/customer-payments",
+        "headers": [], "query_string": b"", "server": ("test", 80),
+        "client": ("test", 80), "scheme": "http", "http_version": "1.1",
+    })
+    assert _route_feature_action(request) == ("customer_payments", "create")
 
-    assert guard(user) is user
 
-
-@pytest.mark.parametrize("role", [models.Role.accountant, models.Role.operator])
-def test_hr_guard_rejects_non_admin_roles(role):
-    guard = require_area("hr")
-    user = SimpleNamespace(role=role)
-
-    with pytest.raises(HTTPException) as exc:
-        guard(user)
-
-    assert exc.value.status_code == 403
+def test_route_permission_maps_payroll_state_transition():
+    request = Request({
+        "type": "http", "method": "POST", "path": "/api/v1/hr/payroll/runs/abc/approve",
+        "headers": [], "query_string": b"", "server": ("test", 80),
+        "client": ("test", 80), "scheme": "http", "http_version": "1.1",
+    })
+    assert _route_feature_action(request) == ("payroll", "approve")
 
 
 def test_production_users_retain_production_access_without_hr_management():
