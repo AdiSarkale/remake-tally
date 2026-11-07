@@ -98,6 +98,154 @@ def find_possible_employee_duplicates(name: str, db: Session = Depends(get_db), 
     ).order_by(models.Employee.emp_code).limit(20).all()
 
 
+def _validate_employee_type(db: Session, code: str, *, allow_inactive_existing: bool = False) -> models.EmployeeTypeDefinition:
+    normalized = code.strip().lower()
+    row = db.query(models.EmployeeTypeDefinition).filter_by(code=normalized).first()
+    if row is None:
+        raise HTTPException(422, "Select a valid employee type")
+    if not row.active and not allow_inactive_existing:
+        raise HTTPException(409, "This employee type is inactive. Reassign the employee to an active type first.")
+    return row
+
+
+def _next_employee_code(db: Session, employee_type: str, department: str) -> str:
+    """Allocate tenant-configured code with database lock and collision checks."""
+    config = db.query(models.EmployeeCodeConfig).filter_by(id=1).with_for_update().first()
+    if config is None:
+        codes = db.query(models.Employee.emp_code).all()
+        highest = 0
+        for (code,) in codes:
+            match = re.fullmatch(r"EMP-(\d+)", code or "", flags=re.IGNORECASE)
+            if match:
+                highest = max(highest, int(match.group(1)))
+        config = models.EmployeeCodeConfig(
+            id=1, pattern="EMP-{SEQ:03}", sequence_start=1,
+            next_sequence=max(highest + 1, 1), increment_by=1,
+        )
+        db.add(config)
+        db.flush()
+    sequence = max(config.next_sequence, config.sequence_start)
+    pattern = _validate_code_pattern(config.pattern)
+    for _attempt in range(1000):
+        code = _render_employee_code(pattern, sequence, employee_type, department)
+        exists = db.query(models.Employee.id).filter(models.Employee.emp_code == code).first()
+        config.next_sequence = sequence + config.increment_by
+        if not exists:
+            return code
+        sequence += config.increment_by
+    raise HTTPException(409, "Could not allocate a unique employee code; review the configured pattern")
+
+
+@router.get("/employees", response_model=list[schemas.EmployeeOut])
+def list_employees(include_inactive: bool = False, db: Session = Depends(get_db), user: models.User = employee_access):
+    query = db.query(models.Employee)
+    if include_inactive:
+        if user.role not in (models.Role.admin, models.Role.hr):
+            raise HTTPException(403, "Historical employee access requires Admin or HR authorization")
+    else:
+        query = query.filter(models.Employee.active.is_(True))
+    return query.order_by(models.Employee.emp_code).all()
+
+
+@router.post("/employees", response_model=schemas.EmployeeOut, status_code=201)
+def create_employee(payload: schemas.EmployeeIn, db: Session = Depends(get_db), user: models.User = hr_employee_access):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(422, "Employee name is required")
+    if payload.joining_date is None:
+        raise HTTPException(422, "Joining date is required for new employees")
+    if payload.end_date is not None and payload.end_date < payload.joining_date:
+        raise HTTPException(422, "End date cannot be earlier than joining date")
+    _validate_employee_type(db, payload.employee_type)
+    for _attempt in range(5):
+        row = models.Employee(
+            emp_code=_next_employee_code(db, payload.employee_type.strip().lower(), payload.department.strip()),
+            name=name, employee_type=payload.employee_type.strip().lower(),
+            department=payload.department.strip(), designation=payload.designation.strip(),
+            joining_date=payload.joining_date, end_date=payload.end_date, active=True,
+        )
+        db.add(row)
+        try:
+            db.flush()
+            log_audit(db, user.username, "CREATE", "employee", row.emp_code)
+            db.commit()
+            db.refresh(row)
+            return row
+        except IntegrityError:
+            db.rollback()
+    raise HTTPException(409, "Could not allocate a unique employee code; please retry")
+
+
+@router.put("/employees/{employee_id}", response_model=schemas.EmployeeOut)
+def update_employee(employee_id: str, payload: schemas.EmployeeUpdate, db: Session = Depends(get_db), user: models.User = hr_employee_access):
+    row = db.get(models.Employee, employee_id)
+    if row is None:
+        raise HTTPException(404, "Employee not found")
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(422, "Employee name is required")
+    if payload.end_date is not None and (payload.joining_date is None or payload.end_date < payload.joining_date):
+        raise HTTPException(422, "End date requires a valid joining date and cannot be earlier than it")
+    if payload.employee_type.strip().lower() != row.employee_type:
+        _validate_employee_type(db, payload.employee_type)
+    row.name = name
+    row.employee_type = payload.employee_type.strip().lower()
+    row.department = payload.department.strip()
+    row.designation = payload.designation.strip()
+    row.joining_date = payload.joining_date
+    row.end_date = payload.end_date
+    log_audit(db, user.username, "UPDATE", "employee", f"{row.emp_code}; details updated")
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def _employee_has_open_production_assignments(db: Session, employee_id: str) -> bool:
+    return db.query(models.ProductionOrderOperation.id).filter(
+        models.ProductionOrderOperation.assigned_employee_id == employee_id,
+        models.ProductionOrderOperation.completed_qty < models.ProductionOrderOperation.planned_qty,
+    ).first() is not None
+
+
+@router.patch("/employees/{employee_id}/status", response_model=schemas.EmployeeOut)
+def set_employee_status(employee_id: str, payload: schemas.EmployeeStatusUpdate, db: Session = Depends(get_db), user: models.User = hr_employee_access):
+    row = db.get(models.Employee, employee_id)
+    if row is None:
+        raise HTTPException(404, "Employee not found")
+    if row.active == payload.active:
+        return row
+    if payload.active:
+        _validate_employee_type(db, row.employee_type)
+    elif _employee_has_open_production_assignments(db, row.id):
+        raise HTTPException(409, "Cannot deactivate an employee with unfinished production assignments. Reassign or complete those operations first.")
+    row.active = payload.active
+    log_audit(db, user.username, "REACTIVATE" if row.active else "DEACTIVATE", "employee", row.emp_code)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.get("/employees/{employee_id}/skills", response_model=list[schemas.EmployeeSkillOut])
+def list_employee_skills(employee_id: str, db: Session = Depends(get_db), user: models.User = employee_access):
+    if not db.get(models.Employee, employee_id):
+        raise HTTPException(404, "Employee not found")
+    return db.query(models.EmployeeSkill).filter_by(employee_id=employee_id).order_by(models.EmployeeSkill.skill).all()
+
+
+@router.post("/employees/{employee_id}/skills", response_model=schemas.EmployeeSkillOut, status_code=201)
+def add_employee_skill(employee_id: str, payload: schemas.EmployeeSkillIn, db: Session = Depends(get_db), user: models.User = hr_employee_access):
+    if not db.get(models.Employee, employee_id):
+        raise HTTPException(404, "Employee not found")
+    if db.query(models.EmployeeSkill).filter_by(employee_id=employee_id, skill=payload.skill).first():
+        raise HTTPException(400, "Employee already has this skill")
+    row = models.EmployeeSkill(employee_id=employee_id, **payload.model_dump())
+    db.add(row)
+    log_audit(db, user.username, "CREATE", "employee_skill", f"{employee_id}: {payload.skill}")
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 @router.get("/employee-types", response_model=list[schemas.EmployeeTypeOut])
 def list_employee_types(db: Session = Depends(get_db), user: models.User = read_access):
     return db.query(models.EmployeeTypeDefinition).order_by(
