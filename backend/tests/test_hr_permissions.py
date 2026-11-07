@@ -97,3 +97,49 @@ def test_tenant_hr_migration_chain_has_single_latest_head():
     assert script.get_revision("p0_authz_seed_010").down_revision == "p0_payroll_009"
     assert script.get_revision("p0_org_structure_011").down_revision == "p0_authz_seed_010"
     assert script.get_revision("p0_granular_authz_012").down_revision == "p0_org_structure_011"
+
+
+def test_employee_branch_and_hierarchical_team_scopes_are_relationship_backed():
+    from datetime import date
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from fastapi import HTTPException
+    from app.api.deps import enforce_employee_data_scope
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    db = SessionLocal()
+    try:
+        today = date.today()
+        branch = models.HRBranch(code="PUN", name="Pune")
+        actor = models.Employee(id="actor", emp_code="A001", name="Manager", department="Ops")
+        report = models.Employee(id="report", emp_code="A002", name="Report", department="Ops")
+        indirect = models.Employee(id="indirect", emp_code="A003", name="Indirect", department="Ops")
+        outsider = models.Employee(id="outsider", emp_code="A004", name="Outsider", department="Ops")
+        db.add_all([branch, actor, report, indirect, outsider])
+        db.flush()
+        db.add(models.EmployeeUserLink(user_id="user-1", employee_id="actor", created_by="admin"))
+        db.add_all([
+            models.EmployeeOrgAssignment(employee_id="actor", branch_id=branch.id, manager_employee_id=None, department="Ops", valid_from=today, created_by="admin"),
+            models.EmployeeOrgAssignment(employee_id="report", branch_id=branch.id, manager_employee_id="actor", department="Ops", valid_from=today, created_by="admin"),
+            models.EmployeeOrgAssignment(employee_id="indirect", branch_id=branch.id, manager_employee_id="report", department="Ops", valid_from=today, created_by="admin"),
+        ])
+        other_branch = models.HRBranch(code="MUM", name="Mumbai")
+        db.add(other_branch)
+        db.flush()
+        db.add(models.EmployeeOrgAssignment(employee_id="outsider", branch_id=other_branch.id, manager_employee_id=None, department="Ops", valid_from=today, created_by="admin"))
+        db.commit()
+        user = SimpleNamespace(id="user-1")
+
+        enforce_employee_data_scope(db, user, "report", "branch")
+        enforce_employee_data_scope(db, user, "indirect", "team")
+        with pytest.raises(HTTPException) as branch_error:
+            enforce_employee_data_scope(db, user, "outsider", "branch")
+        assert branch_error.value.status_code == 403
+        with pytest.raises(HTTPException) as team_error:
+            enforce_employee_data_scope(db, user, "outsider", "team")
+        assert team_error.value.status_code == 403
+    finally:
+        db.close()
+        engine.dispose()
