@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 
 import pytest
-from fastapi import Request
+from fastapi import HTTPException, Request
 
 from app import models
 from app.api.deps import ROLE_PERMISSIONS, _route_feature_action
