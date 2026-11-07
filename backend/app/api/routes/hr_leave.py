@@ -346,11 +346,11 @@ def decide_leave_request(
         if row.approver_username != user.username:
             raise HTTPException(403, "Only the assigned department approver can decide this request")
     employee = db.get(models.Employee, row.employee_id)
-    if user.role not in (models.Role.admin, models.Role.hr):
-        enforce_employee_data_scope(db, user, employee.id, "department")
     leave_type = db.get(HRLeaveType, row.leave_type_id)
     if employee is None or leave_type is None:
         raise HTTPException(409, "Leave request references missing employee or leave type")
+    if user.role not in (models.Role.admin, models.Role.hr):
+        enforce_employee_data_scope(db, user, employee.id, "department")
     if payload.status == "approved":
         frozen_payroll = db.query(models.HRPayrollRun).filter(
             models.HRPayrollRun.year == row.start_date.year,
