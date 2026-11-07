@@ -39,7 +39,7 @@ class EmployeeIn(BaseModel):
     employee_type: str = Field(default="staff", min_length=2, max_length=32)
     department: str = Field(default="", max_length=120)
     designation: str = Field(default="", max_length=120)
-    joining_date: date | None = None
+    joining_date: date
     end_date: date | None = None
 
 class EmployeeUpdate(BaseModel):
@@ -48,7 +48,7 @@ class EmployeeUpdate(BaseModel):
     employee_type: str = Field(default="staff", min_length=2, max_length=32)
     department: str = Field(default="", max_length=120)
     designation: str = Field(default="", max_length=120)
-    joining_date: date | None = None
+    joining_date: date
     end_date: date | None = None
 
     @field_validator("end_date")
