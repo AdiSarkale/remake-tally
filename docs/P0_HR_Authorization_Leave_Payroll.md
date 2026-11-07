@@ -42,8 +42,8 @@ Controls implemented:
 
 Policy limitations requiring business decisions:
 - Annual entitlement is stored on the leave type, but accrual is allocated through HR-managed balance records; automatic monthly/pro-rata accrual is not inferred.
-- Carry-forward limit is stored, but year-end carry-forward execution is not automated yet.
-- Leave year is calendar-year based; requests crossing calendar years are rejected.
+- HR can trigger a policy-limited carry-forward from one calendar year to the next; it is idempotent and not scheduled automatically.
+- Leave year is calendar-year based; requests crossing calendar years are rejected. Annual entitlement accrual remains HR-managed through balance allocation; monthly/pro-rata accrual is not inferred.
 - Department HOD matching currently uses employee department name against the configured department name.
 - Half-day requests must be single-date requests.
 - Holiday and week-off counting is configurable per leave type; default is not to count them.
