@@ -60,14 +60,20 @@ class EmployeeAttendance(Base):
 
 class HRPayrollRun(Base):
     __tablename__ = "hr_payroll_runs"
-    __table_args__ = (UniqueConstraint("year", "month", name="uq_hr_payroll_period"),)
+    __table_args__ = (UniqueConstraint("year", "month", "revision", name="uq_hr_payroll_period_revision"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     year: Mapped[int] = mapped_column(Integer, nullable=False)
     month: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="finalized", nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
     created_by: Mapped[str] = mapped_column(String(120), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    finalized_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finalized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    approved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reversal_reason: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
 
 class HRPayrollItem(Base):
