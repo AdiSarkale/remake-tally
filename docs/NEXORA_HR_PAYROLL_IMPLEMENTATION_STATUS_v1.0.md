@@ -1,10 +1,11 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.0  
+**Version:** 1.1  
 **Status:** Active implementation tracker  
-**Baseline:** 7 November 2026  
-**Repository baseline:** `main`  
+**Baseline:** 8 November 2026  
+**Integration branch:** `docs/hr-phase-2-implementation-status`  
+**Integration PR:** [#27](https://github.com/AdiSarkale/remake-tally/pull/27) — open, not merged into `main`  
 **Audience:** GodlyKO and Adi Sarkale  
 **Purpose:** One shared reference for completed HR/Payroll work, remaining gaps, implementation decisions, ownership, and verification. Both project contributors should read this before changing HR, Payroll, authorization, or related data models.
 
@@ -23,9 +24,9 @@ The existing HR foundation and payroll workspace are in place. The next phase is
 | Payroll, attendance, calendar and payslips | Implemented as the current payroll foundation | Add leave policy/accrual and statutory configuration |
 | Tenant timezone | Implemented; defaults to `Asia/Kolkata` | Keep branch/site overrides deferred until the organization model supports them |
 | Audit service integration | Implemented for the covered HR/P1 events | Expand the event catalogue as new capabilities are added |
-| Branch/team data scopes | **Not implemented** | First establish reliable branch and reporting-manager relationships |
-| Granular feature/action authorization | **Partially implemented** | Extend the existing module-level access model to feature/action grants |
-| Automatic leave accrual | **Not implemented** | Design and implement configurable monthly and pro-rata accrual |
+| Branch/team data scopes | **Implemented in the P0 branch** | Admin must configure verified employee assignments; no legacy auto-backfill |
+| Granular feature/action authorization | **Implemented as an override-capable framework; compatibility fallback remains** | Complete role-by-role least-privilege matrix and remove legacy wildcard fallback when approved |
+| Automatic leave accrual | **Implemented for monthly and monthly-prorated policies** | HR triggers each accrual period; background scheduling and annual-upfront automation remain out of scope |
 | Statutory payroll jurisdiction | **Not implemented as a jurisdiction-aware ruleset** | Introduce Maharashtra as configuration 1, with an extensible jurisdiction model |
 
 ## 2. Completed work in the current repository baseline
@@ -67,6 +68,8 @@ The following capabilities are present in the repository's merged implementation
 - Backend authorization guards for module/area access.
 - Dedicated HR role exists in the current role model; HR access remains separate from Finance and Settings/system administration.
 - HR and payroll routes enforce HR access for protected management operations.
+- P0 adds persisted role/module/feature/action/data-scope grants, explicit employee-account links, branch/site records, effective-dated reporting assignments, leave workflows and an accrual ledger.
+- P0 adds payroll preparation, separate approval, finalization, locking, reversal and Finance journal posting safeguards.
 
 ### 2.4 Contributor history / attribution
 
@@ -76,7 +79,7 @@ This section records repository contribution history so both contributors can se
 |---|---|---|
 | **Adi Sarkale** | Payroll backend and frontend phases: salary profiles, attendance, calendar, payroll snapshots, Excel import/template, payslips, payroll UI and tests | PR [#16](https://github.com/AdiSarkale/remake-tally/pull/16) |
 | **GodlyKO** | Consolidated P1 work: HR-owned employee lifecycle, employment dates, payroll employment-period safeguards, tenant timezone, centralized audit integration, deactivation safeguards and regression tests | PR [#24](https://github.com/AdiSarkale/remake-tally/pull/24) |
-| **Both contributors** | Continue from the merged `main` baseline and coordinate all follow-up changes through reviewed branches/PRs | This shared tracker |
+| **Both contributors** | Continue from the reviewed integration branch and coordinate follow-up work through reviewed branches/PRs | PR [#28](https://github.com/AdiSarkale/remake-tally/pull/28), merged into the PR #27 head branch only |
 
 Earlier planning and authorization groundwork should also be reviewed before changing the access model. Do not assume an older closed/unmerged branch is the current source of truth.
 
@@ -84,146 +87,145 @@ Earlier planning and authorization groundwork should also be reviewed before cha
 
 ## 3. Workstream A — Branch and team scopes
 
-**Status: NOT IMPLEMENTED — blocked by missing organizational relationships.**
+<badge>Implemented in P0 integration</badge>
 
-The current employee data model does not yet provide reliable branch membership or a dependable reporting-manager hierarchy. Department text alone is not a safe basis for team authorization.
+The data model and backend scope enforcement are now present. The implementation uses stable tenant-local branch records and effective-dated employee organization assignments rather than inferring authorization from free-text department fields.
 
-### Required prerequisite work
+### Implemented data model and APIs
 
-1. Define the organization hierarchy and branch/site identity.
-2. Add stable branch/site records and employee-to-branch relationships.
-3. Define whether employees can belong to one or multiple branches, including effective dates and primary-branch rules.
-4. Add a reliable reporting-manager relationship, including effective dates and reassignment history.
-5. Define team membership semantics and behavior when a manager or employee changes branch/manager.
-6. Backfill legacy records only where the relationship can be verified; do not infer branch or manager assignments from free-text department/designation fields.
+- `hr_branches`: tenant-local branch code, name, address, IANA timezone and active status.
+- `employee_org_assignments`: employee, branch, department, reporting manager, `valid_from`, `valid_to`, creator and creation timestamp.
+- Admin APIs:
+  - `GET/POST /api/v1/authorization/branches`
+  - `PUT /api/v1/authorization/branches/{branch_id}`
+  - `GET/POST /api/v1/authorization/employee-org-assignments`
+- A new assignment closes a prior overlapping open assignment on the day before the new effective date.
+- The API rejects self-reporting and reporting cycles and validates branch/manager references.
+- Existing employees are deliberately **not auto-assigned**. Admin must create verified assignments; no relationships are fabricated from legacy department/designation text.
 
-### Target scope model
+### Implemented data scopes
 
-Once the prerequisite relationships exist, support scopes such as:
+- `tenant`: tenant-wide records.
+- `self`: only the employee linked to the authenticated login.
+- `department`: employee department relationship.
+- `branch`: employees with the same current effective branch assignment.
+- `team`: direct and indirect reports through effective-dated manager assignments.
 
-- Own records.
-- Assigned employees/workers.
-- Reporting team.
-- Department.
-- Branch/site.
-- Whole tenant/company, subject to explicit permission.
+Scope filtering is applied to employee lists and leave balance/request collections. Direct employee mutation and skill routes also enforce the configured employee scope. Missing or ambiguous branch/team relationships fail closed.
 
-### Acceptance requirements
+### Operational requirements still remaining
 
-- A manager cannot see another manager's team merely by guessing an employee identifier.
-- Branch-scoped access cannot cross branch boundaries without an explicit higher-level grant.
-- Reassignment changes future access without rewriting historical approvals or audit records.
-- Missing or ambiguous branch/manager relationships fail closed for scoped access.
-- API list, detail, search, export, and download paths enforce the same scope rules.
+1. Admin must configure branch records and employee assignments before granting branch/team-scoped access.
+2. Backfill legacy employee relationships only after HR verifies them.
+3. Extend the same scope policy to any future employee-backed exports, reports, bulk actions and newly added APIs.
+4. Add organization assignment history review/reporting and optional multiple-branch membership only if the business requires it.
 
-**Do not implement team/branch authorization by filtering only in the frontend or by matching department strings.**
+### Acceptance checks
+
+- Branch/team grants cannot cross tenant boundaries.
+- Team access follows direct and indirect reporting relationships.
+- Reassignment changes current scope without rewriting prior assignment or audit history.
+- Unlinked users cannot obtain self/branch/team access.
+- Employee list, duplicate search, update, status and skills endpoints apply scope checks.
+
+**Status:** Core branch/team data model and employee/leave scope enforcement implemented; operational configuration and broader future endpoint coverage remain ongoing responsibilities.
 
 ---
 
 ## 4. Workstream B — Granular authorization
 
-**Status: PARTIALLY IMPLEMENTED — module/area access exists; feature/action-level migration remains.**
+<badge>Implemented with backward-compatible migration</badge>
 
-The current access model distinguishes broad module areas. That is not yet the target Nexora authorization model.
+The P0 implementation adds persisted role grants at module, feature, action and data-scope level.
 
-### Target authorization dimensions
+### Implemented authorization model
 
-`Tenant entitlement → Module → Feature/Sub-task → Action → Data scope`
+`Role → Module → Feature → Action → Data scope`
 
-The action vocabulary should be defined per feature and may include:
+Persisted grant fields:
 
-- View
-- Create
-- Edit
-- Delete
-- Submit
-- Approve
-- Reject
-- Release
-- Cancel
-- Export
-- Download
+- Role
+- Module
+- Feature
+- Action
+- Data scope (`tenant`, `self`, `department`, `branch`, `team`)
+- Allowed/denied
+- Updated by and timestamp
 
-Permission, responsibility/assignment, and approval authority must remain separate concepts.
+### Implemented components
 
-### Required implementation
+- `role_permission_grants` with a unique constraint across role/module/feature/action/data-scope.
+- `require_permission(module, feature, action, data_scope)` for explicit protected actions.
+- Route-level feature/action derivation for module-guarded endpoints; explicit workflow transitions such as approve, prepare, finalize, lock, reverse and cancel are mapped to their action names.
+- Exact feature/action grants take precedence over compatibility wildcard grants.
+- Explicit denied grants block the matching route even when the legacy module wildcard would otherwise allow it.
+- Admin-only APIs to list and upsert role grants.
+- Audit events for permission grant creation and changes.
+- Admin UI to manage role grants and their data scopes.
+- Tenant isolation and regression tests for denial, role boundaries, route action mapping and grant revocation.
 
-1. Inventory current module-level grants, role mappings, backend guards, frontend visibility checks, and route dependencies.
-2. Define stable module and feature identifiers; avoid display-label-based permission keys.
-3. Define supported actions for each feature.
-4. Introduce persisted feature/action grants with tenant and role/user scope as appropriate.
-5. Provide a compatibility/migration path from existing module-level grants.
-6. Define allow/deny precedence, multiple-role combination, safe defaults, and permission revocation behavior.
-7. Enforce the resulting policy in backend APIs, direct record access, exports/downloads, and background jobs.
-8. Keep frontend controls as a usability layer only; the backend remains authoritative.
-9. Add audit events for grant creation, changes, revocation, and role/profile changes.
-10. Add tenant-isolation and privilege-escalation regression tests.
+### Migration behavior and honest limitation
 
-### Migration safety
+The migration seeds compatibility wildcard grants from the existing role/module matrix so existing users do not unexpectedly lose access during the transition. Exact feature/action grants can then narrow or deny individual capabilities.
 
-- Existing legitimate module access must not be accidentally removed during migration.
-- Migration must not silently broaden access.
-- New feature/action permissions default to deny unless explicitly mapped and approved.
-- Do not grant Finance, system administration, or unrelated modules merely because a user has HR access.
-- Keep a reviewed mapping table from old module grants to new feature/action grants.
+**This means the framework is implemented, but the full least-privilege conversion is not yet complete.** The old module-level wildcard fallback remains active for routes without an exact grant. A role-by-role feature/action matrix must be reviewed and approved before wildcard defaults are removed; removing them prematurely could break existing ERP workflows.
 
-### Acceptance requirements
+### Remaining authorization work
 
-- Tests cover every role and sensitive action.
-- Unauthorized API calls return a denial even when the frontend is bypassed.
-- A user with View cannot Create/Edit/Approve unless separately granted.
-- Approval authority is checked independently from ordinary edit permission.
-- Revoked grants take effect server-side.
-- Cross-tenant grants and access are impossible.
+1. Approve the complete role-by-role feature/action matrix for every ERP module.
+2. Replace remaining compatibility wildcard grants with explicit grants after route inventory and regression testing.
+3. Review routes that use bespoke role checks or do not use the common module guard.
+4. Extend feature/action checks to new background jobs, exports and integration endpoints as they are introduced.
+5. Add permission administration UX for bulk profile management only after the permission registry is stable.
+
+**Status:** Persisted granular grant framework, route enforcement, scoped grants, migration compatibility and Admin management UI implemented. Full removal of legacy wildcard access remains a controlled follow-up, not a completed claim.
 
 ---
 
 ## 5. Workstream C — Automatic leave accrual
 
-**Status: NOT IMPLEMENTED — entitlement is configurable, but HR currently allocates balances manually.**
+<badge>Implemented for monthly and monthly-prorated policies</badge>
 
-The next leave implementation must support configurable accrual rather than assuming one universal company policy.
+Leave policy, balance, request and approval workflows are present. The P0 implementation adds automatic accrual calculation and a period ledger so HR no longer needs to manually allocate every monthly credit.
 
-### Target accrual capabilities
+### Implemented policy methods
 
-- Configurable annual entitlement by leave type and policy group.
-- Monthly accrual.
-- Pro-rata accrual for employees joining or leaving partway through an accrual year.
-- Effective-dated policy assignment.
-- Accrual ledger entries with source, period, quantity, calculation details, and audit references.
-- HR adjustments with reason and audit history.
-- Balance calculation from opening balance, accruals, adjustments, approved leave, reversals, and carry-forward.
+- `annual_upfront`: annual entitlement is still allocated by HR.
+- `monthly`: one-twelfth of annual entitlement is accrued for each eligible month.
+- `monthly_prorated`: monthly entitlement is prorated by eligible calendar days in the month, considering employee joining date, end date and policy effective date.
 
-### Policy decisions to specify before implementation
+The current v1 leave year is calendar-year based. A leave request cannot span two calendar years.
 
-- Accrual frequency and accrual date (monthly, daily, or another configured cycle).
-- Calendar-year versus financial-year versus employee-anniversary leave year.
-- Pro-rata denominator and treatment of partial months.
-- Rounding precision and rounding direction.
-- Treatment of unpaid leave, probation, suspension, and inactive employment.
-- Carry-forward limits and expiry.
-- Negative balances and advance leave.
-- Policy changes during an accrual year.
-- Whether balances are posted at period start, period end, or on a scheduled accrual run.
-- Reversal behavior for corrected employment dates or leave transactions.
+### Implemented accrual engine
 
-### Required safeguards
+- `hr_leave_accrual_ledger` stores employee, leave type, year, month, accrued amount, actor and timestamp.
+- Unique constraint on employee + leave type + year + month prevents duplicate period entries.
+- HR can trigger the accrual run from the Leave workspace.
+- Re-running an already processed period skips existing ledger entries.
+- Accrual calculations round to two decimal places.
+- Inactive employees without a verified end date are excluded; a known end date is respected even if the legacy active flag was not updated.
+- Balance records are created/updated in the same transaction as ledger entries and audit events.
+- Leave requests check available balance; approval updates attendance and consumes the balance once.
+- Leave type policy becomes immutable once it is referenced by balances or requests, preserving the calculation basis.
 
-- Accrual runs must be idempotent: rerunning a period cannot double-credit leave.
-- Accrual must be calculated against the policy version effective for that period.
-- Historical ledger entries must not be overwritten by later policy changes.
-- HR adjustments require a reason and audit event.
-- Approved leave must reduce the appropriate balance exactly once; cancellation/reversal must restore it exactly once.
-- Payroll and leave integration must use approved leave records, not unapproved requests.
+### Operational limitations
 
-### Acceptance requirements
+- Accrual execution is **HR-triggered**, not a scheduled background job. A scheduler/automation can be added after deployment cadence and failure/retry ownership are defined.
+- `annual_upfront` remains HR-managed.
+- Carry-forward is HR-triggered and limited by the configured cap; it is not automatically scheduled.
+- Policy year is calendar-year based in this release.
+- Historical balances created manually before enabling monthly accrual must be reconciled before the first run to avoid duplicating already-allocated entitlement.
 
-- Monthly accrual produces the configured entitlement over the full policy year.
-- Mid-year joining/leaving produces the configured pro-rata result.
-- Re-running an accrual period does not duplicate credits.
-- Policy changes preserve the historical calculation basis.
-- Leave approval, cancellation, and reversal produce balanced ledger movements.
-- Tenant A cannot read or modify Tenant B leave balances or policies.
+### Verification coverage added
+
+- Full monthly accrual amount.
+- Mid-month joining pro-rata.
+- Mid-month exit pro-rata.
+- Policy effective-date pro-rata.
+- Unique ledger constraint.
+- Existing API integration coverage runs the same period twice and checks that the second run does not create duplicate accrual.
+
+**Status:** Monthly and monthly-prorated calculation, ledger, HR trigger, idempotency and balance integration implemented. Scheduled execution, financial-year policy support and annual-upfront automation remain future enhancements.
 
 ---
 
@@ -282,15 +284,14 @@ Before production use, every statutory rule, threshold, slab, contribution rate,
 
 | Order | Work package | Reason |
 |---:|---|---|
-| 1 | Confirm and document HR/Payroll current baseline | Prevent duplicate or conflicting work |
-| 2 | Specify leave policy and accrual ledger | Self-contained HR capability with clear testable outcomes |
-| 3 | Implement leave accrual backend, migration, APIs and tests | Establish trustworthy leave balances |
-| 4 | Specify Maharashtra statutory rule model and obtain compliance validation | Statutory values must not be guessed |
-| 5 | Implement jurisdiction configuration and Maharashtra Configuration 1 | Make payroll jurisdiction-aware |
-| 6 | Inventory and migrate module grants to feature/action permissions | Security-sensitive cross-module change |
-| 7 | Define branch/site and reporting-manager data model | Required prerequisite for reliable scopes |
-| 8 | Implement branch/team scopes | Depends on trustworthy organization relationships |
-| 9 | Integrate leave and statutory payroll into payroll finalization and payslips | Only after component-level tests pass |
+| 1 | Verify P0 branch integration and run full CI | Confirm migrations, tenant isolation, backend and frontend behavior |
+| 2 | Configure real branch and reporting-manager assignments | Existing employees are not auto-assigned |
+| 3 | Approve role-by-role feature/action matrix | Required before removing compatibility wildcard grants |
+| 4 | Reconcile legacy leave balances and run first monthly accrual | Prevent duplicate opening credits |
+| 5 | Decide whether monthly accrual should be scheduled | Current implementation is HR-triggered |
+| 6 | Specify Maharashtra statutory rule model and obtain compliance validation | Statutory values must not be guessed |
+| 7 | Implement jurisdiction configuration and Maharashtra Configuration 1 | Make payroll jurisdiction-aware |
+| 8 | Extend branch/team scopes to future employee-backed exports and reports | Maintain consistent server-side scope enforcement |
 
 This order may be adjusted if repository dependencies require it, but branch/team scopes must not be simulated with unreliable data and statutory rules must not be released without compliance validation.
 
@@ -298,8 +299,8 @@ This order may be adjusted if repository dependencies require it, but branch/tea
 
 ## 8. Shared working agreement for GodlyKO and Adi
 
-1. Read this tracker and the relevant module specification before changing HR/Payroll/Core.
-2. Work from the latest `main` branch, unless a task explicitly names another reviewed branch.
+1. Both GodlyKO and Adi must read this tracker and the relevant module specification before changing HR/Payroll/Core.
+2. For this integration, use `docs/hr-phase-2-implementation-status` as the shared PR #27 head branch. Do not merge PR #27 into `main` until both contributors approve.
 3. Create a focused feature branch for each work package.
 4. Keep migrations, backend logic, frontend behavior, tests, and documentation in the same reviewable change where practical.
 5. Do not overwrite or rewrite another contributor's unmerged work.
@@ -316,11 +317,11 @@ Ownership is assigned per work package, not permanently by person. GodlyKO and A
 | Work package | Suggested coordination |
 |---|---|
 | Leave accrual specification and policy decisions | Joint review before implementation |
-| Leave accrual backend and tests | One implementation owner; other contributor reviews |
+| Leave accrual backend and tests | Implemented in P0; both contributors review operational policy and first-run reconciliation |
 | Maharashtra statutory rule research/configuration | Joint review with qualified compliance input |
-| Granular authorization migration | Joint architecture review; one owner for migration and backend enforcement |
-| Branch/site and reporting-manager model | Joint data-model review before schema changes |
-| Branch/team scopes | Start only after the organization model is accepted |
+| Granular authorization migration | Framework implemented; jointly approve the role-by-role matrix before removing wildcard fallback |
+| Branch/site and reporting-manager model | Data model implemented; Admin/HR must verify and configure assignments |
+| Branch/team scopes | Core enforcement implemented; jointly review coverage as new employee-backed endpoints are added |
 
 ---
 
@@ -346,6 +347,15 @@ A workstream may be marked **Implemented** only when all applicable items are co
 
 | Version | Date | Change |
 |---|---|---|
-| 1.0 | 7 November 2026 | Initial shared HR/Payroll implementation tracker; records current baseline, contributor history, branch/team scope gap, granular authorization migration, leave accrual gap, and Maharashtra Configuration 1 decision. |
+| 1.0 | 7 November 2026 | Initial shared HR/Payroll implementation tracker. |
+| 1.1 | 8 November 2026 | Updated after P0 integration into the PR #27 head branch: records branch/team scopes, granular authorization framework and monthly/pro-rata leave accrual as implemented, with operational and migration limitations explicitly retained. |
+
+## 11. Integration and verification record
+
+- P0 feature branch: `feat/p0-hr-leave-payroll-authorization`.
+- Integrated into the PR #27 head branch through [PR #28](https://github.com/AdiSarkale/remake-tally/pull/28), merged on 8 November 2026.
+- Integration commit: `5bf82aab2db2944e54a9ac001fdbef2b9cd47d81`.
+- PR #27 remains open and unmerged; its target is `main`, but no merge to `main` has been performed.
+- Automated test status must be taken from the current PR #27 checks. Do not treat code presence or tests added as proof that CI passed.
 
 **End of document.**
