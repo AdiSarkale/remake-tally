@@ -39,7 +39,7 @@ class EmployeeIn(BaseModel):
     employee_type: str = Field(default="staff", min_length=2, max_length=32)
     department: str = Field(default="", max_length=120)
     designation: str = Field(default="", max_length=120)
-    joining_date: date
+    joining_date: date | None = None
     end_date: date | None = None
 
 class EmployeeUpdate(BaseModel):
@@ -48,15 +48,15 @@ class EmployeeUpdate(BaseModel):
     employee_type: str = Field(default="staff", min_length=2, max_length=32)
     department: str = Field(default="", max_length=120)
     designation: str = Field(default="", max_length=120)
-    joining_date: date
+    joining_date: date | None = None
     end_date: date | None = None
 
     @field_validator("end_date")
     @classmethod
     def validate_end_date(cls, value, info):
         joining_date = info.data.get("joining_date")
-        if value is not None and joining_date is not None and value < joining_date:
-            raise ValueError("End date cannot be earlier than joining date")
+        if value is not None and (joining_date is None or value < joining_date):
+            raise ValueError("A valid joining date is required and end date cannot be earlier than joining date")
         return value
 
 class EmployeeStatusUpdate(BaseModel):
@@ -75,7 +75,7 @@ class EmployeeOut(ORMModel):
     employee_type: str
     department: str
     designation: str
-    joining_date: date
+    joining_date: date | None = None
     end_date: date | None = None
     active: bool
 
