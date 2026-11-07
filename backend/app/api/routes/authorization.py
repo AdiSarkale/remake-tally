@@ -1,6 +1,7 @@
 """Administrative APIs for explicit employee identity links and role grants."""
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,7 +16,9 @@ from app.modules.core.authorization import EmployeeUserLink, RolePermissionGrant
 from app.modules.core.audit import log_audit
 
 router = APIRouter(prefix="/authorization", tags=["authorization"])
-Scope = Literal["tenant", "self", "department"]
+from app.modules.hr.models import HRBranch, EmployeeOrgAssignment
+
+Scope = Literal["tenant", "self", "department", "branch", "team"]
 
 
 class EmployeeLinkIn(BaseModel):
@@ -125,6 +128,149 @@ def upsert_role_grant(payload: RoleGrantIn, db: Session = Depends(get_db), user:
         operation = "UPDATE"
     log_audit(db, user.username, operation, "role_permission_grant",
               f"{payload.role}:{payload.module}:{payload.feature}:{payload.action}:{payload.data_scope}:{payload.allowed}")
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+class BranchIn(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=120)
+    address: str = Field(default="", max_length=2000)
+    timezone: str = Field(default="Asia/Kolkata", min_length=1, max_length=64)
+    active: bool = True
+
+
+class BranchOut(BranchIn):
+    model_config = {"from_attributes": True}
+    id: str
+
+
+class EmployeeOrgAssignmentIn(BaseModel):
+    employee_id: str = Field(min_length=1, max_length=36)
+    branch_id: str | None = None
+    manager_employee_id: str | None = None
+    department: str = Field(default="", max_length=120)
+    valid_from: date
+    valid_to: date | None = None
+
+
+class EmployeeOrgAssignmentOut(EmployeeOrgAssignmentIn):
+    model_config = {"from_attributes": True}
+    id: str
+    created_by: str
+
+
+@router.get("/branches", response_model=list[BranchOut])
+def list_branches(db: Session = Depends(get_db), user: models.User = Depends(current_user)):
+    _require_admin(user)
+    return db.query(HRBranch).order_by(HRBranch.code).all()
+
+
+@router.post("/branches", response_model=BranchOut, status_code=201)
+def create_branch(payload: BranchIn, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
+    _require_admin(user)
+    row = HRBranch(**payload.model_dump())
+    db.add(row)
+    log_audit(db, user.username, "CREATE", "hr_branch", f"{payload.code}; {payload.name}")
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Branch code already exists") from exc
+    db.refresh(row)
+    return row
+
+
+@router.put("/branches/{branch_id}", response_model=BranchOut)
+def update_branch(branch_id: str, payload: BranchIn, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
+    _require_admin(user)
+    row = db.get(HRBranch, branch_id)
+    if row is None:
+        raise HTTPException(404, "Branch not found")
+    for key, value in payload.model_dump().items():
+        setattr(row, key, value)
+    log_audit(db, user.username, "UPDATE", "hr_branch", f"{row.code}; active={row.active}")
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Branch code already exists") from exc
+    db.refresh(row)
+    return row
+
+
+@router.get("/employee-org-assignments", response_model=list[EmployeeOrgAssignmentOut])
+def list_employee_org_assignments(
+    employee_id: str | None = None, db: Session = Depends(get_db),
+    user: models.User = Depends(current_user),
+):
+    _require_admin(user)
+    query = db.query(EmployeeOrgAssignment)
+    if employee_id:
+        query = query.filter(EmployeeOrgAssignment.employee_id == employee_id)
+    return query.order_by(EmployeeOrgAssignment.employee_id, EmployeeOrgAssignment.valid_from.desc()).all()
+
+
+@router.post("/employee-org-assignments", response_model=EmployeeOrgAssignmentOut, status_code=201)
+def create_employee_org_assignment(
+    payload: EmployeeOrgAssignmentIn, db: Session = Depends(get_db),
+    user: models.User = Depends(current_user),
+):
+    _require_admin(user)
+    if payload.valid_to is not None and payload.valid_to < payload.valid_from:
+        raise HTTPException(422, "Assignment end date cannot precede start date")
+    employee = db.query(models.Employee).filter_by(id=payload.employee_id).with_for_update().first()
+    if employee is None:
+        raise HTTPException(404, "Employee not found")
+    if payload.manager_employee_id == payload.employee_id:
+        raise HTTPException(422, "An employee cannot report to themselves")
+    if payload.branch_id:
+        branch = db.get(HRBranch, payload.branch_id)
+        if branch is None or not branch.active:
+            raise HTTPException(404, "Active branch not found")
+    if payload.manager_employee_id:
+        manager = db.get(models.Employee, payload.manager_employee_id)
+        if manager is None or not manager.active:
+            raise HTTPException(404, "Active reporting manager not found")
+        # Reject a cycle if the proposed manager already reports, directly or
+        # indirectly, to the employee being assigned.
+        cursor = payload.manager_employee_id
+        seen: set[str] = set()
+        while cursor and cursor not in seen:
+            if cursor == payload.employee_id:
+                raise HTTPException(422, "Reporting assignment would create an organizational cycle")
+            seen.add(cursor)
+            manager_assignment = db.query(EmployeeOrgAssignment).filter(
+                EmployeeOrgAssignment.employee_id == cursor,
+                EmployeeOrgAssignment.valid_from <= payload.valid_from,
+                (EmployeeOrgAssignment.valid_to.is_(None) | (EmployeeOrgAssignment.valid_to >= payload.valid_from)),
+            ).order_by(EmployeeOrgAssignment.valid_from.desc()).first()
+            cursor = manager_assignment.manager_employee_id if manager_assignment else None
+
+    # Close an existing open assignment the day before the new one starts.
+    current_rows = db.query(EmployeeOrgAssignment).filter(
+        EmployeeOrgAssignment.employee_id == payload.employee_id,
+        EmployeeOrgAssignment.valid_from < payload.valid_from,
+        (EmployeeOrgAssignment.valid_to.is_(None) | (EmployeeOrgAssignment.valid_to >= payload.valid_from)),
+    ).with_for_update().all()
+    for existing in current_rows:
+        existing.valid_to = payload.valid_from - timedelta(days=1)
+
+    overlap = db.query(EmployeeOrgAssignment).filter(
+        EmployeeOrgAssignment.employee_id == payload.employee_id,
+        EmployeeOrgAssignment.valid_from <= (payload.valid_to or date.max),
+        (EmployeeOrgAssignment.valid_to.is_(None) | (EmployeeOrgAssignment.valid_to >= payload.valid_from)),
+    ).first()
+    if overlap:
+        db.rollback()
+        raise HTTPException(409, "An organizational assignment already exists for this effective period")
+    row = EmployeeOrgAssignment(**payload.model_dump(), created_by=user.username)
+    db.add(row)
+    log_audit(
+        db, user.username, "CREATE", "employee_org_assignment",
+        f"employee={payload.employee_id}; branch={payload.branch_id}; manager={payload.manager_employee_id}; from={payload.valid_from}; to={payload.valid_to}",
+    )
     db.commit()
     db.refresh(row)
     return row
