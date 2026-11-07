@@ -34,7 +34,7 @@ async function persona(role, username) {
     if (path === "/hr/payroll/settings") {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
         salary_count_mode: "fixed_days", monthly_salary_days: 26,
-        week_off_days: ["Sunday"], timezone: "Asia/Kolkata",
+        week_off_days: [6], updated_at: null,
       }) });
       return;
     }
