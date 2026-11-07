@@ -244,3 +244,85 @@ def test_attendance_excel_parser_rejects_header_changes():
             {"EMP-001": SimpleNamespace(id="emp-1", emp_code="EMP-001", active=True)},
         )
 
+
+
+
+def test_payroll_readiness_requires_explicit_status_for_each_scheduled_workday():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app import models
+    from app.api.routes.hr_payroll import _missing_payroll_attendance
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        employee = models.Employee(
+            id="salary-employee", emp_code="EMP-100", name="Salaried Employee",
+            employee_type="staff", department="Accounts", designation="Executive",
+            active=True,
+        )
+        db.add(employee)
+        db.add(models.EmployeeSalaryProfile(employee_id=employee.id, annual_salary=600000))
+        db.add(models.HRPayrollSettings(id=1, week_off_days="5,6"))
+        # Monday 2 November is a holiday override; Sunday 1 November is a weekly off.
+        db.add(models.HRCalendarDay(
+            work_date=date(2026, 11, 2), day_type="holiday", description="Public holiday"
+        ))
+        db.add(models.EmployeeAttendance(
+            id="attendance-1", employee_id=employee.id,
+            work_date=date(2026, 11, 3), status="present",
+        ))
+        db.commit()
+
+        missing = _missing_payroll_attendance(db, 2026, 11)
+
+        expected = [
+            date(2026, 11, day)
+            for day in range(1, 31)
+            if date(2026, 11, day).weekday() not in {5, 6}
+            and date(2026, 11, day) != date(2026, 11, 2)
+            and date(2026, 11, day) != date(2026, 11, 3)
+        ]
+        assert missing == [("EMP-100", work_date) for work_date in expected]
+        assert ("EMP-100", date(2026, 11, 1)) not in missing
+        assert ("EMP-100", date(2026, 11, 2)) not in missing
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_payroll_readiness_accepts_explicit_absence_and_leave_statuses():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app import models
+    from app.api.routes.hr_payroll import _missing_payroll_attendance
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        employee = models.Employee(
+            id="salary-employee-2", emp_code="EMP-200", name="Salaried Employee",
+            employee_type="staff", department="Accounts", designation="Executive",
+            active=True,
+        )
+        db.add(employee)
+        db.add(models.EmployeeSalaryProfile(employee_id=employee.id, annual_salary=600000))
+        db.add(models.HRPayrollSettings(id=1, week_off_days="5,6"))
+        for day in range(1, 31):
+            work_date = date(2026, 11, day)
+            if work_date.weekday() not in {5, 6}:
+                db.add(models.EmployeeAttendance(
+                    id=f"attendance-{day}", employee_id=employee.id,
+                    work_date=work_date,
+                    status="absent" if day == 4 else ("paid_leave" if day == 5 else "present"),
+                ))
+        db.commit()
+
+        assert _missing_payroll_attendance(db, 2026, 11) == []
+    finally:
+        db.close()
+        engine.dispose()
