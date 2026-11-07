@@ -16,6 +16,7 @@ class PayrollSettingsIn(BaseModel):
     salary_count_mode: SalaryCountMode = "working_days"
     monthly_salary_days: int = Field(default=26, ge=1, le=31)
     week_off_days: list[int] = Field(default_factory=lambda: [5, 6], max_length=7)
+    timezone: str = Field(default="Asia/Kolkata", min_length=1, max_length=64)
 
     @field_validator("week_off_days")
     @classmethod
@@ -32,6 +33,7 @@ class PayrollSettingsOut(ORMModel):
     salary_count_mode: SalaryCountMode
     monthly_salary_days: int
     week_off_days: list[int]
+    timezone: str = "Asia/Kolkata"
     updated_at: datetime | None = None
 
 
