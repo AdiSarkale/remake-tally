@@ -74,6 +74,7 @@ try {
     await page.getByRole("heading", { name: "Create leave policy", exact: true }).waitFor();
     assert.equal(await page.getByRole("tab", { name: "Access Control", exact: true }).count(), 0);
     await page.getByRole("tab", { name: "Payroll", exact: true }).click();
+    await page.getByRole("button", { name: "Monthly Payroll", exact: true }).click();
     await page.getByText(/Payroll preview/).waitFor();
     await context.close();
   }
