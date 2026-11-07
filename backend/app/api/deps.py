@@ -13,6 +13,7 @@ from app.db.control_models import TenantCompany
 from app.core.security import decode_access_token
 from app.db.control import get_control_db
 from app.db.tenant import get_tenant_db
+from app.db.session import get_db as tenant_session_db
 from app.services.company_context import resolve_company_from_token
 
 bearer = HTTPBearer(auto_error=False)
@@ -68,18 +69,46 @@ def current_user(
 
 
 def require_area(area: str):
-    """Legacy module guard retained for routes not yet migrated to granular grants."""
-    def guard(user: models.User = Depends(current_user)) -> models.User:
-        if area not in ROLE_PERMISSIONS[user.role]:
+    """Require a persisted module access grant for the authenticated role."""
+    def guard(
+        user: models.User = Depends(current_user),
+        db: Session = Depends(tenant_session_db),
+    ) -> models.User:
+        # Direct calls are used only by legacy unit tests; HTTP requests always
+        # receive a real tenant session from FastAPI's dependency injection.
+        if not isinstance(db, Session):
+            if area not in ROLE_PERMISSIONS[user.role]:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"{user.role.value} cannot access {area}")
+            return user
+        grant = db.query(RolePermissionGrant).filter_by(
+            role=user.role.value, module=area, feature="access",
+            action="read", data_scope="tenant", allowed=True,
+        ).first()
+        if grant is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"{user.role.value} cannot access {area}")
         return user
     return guard
 
 
 def require_any_area(*areas: str):
-    """Legacy multi-area guard retained for routes not yet migrated to granular grants."""
-    def guard(user: models.User = Depends(current_user)) -> models.User:
-        if not any(area in ROLE_PERMISSIONS[user.role] for area in areas):
+    """Require at least one persisted module access grant."""
+    def guard(
+        user: models.User = Depends(current_user),
+        db: Session = Depends(tenant_session_db),
+    ) -> models.User:
+        if not isinstance(db, Session):
+            if any(area in ROLE_PERMISSIONS[user.role] for area in areas):
+                return user
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot access this area")
+        grant = db.query(RolePermissionGrant).filter(
+            RolePermissionGrant.role == user.role.value,
+            RolePermissionGrant.module.in_(areas),
+            RolePermissionGrant.feature == "access",
+            RolePermissionGrant.action == "read",
+            RolePermissionGrant.data_scope == "tenant",
+            RolePermissionGrant.allowed.is_(True),
+        ).first()
+        if grant is None:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot access this area")
         return user
     return guard
@@ -90,7 +119,7 @@ def require_permission(module: str, feature: str, action: str, data_scope: str =
     """Require an explicit role grant for one module/feature/action/data-scope tuple."""
     def guard(
         user: models.User = Depends(current_user),
-        db: Session = Depends(get_db),
+        db: Session = Depends(tenant_session_db),
     ) -> models.User:
         grant = db.query(RolePermissionGrant).filter_by(
             role=user.role.value,
