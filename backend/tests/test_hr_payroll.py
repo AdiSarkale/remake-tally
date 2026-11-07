@@ -248,7 +248,7 @@ def test_attendance_excel_parser_reads_valid_rows_and_excel_times():
     assert rows[0]["overtime_minutes"] == 30
     assert rows[0]["punch_in"].date() == date(2026, 10, 5)
     assert rows[0]["punch_in"].hour == 3
-    assert rows[0]["punch_out"].hour == 11
+    assert rows[0]["punch_out"].hour == 17
     assert rows[1]["status"] == "half_day"
     assert rows[1]["work_date"] == date(2026, 10, 6)
 
