@@ -187,6 +187,9 @@ def update_leave_type(leave_type_id: str, payload: LeaveTypeIn, db: Session = De
     row = db.get(HRLeaveType, leave_type_id)
     if row is None:
         raise HTTPException(404, "Leave type not found")
+    referenced = db.query(HRLeaveRequest.id).filter_by(leave_type_id=leave_type_id).first() or db.query(HRLeaveBalance.id).filter_by(leave_type_id=leave_type_id).first()
+    if referenced:
+        raise HTTPException(409, "A leave policy already used by balances or requests is immutable; create a new leave type code for the revised policy")
     for key, value in payload.model_dump().items():
         setattr(row, key, value)
     log_audit(db, user.username, "UPDATE", "hr_leave_type", row.code)
@@ -283,6 +286,11 @@ def create_leave_request(payload: LeaveRequestIn, db: Session = Depends(get_db),
     ).first()
     if department is None or not department.hod_username:
         raise HTTPException(409, "No active department approver is configured for this employee")
+    approver = db.query(models.User).filter_by(username=department.hod_username, active=True).first()
+    if approver is None:
+        raise HTTPException(409, "The configured department approver is missing or inactive")
+    if department.hod_username == user.username:
+        raise HTTPException(409, "A department approver cannot approve their own leave; configure an alternate approver")
     row = HRLeaveRequest(
         employee_id=employee.id, leave_type_id=leave_type.id,
         start_date=payload.start_date, end_date=payload.end_date, total_days=total_days,
@@ -329,6 +337,8 @@ def decide_leave_request(
         raise HTTPException(404, "Leave request not found")
     if row.status != "pending":
         raise HTTPException(409, "Only pending leave requests can be decided")
+    if row.requested_by == user.username:
+        raise HTTPException(403, "A requester cannot approve or reject their own leave")
     if user.role != models.Role.admin and user.role != models.Role.hr and row.approver_username != user.username:
         raise HTTPException(403, "Only the assigned department approver, HR or Admin can decide this request")
     employee = db.get(models.Employee, row.employee_id)
