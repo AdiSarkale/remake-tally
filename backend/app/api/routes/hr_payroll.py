@@ -847,6 +847,45 @@ def get_payroll_run(
     return _run_output(db, run)
 
 
+def _missing_payroll_attendance(
+    db: Session, year: int, month: int
+) -> list[tuple[str, date]]:
+    """Find scheduled working days without an explicit status for active salaried employees."""
+    start, end, settings, overrides, employees = _period_data(db, year, month)
+    week_off_days = _week_offs(settings)
+    profiles = {
+        row.employee_id: row
+        for row in db.query(models.EmployeeSalaryProfile).all()
+        if _dec(row.annual_salary) > 0
+    }
+    salaried_employees = [employee for employee in employees if employee.id in profiles]
+    if not salaried_employees:
+        return []
+
+    scheduled_days = [
+        date(year, month, number)
+        for number in range(1, end.day + 1)
+        if _calendar_type(date(year, month, number), week_off_days, overrides) == "working_day"
+    ]
+    attendance_rows = db.query(models.EmployeeAttendance).filter(
+        models.EmployeeAttendance.work_date >= start,
+        models.EmployeeAttendance.work_date <= end,
+        models.EmployeeAttendance.employee_id.in_([employee.id for employee in salaried_employees]),
+    ).all()
+    recorded_statuses = {
+        (row.employee_id, row.work_date): row.status
+        for row in attendance_rows
+    }
+    explicit_statuses = {"present", "half_day", "absent", "paid_leave", "unpaid_leave"}
+    missing: list[tuple[str, date]] = []
+    for employee in salaried_employees:
+        for work_date in scheduled_days:
+            status = recorded_statuses.get((employee.id, work_date))
+            if status not in explicit_statuses:
+                missing.append((employee.emp_code, work_date))
+    return missing
+
+
 @router.post("/payroll/runs/{year}/{month}/finalize", response_model=schemas.PayrollRunOut)
 def finalize_monthly_payroll(
     year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
@@ -859,6 +898,24 @@ def finalize_monthly_payroll(
     configured_items = [item for item in preview["items"] if item["configured"] and item["annual_salary"] > 0]
     if not configured_items:
         raise HTTPException(status_code=409, detail="Configure annual salary for at least one active employee before finalizing payroll")
+
+    missing_attendance = _missing_payroll_attendance(db, year, month)
+    if missing_attendance:
+        examples = ", ".join(
+            f"{employee_code} ({work_date.isoformat()})"
+            for employee_code, work_date in missing_attendance[:20]
+        )
+        remaining = len(missing_attendance) - min(len(missing_attendance), 20)
+        suffix = f"; and {remaining} more" if remaining else ""
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Payroll cannot be finalized: {len(missing_attendance)} scheduled "
+                f"employee-day attendance record(s) are missing. Record an explicit "
+                f"status for each working day. Missing: {examples}{suffix}"
+            ),
+        )
+
     now = datetime.now(timezone.utc)
     run = existing or models.HRPayrollRun(year=year, month=month, status="finalized", created_by=user.username, finalized_at=now)
     run.status, run.finalized_at = "finalized", now
