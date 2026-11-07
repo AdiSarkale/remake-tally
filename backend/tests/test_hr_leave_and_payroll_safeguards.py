@@ -23,7 +23,7 @@ def _employee():
 
 def _profile():
     return SimpleNamespace(
-        annual_salary=312000, basic_pct=50, hra_pct=0, da_pct=0,
+        annual_salary=372000, basic_pct=50, hra_pct=0, da_pct=0,
         conveyance_monthly=0, medical_allowance_monthly=0,
         pf_pct=0, professional_tax_monthly=0, tds_monthly=0,
     )
