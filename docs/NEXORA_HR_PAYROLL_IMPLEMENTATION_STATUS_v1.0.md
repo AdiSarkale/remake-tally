@@ -21,8 +21,8 @@ The existing HR foundation and payroll workspace are in place. The next phase is
 |---|---|---|
 | Employee master and lifecycle | Implemented in the current baseline | Maintain regression coverage |
 | Employee skills and production linkage | Implemented | Preserve cross-module ownership |
-| Payroll, attendance, calendar and payslips | Implemented as the current payroll foundation | Add leave policy/accrual and statutory configuration |
-| Tenant timezone | Implemented; defaults to `Asia/Kolkata` | Keep branch/site overrides deferred until the organization model supports them |
+| Payroll, attendance, calendar, payslips and leave workflows | Implemented as the current payroll foundation | Add Maharashtra statutory configuration after compliance review |
+| Tenant timezone | Implemented; defaults to `Asia/Kolkata`; branch records also store IANA timezones | Payroll still uses the tenant timezone; branch-specific payroll timezone behavior remains future work |
 | Audit service integration | Implemented for the covered HR/P1 events | Expand the event catalogue as new capabilities are added |
 | Branch/team data scopes | **Implemented in the P0 branch** | Admin must configure verified employee assignments; no legacy auto-backfill |
 | Granular feature/action authorization | **Implemented as an override-capable framework; compatibility fallback remains** | Complete role-by-role least-privilege matrix and remove legacy wildcard fallback when approved |
@@ -87,7 +87,7 @@ Earlier planning and authorization groundwork should also be reviewed before cha
 
 ## 3. Workstream A — Branch and team scopes
 
-<badge>Implemented in P0 integration</badge>
+**Status: Implemented in P0 integration**
 
 The data model and backend scope enforcement are now present. The implementation uses stable tenant-local branch records and effective-dated employee organization assignments rather than inferring authorization from free-text department fields.
 
@@ -134,7 +134,7 @@ Scope filtering is applied to employee lists and leave balance/request collectio
 
 ## 4. Workstream B — Granular authorization
 
-<badge>Implemented with backward-compatible migration</badge>
+**Status: Implemented with backward-compatible migration**
 
 The P0 implementation adds persisted role grants at module, feature, action and data-scope level.
 
@@ -184,7 +184,7 @@ The migration seeds compatibility wildcard grants from the existing role/module 
 
 ## 5. Workstream C — Automatic leave accrual
 
-<badge>Implemented for monthly and monthly-prorated policies</badge>
+**Status: Implemented for monthly and monthly-prorated policies**
 
 Leave policy, balance, request and approval workflows are present. The P0 implementation adds automatic accrual calculation and a period ledger so HR no longer needs to manually allocate every monthly credit.
 
