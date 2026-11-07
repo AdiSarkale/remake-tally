@@ -159,7 +159,13 @@ class PayrollRunSummaryOut(BaseModel):
     status: str
     created_by: str
     created_at: datetime
-    finalized_at: datetime
+    finalized_at: datetime | None
+    revision: int = 1
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+    locked_at: datetime | None = None
+    reversed_at: datetime | None = None
+    reversal_reason: str = ""
     employee_count: int
     net_total: float
 
