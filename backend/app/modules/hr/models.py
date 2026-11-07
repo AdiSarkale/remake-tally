@@ -22,7 +22,7 @@ class Employee(Base):
     )
     department: Mapped[str] = mapped_column(String(120), default="")
     designation: Mapped[str] = mapped_column(String(120), default="")
-    joining_date: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+    joining_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
