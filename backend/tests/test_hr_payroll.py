@@ -54,11 +54,11 @@ def test_salary_breakup_sums_to_monthly_gross_and_computes_deductions():
 
 def test_absence_half_day_leave_and_overtime_affect_net_pay():
     attendance = [
-        SimpleNamespace(status="absent", overtime_minutes=0),
-        SimpleNamespace(status="half_day", overtime_minutes=0),
-        SimpleNamespace(status="unpaid_leave", overtime_minutes=0),
-        SimpleNamespace(status="paid_leave", overtime_minutes=0),
-        SimpleNamespace(status="present", overtime_minutes=120),
+        SimpleNamespace(status="absent", work_date=date(2026, 10, 1), overtime_minutes=0),
+        SimpleNamespace(status="half_day", work_date=date(2026, 10, 2), overtime_minutes=0),
+        SimpleNamespace(status="unpaid_leave", work_date=date(2026, 10, 5), overtime_minutes=0),
+        SimpleNamespace(status="paid_leave", work_date=date(2026, 10, 6), overtime_minutes=0),
+        SimpleNamespace(status="present", work_date=date(2026, 10, 7), overtime_minutes=120),
     ]
     result = _calculate_employee_monthly_payroll(
         _employee(), _profile(), attendance, 2026, 10, "fixed_days", 30, [5, 6], {}
