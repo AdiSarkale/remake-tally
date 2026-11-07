@@ -1493,3 +1493,25 @@ def test_admin_branch_and_effective_dated_reporting_assignment_apis(isolated_ten
     })
     assert team_grant.status_code == 200, team_grant.text
     assert team_grant.json()["data_scope"] == "team"
+
+
+def test_feature_action_grant_can_restrict_one_route_without_revoking_module(isolated_tenants):
+    client = isolated_tenants["client"]
+    admin = _login(client, "AA")
+    headers = {"Authorization": f"Bearer {admin['access_token']}"}
+    revoked = client.put("/api/v1/authorization/role-grants", headers=headers, json={
+        "role": "Admin", "module": "finance", "feature": "customer_payments",
+        "action": "create", "data_scope": "tenant", "allowed": False,
+    })
+    assert revoked.status_code == 200, revoked.text
+
+    # Exact denial overrides the role's legacy-preserving module wildcard grant.
+    denied = client.post("/api/v1/finance/customer-payments", headers=headers, json={
+        "payment_date": "2026-11-07", "customer_id": "missing", "amount": 10,
+        "mode": "UPI", "reference": "", "remarks": "",
+    })
+    assert denied.status_code == 403, denied.text
+
+    # Read access remains granted by the module's baseline wildcard.
+    readable = client.get("/api/v1/finance/customer-payments", headers=headers)
+    assert readable.status_code == 200, readable.text
