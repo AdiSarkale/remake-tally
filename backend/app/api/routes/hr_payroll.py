@@ -346,6 +346,8 @@ def _run_output(db: Session, run: models.HRPayrollRun, include_items: bool = Tru
     result: dict[str, Any] = {
         "id": run.id, "year": run.year, "month": run.month, "status": run.status,
         "created_by": run.created_by, "created_at": run.created_at, "finalized_at": run.finalized_at,
+        "revision": run.revision, "approved_by": run.approved_by, "approved_at": run.approved_at,
+        "locked_at": run.locked_at, "reversed_at": run.reversed_at, "reversal_reason": run.reversal_reason,
         "employee_count": len(items), "net_total": round(sum(float(item.net_pay) for item in items), 2),
     }
     if include_items:
@@ -984,23 +986,21 @@ def _missing_payroll_attendance(
                 missing.append((employee.emp_code, work_date))
     return missing, unknown_joining_dates
 
-@router.post("/payroll/runs/{year}/{month}/finalize", response_model=schemas.PayrollRunOut)
-def finalize_monthly_payroll(
-    year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
-):
-    _validate_period(year, month)
-    existing = db.query(models.HRPayrollRun).filter_by(year=year, month=month).first()
-    if existing is not None and existing.status == "finalized":
-        return _run_output(db, existing)
+def _latest_payroll_run(db: Session, year: int, month: int) -> models.HRPayrollRun | None:
+    return db.query(models.HRPayrollRun).filter_by(year=year, month=month).order_by(
+        models.HRPayrollRun.revision.desc()
+    ).first()
+
+
+def _payroll_readiness(db: Session, year: int, month: int) -> tuple[dict[str, Any], list[str]]:
     preview = _preview_data(db, year, month)
     configured_items = [item for item in preview["items"] if item["configured"] and item["annual_salary"] > 0]
+    issues: list[str] = []
     if not configured_items:
-        raise HTTPException(status_code=409, detail="Configure annual salary for at least one active employee before finalizing payroll")
-
+        issues.append("Configure annual salary for at least one active employee")
     missing_attendance, unknown_joining_dates = _missing_payroll_attendance(db, year, month)
-    readiness_issues: list[str] = []
     if unknown_joining_dates:
-        readiness_issues.append(
+        issues.append(
             "Joining dates are missing for active salaried employee(s): "
             + ", ".join(unknown_joining_dates[:20])
             + ("; additional employees require review" if len(unknown_joining_dates) > 20 else "")
@@ -1012,45 +1012,154 @@ def finalize_monthly_payroll(
         )
         remaining = len(missing_attendance) - min(len(missing_attendance), 20)
         suffix = f"; and {remaining} more" if remaining else ""
-        readiness_issues.append(
+        issues.append(
             f"{len(missing_attendance)} scheduled employee-day attendance record(s) are missing. "
             f"Record an explicit status for each working day. Missing: {examples}{suffix}"
         )
-    if readiness_issues:
-        raise HTTPException(
-            status_code=409,
-            detail="Payroll cannot be finalized: " + " | ".join(readiness_issues),
-        )
+    return preview, issues
 
+
+def _snapshot_payroll_run(
+    db: Session, year: int, month: int, user: models.User, revision: int,
+) -> models.HRPayrollRun:
+    preview, issues = _payroll_readiness(db, year, month)
+    if issues:
+        raise HTTPException(status_code=409, detail="Payroll preparation blocked: " + " | ".join(issues))
     now = datetime.now(timezone.utc)
-    run = existing or models.HRPayrollRun(year=year, month=month, status="finalized", created_by=user.username, finalized_at=now)
-    run.status, run.finalized_at = "finalized", now
-    if existing is None:
-        db.add(run)
+    run = models.HRPayrollRun(
+        year=year, month=month, revision=revision, status="prepared",
+        created_by=user.username, finalized_at=None,
+    )
+    db.add(run)
+    db.flush()
+    configured_items = [item for item in preview["items"] if item["configured"] and item["annual_salary"] > 0]
+    for item in configured_items:
+        db.add(models.HRPayrollItem(
+            payroll_run_id=run.id, employee_id=item["employee_id"],
+            employee_code=item["employee_code"], employee_name=item["employee_name"],
+            department=item["department"], annual_salary=item["annual_salary"],
+            monthly_gross=item["monthly_gross"], basic=item["basic"], hra=item["hra"], da=item["da"],
+            conveyance=item["conveyance"], medical_allowance=item["medical_allowance"],
+            special_allowance=item["special_allowance"], employee_pf=item["employee_pf"],
+            professional_tax=item["professional_tax"], tds=item["tds"],
+            absence_deduction=item["absence_deduction"], overtime_pay=item["overtime_pay"],
+            net_pay=item["net_pay"], present_days=item["present_days"], half_days=item["half_days"],
+            absent_days=item["absent_days"], paid_leave_days=item["paid_leave_days"],
+            unpaid_leave_days=item["unpaid_leave_days"], overtime_minutes=item["overtime_minutes"],
+        ))
+    log_audit(db, user.username, "PREPARE", "hr_payroll_run", f"{year}-{month:02d}; revision={revision}")
+    db.commit()
+    db.refresh(run)
+    return run
+
+
+class PayrollReversalIn(schemas.BaseModel if hasattr(schemas, "BaseModel") else object):
+    pass
+
+
+@router.post("/payroll/runs/{year}/{month}/prepare", response_model=schemas.PayrollRunOut)
+def prepare_monthly_payroll(
+    year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
+):
+    _validate_period(year, month)
+    existing = _latest_payroll_run(db, year, month)
+    if existing is not None:
+        if existing.status == "prepared":
+            return _run_output(db, existing)
+        if existing.status != "reversed":
+            raise HTTPException(409, f"Payroll period already has a {existing.status} run; use the appropriate approval or reversal action")
+        revision = existing.revision + 1
+    else:
+        revision = 1
     try:
-        db.flush()
-        if existing is not None:
-            db.query(models.HRPayrollItem).filter_by(payroll_run_id=run.id).delete(synchronize_session=False)
-        for item in configured_items:
-            db.add(models.HRPayrollItem(
-                payroll_run_id=run.id, employee_id=item["employee_id"],
-                employee_code=item["employee_code"], employee_name=item["employee_name"],
-                department=item["department"], annual_salary=item["annual_salary"],
-                monthly_gross=item["monthly_gross"], basic=item["basic"], hra=item["hra"], da=item["da"],
-                conveyance=item["conveyance"], medical_allowance=item["medical_allowance"],
-                special_allowance=item["special_allowance"], employee_pf=item["employee_pf"],
-                professional_tax=item["professional_tax"], tds=item["tds"],
-                absence_deduction=item["absence_deduction"], overtime_pay=item["overtime_pay"],
-                net_pay=item["net_pay"], present_days=item["present_days"], half_days=item["half_days"],
-                absent_days=item["absent_days"], paid_leave_days=item["paid_leave_days"],
-                unpaid_leave_days=item["unpaid_leave_days"], overtime_minutes=item["overtime_minutes"],
-            ))
-        log_audit(db, user.username, "FINALIZE", "hr_payroll_run", f"{year}-{month:02d}")
-        db.commit()
-        db.refresh(run)
+        run = _snapshot_payroll_run(db, year, month, user, revision)
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Payroll was finalized concurrently for this month; refresh the payroll run list") from exc
+        raise HTTPException(409, detail="Payroll preparation conflicted with another request; refresh and retry") from exc
+    return _run_output(db, run)
+
+
+@router.post("/payroll/runs/{run_id}/approve", response_model=schemas.PayrollRunOut)
+def approve_monthly_payroll(
+    run_id: str, db: Session = Depends(get_db), user: models.User = hr_access
+):
+    run = db.query(models.HRPayrollRun).filter_by(id=run_id).with_for_update().first()
+    if run is None:
+        raise HTTPException(404, "Payroll run not found")
+    if run.status != "prepared":
+        raise HTTPException(409, "Only prepared payroll runs can be approved")
+    if run.created_by == user.username:
+        raise HTTPException(403, "Payroll preparer cannot approve their own payroll run")
+    run.status = "approved"
+    run.approved_by = user.username
+    run.approved_at = datetime.now(timezone.utc)
+    log_audit(db, user.username, "APPROVE", "hr_payroll_run", f"{run.year}-{run.month:02d}; revision={run.revision}")
+    db.commit()
+    db.refresh(run)
+    return _run_output(db, run)
+
+
+@router.post("/payroll/runs/{year}/{month}/finalize", response_model=schemas.PayrollRunOut)
+def finalize_monthly_payroll(
+    year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
+):
+    _validate_period(year, month)
+    run = _latest_payroll_run(db, year, month)
+    if run is None:
+        raise HTTPException(409, "Prepare payroll and obtain a separate approval before finalization")
+    if run.status in {"finalized", "locked"}:
+        return _run_output(db, run)
+    if run.status != "approved":
+        raise HTTPException(409, "Payroll must be prepared and approved by a different authorized user before finalization")
+    now = datetime.now(timezone.utc)
+    run.status = "finalized"
+    run.finalized_at = now
+    log_audit(db, user.username, "FINALIZE", "hr_payroll_run", f"{year}-{month:02d}; revision={run.revision}")
+    db.commit()
+    db.refresh(run)
+    return _run_output(db, run)
+
+
+@router.post("/payroll/runs/{run_id}/lock", response_model=schemas.PayrollRunOut)
+def lock_monthly_payroll(
+    run_id: str, db: Session = Depends(get_db), user: models.User = hr_access
+):
+    run = db.query(models.HRPayrollRun).filter_by(id=run_id).with_for_update().first()
+    if run is None:
+        raise HTTPException(404, "Payroll run not found")
+    if run.status != "finalized":
+        raise HTTPException(409, "Only finalized payroll can be locked")
+    run.status = "locked"
+    run.locked_at = datetime.now(timezone.utc)
+    log_audit(db, user.username, "LOCK", "hr_payroll_run", f"{run.year}-{run.month:02d}; revision={run.revision}")
+    db.commit()
+    db.refresh(run)
+    return _run_output(db, run)
+
+
+class PayrollReversalPayload(schemas.BaseModel if hasattr(schemas, "BaseModel") else __import__("pydantic").BaseModel):
+    reason: str
+
+
+@router.post("/payroll/runs/{run_id}/reverse", response_model=schemas.PayrollRunOut)
+def reverse_monthly_payroll(
+    run_id: str, payload: PayrollReversalPayload,
+    db: Session = Depends(get_db), user: models.User = hr_access,
+):
+    reason = payload.reason.strip()
+    if len(reason) < 10 or len(reason) > 2000:
+        raise HTTPException(422, "A reversal reason of 10 to 2000 characters is required")
+    run = db.query(models.HRPayrollRun).filter_by(id=run_id).with_for_update().first()
+    if run is None:
+        raise HTTPException(404, "Payroll run not found")
+    if run.status not in {"finalized", "locked"}:
+        raise HTTPException(409, "Only finalized or locked payroll can be reversed")
+    run.status = "reversed"
+    run.reversed_at = datetime.now(timezone.utc)
+    run.reversal_reason = reason
+    log_audit(db, user.username, "REVERSE", "hr_payroll_run", f"{run.year}-{run.month:02d}; revision={run.revision}; reason={reason}")
+    db.commit()
+    db.refresh(run)
     return _run_output(db, run)
 
 
