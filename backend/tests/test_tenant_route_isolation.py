@@ -142,7 +142,29 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
             for role in ("Admin", "HR")
             for action in ("read", "write", "prepare", "approve", "finalize", "lock", "reverse")
         ]
-        db.add_all([user, customer, supplier, product, material, invoice, requisition, payment, *module_grants, *payroll_grants])
+        leave_grants = []
+        for role in ("Admin", "HR"):
+            for feature, action, scope in (
+                ("leave_types", "read", "tenant"), ("leave_types", "write", "tenant"),
+                ("leave_balances", "read", "tenant"), ("leave_balances", "write", "tenant"),
+                ("leave_requests", "read", "tenant"), ("leave_requests", "approve", "tenant"),
+                ("leave_types", "read", "self"), ("leave_balances", "read", "self"),
+                ("leave_requests", "read", "self"), ("leave_requests", "create", "self"),
+            ):
+                leave_grants.append(models.RolePermissionGrant(
+                    role=role, module="hr", feature=feature, action=action,
+                    data_scope=scope, allowed=True, updated_by="test",
+                ))
+        for feature, action, scope in (
+            ("leave_types", "read", "self"), ("leave_balances", "read", "self"),
+            ("leave_requests", "read", "self"), ("leave_requests", "create", "self"),
+            ("leave_requests", "approve", "department"),
+        ):
+            leave_grants.append(models.RolePermissionGrant(
+                role="Operator", module="hr", feature=feature, action=action,
+                data_scope=scope, allowed=True, updated_by="test",
+            ))
+        db.add_all([user, customer, supplier, product, material, invoice, requisition, payment, *module_grants, *payroll_grants, *leave_grants])
         db.commit()
         db.close()
 
