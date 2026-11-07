@@ -910,6 +910,7 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
                 employee_type="staff",
                 department="Production",
                 designation="Operator",
+                joining_date=date(2026, 10, 1),
                 active=True,
             )
         )
