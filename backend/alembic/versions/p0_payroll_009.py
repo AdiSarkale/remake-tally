@@ -36,6 +36,11 @@ def downgrade() -> None:
     )).first()
     if duplicate:
         raise RuntimeError("Cannot downgrade payroll revisions while multiple runs exist for one period")
+    incomplete = connection.execute(sa.text(
+        "SELECT id FROM hr_payroll_runs WHERE finalized_at IS NULL OR status != 'finalized' LIMIT 1"
+    )).first()
+    if incomplete:
+        raise RuntimeError("Cannot downgrade payroll lifecycle while prepared, approved, locked, reversed or unfinalized runs exist")
     with op.batch_alter_table("hr_payroll_runs") as batch:
         batch.drop_constraint("uq_hr_payroll_period_revision", type_="unique")
         batch.drop_column("reversal_reason")
