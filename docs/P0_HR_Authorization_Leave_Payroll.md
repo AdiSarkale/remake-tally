@@ -19,7 +19,7 @@ not a release sign-off.
   - `self`, requiring an explicit account-to-employee link
   - `department`, requiring a mapped actor and a matching persisted employee department
 - Branch and team scopes are deliberately not enabled: the current schema does not yet provide reliable branch or manager/team relationships.
-- Existing non-P0 modules now use persisted module-level access grants migrated from the legacy role matrix. Feature/action/data-scope enforcement is currently wired into the P0 leave and payroll workflows; finer-grained migration of every other module remains outstanding.
+- Existing non-P0 modules retain the legacy module-level role guard for compatibility. Persisted feature/action/data-scope grants are enforced on P0 leave and payroll workflows; migration of every other module to granular grants remains outstanding.
 
 ## Leave management
 
