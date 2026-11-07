@@ -44,8 +44,8 @@ def test_production_users_retain_production_access_without_hr_management():
 
 
 def test_employee_create_schema_validates_name_and_ignores_client_employee_code():
+    from datetime import date
     from pydantic import ValidationError
-from datetime import date
 
     from app.schemas import EmployeeIn
 
