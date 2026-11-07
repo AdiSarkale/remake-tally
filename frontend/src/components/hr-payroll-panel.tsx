@@ -42,7 +42,7 @@ const money = (value: number) => new Intl.NumberFormat("en-IN", { style: "curren
 const monthName = (year: number, month: number) => new Date(year, month - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 const dayLabel = (value: string) => new Date(value + "T12:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" });
 
-export function PayrollPanel({ canEdit }: { canEdit: boolean }) {
+export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username: string }) {
   const today = new Date();
   const [tab, setTab] = useState<Tab>("salary");
   const [year, setYear] = useState(today.getFullYear());
@@ -371,7 +371,8 @@ export function PayrollPanel({ canEdit }: { canEdit: boolean }) {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" disabled={busy} onClick={() => void refreshPayroll()}>Refresh</Button>
           {canEdit && (!selectedRun || selectedRun.status === "reversed") ? <Button disabled={busy || !preview?.items.some((item) => item.configured)} onClick={() => void preparePayroll()}>Prepare snapshot</Button> : null}
-          {canEdit && selectedRun?.status === "prepared" ? <Button disabled={busy} onClick={() => void approvePayroll()}>Approve</Button> : null}
+          {canEdit && selectedRun?.status === "prepared" && selectedRun.created_by !== username ? <Button disabled={busy} onClick={() => void approvePayroll()}>Approve</Button> : null}
+          {canEdit && selectedRun?.status === "prepared" && selectedRun.created_by === username ? <span className="self-center text-xs text-muted-foreground">Awaiting a different approver</span> : null}
           {canEdit && selectedRun?.status === "approved" ? <Button disabled={busy} onClick={() => void finalizePayroll()}>Finalize</Button> : null}
           {canEdit && selectedRun?.status === "finalized" ? <Button disabled={busy} onClick={() => void lockPayroll()}>Lock payroll</Button> : null}
           {canEdit && (selectedRun?.status === "finalized" || selectedRun?.status === "locked") ? <Button variant="destructive" disabled={busy} onClick={() => void reversePayroll()}>Reverse</Button> : null}
