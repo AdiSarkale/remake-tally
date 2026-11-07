@@ -20,7 +20,10 @@ from app.modules.hr.payroll_schemas import PayrollSettingsIn
 
 
 def _employee():
-    return SimpleNamespace(id="emp-1", emp_code="EMP-001", name="Test Employee", department="Production")
+    return SimpleNamespace(
+        id="emp-1", emp_code="EMP-001", name="Test Employee",
+        department="Production", joining_date=date(2000, 1, 1), end_date=None,
+    )
 
 
 def _profile():
@@ -244,8 +247,8 @@ def test_attendance_excel_parser_reads_valid_rows_and_excel_times():
     assert rows[0]["status"] == "present"
     assert rows[0]["overtime_minutes"] == 30
     assert rows[0]["punch_in"].date() == date(2026, 10, 5)
-    assert rows[0]["punch_in"].hour == 8
-    assert rows[0]["punch_out"].hour == 17
+    assert rows[0]["punch_in"].hour == 3
+    assert rows[0]["punch_out"].hour == 11
     assert rows[1]["status"] == "half_day"
     assert rows[1]["work_date"] == date(2026, 10, 6)
 
@@ -304,6 +307,7 @@ def test_payroll_readiness_requires_explicit_status_for_each_scheduled_workday()
         employee = models.Employee(
             id="salary-employee", emp_code="EMP-100", name="Salaried Employee",
             employee_type="staff", department="Accounts", designation="Executive",
+            joining_date=date(2026, 11, 1),
             active=True,
         )
         db.add(employee)
@@ -319,7 +323,7 @@ def test_payroll_readiness_requires_explicit_status_for_each_scheduled_workday()
         ))
         db.commit()
 
-        missing = _missing_payroll_attendance(db, 2026, 11)
+        missing, unknown_joining_dates = _missing_payroll_attendance(db, 2026, 11)
 
         expected = [
             date(2026, 11, day)
@@ -329,6 +333,7 @@ def test_payroll_readiness_requires_explicit_status_for_each_scheduled_workday()
             and date(2026, 11, day) != date(2026, 11, 3)
         ]
         assert missing == [("EMP-100", work_date) for work_date in expected]
+        assert unknown_joining_dates == ["EMP-100"]
         assert ("EMP-100", date(2026, 11, 1)) not in missing
         assert ("EMP-100", date(2026, 11, 2)) not in missing
     finally:
