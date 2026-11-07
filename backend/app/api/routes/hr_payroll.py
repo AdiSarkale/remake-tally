@@ -922,8 +922,8 @@ def get_payroll_run(
 
 def _missing_payroll_attendance(
     db: Session, year: int, month: int
-) -> list[tuple[str, date]]:
-    """Find scheduled working days without an explicit status for active salaried employees."""
+) -> tuple[list[tuple[str, date]], list[str]]:
+    """Find missing daily statuses and salaried employees with unknown joining dates."""
     start, end, settings, overrides, employees = _period_data(db, year, month)
     week_off_days = _week_offs(settings)
     profiles = {
@@ -932,9 +932,10 @@ def _missing_payroll_attendance(
         if _dec(row.annual_salary) > 0
     }
     salaried_employees = [employee for employee in employees if employee.id in profiles]
-    if not salaried_employees:
-        return []
-
+    unknown_joining_dates = [
+        employee.emp_code for employee in salaried_employees
+        if employee.joining_date is None
+    ]
     scheduled_days = [
         date(year, month, number)
         for number in range(1, end.day + 1)
@@ -944,7 +945,7 @@ def _missing_payroll_attendance(
         models.EmployeeAttendance.work_date >= start,
         models.EmployeeAttendance.work_date <= end,
         models.EmployeeAttendance.employee_id.in_([employee.id for employee in salaried_employees]),
-    ).all()
+    ).all() if salaried_employees else []
     recorded_statuses = {
         (row.employee_id, row.work_date): row.status
         for row in attendance_rows
@@ -952,6 +953,9 @@ def _missing_payroll_attendance(
     explicit_statuses = {"present", "half_day", "absent", "paid_leave", "unpaid_leave"}
     missing: list[tuple[str, date]] = []
     for employee in salaried_employees:
+        # Unknown legacy joining dates are not guessed. They are reported above,
+        # and the full month remains subject to attendance completeness until HR
+        # enters the actual joining date.
         eligible_days = [
             day for day in scheduled_days
             if (employee.joining_date is None or day >= employee.joining_date)
@@ -961,8 +965,7 @@ def _missing_payroll_attendance(
             status = recorded_statuses.get((employee.id, work_date))
             if status not in explicit_statuses:
                 missing.append((employee.emp_code, work_date))
-    return missing
-
+    return missing, unknown_joining_dates
 
 @router.post("/payroll/runs/{year}/{month}/finalize", response_model=schemas.PayrollRunOut)
 def finalize_monthly_payroll(
@@ -977,7 +980,14 @@ def finalize_monthly_payroll(
     if not configured_items:
         raise HTTPException(status_code=409, detail="Configure annual salary for at least one active employee before finalizing payroll")
 
-    missing_attendance = _missing_payroll_attendance(db, year, month)
+    missing_attendance, unknown_joining_dates = _missing_payroll_attendance(db, year, month)
+    readiness_issues: list[str] = []
+    if unknown_joining_dates:
+        readiness_issues.append(
+            "Joining dates are missing for active salaried employee(s): "
+            + ", ".join(unknown_joining_dates[:20])
+            + ("; additional employees require review" if len(unknown_joining_dates) > 20 else "")
+        )
     if missing_attendance:
         examples = ", ".join(
             f"{employee_code} ({work_date.isoformat()})"
@@ -985,13 +995,14 @@ def finalize_monthly_payroll(
         )
         remaining = len(missing_attendance) - min(len(missing_attendance), 20)
         suffix = f"; and {remaining} more" if remaining else ""
+        readiness_issues.append(
+            f"{len(missing_attendance)} scheduled employee-day attendance record(s) are missing. "
+            f"Record an explicit status for each working day. Missing: {examples}{suffix}"
+        )
+    if readiness_issues:
         raise HTTPException(
             status_code=409,
-            detail=(
-                f"Payroll cannot be finalized: {len(missing_attendance)} scheduled "
-                f"employee-day attendance record(s) are missing. Record an explicit "
-                f"status for each working day. Missing: {examples}{suffix}"
-            ),
+            detail="Payroll cannot be finalized: " + " | ".join(readiness_issues),
         )
 
     now = datetime.now(timezone.utc)
