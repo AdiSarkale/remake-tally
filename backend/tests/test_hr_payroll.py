@@ -9,6 +9,7 @@ from openpyxl import Workbook, load_workbook
 from pydantic import ValidationError
 
 from app.api.routes.hr_payroll import (
+    _missing_payroll_attendance,
     _attendance_template_workbook,
     _calculate_employee_monthly_payroll,
     _calendar_type,
@@ -19,7 +20,10 @@ from app.modules.hr.payroll_schemas import PayrollSettingsIn
 
 
 def _employee():
-    return SimpleNamespace(id="emp-1", emp_code="EMP-001", name="Test Employee", department="Production")
+    return SimpleNamespace(
+        id="emp-1", emp_code="EMP-001", name="Test Employee",
+        department="Production", joining_date=date(2000, 1, 1), end_date=None,
+    )
 
 
 def _profile():
@@ -50,11 +54,11 @@ def test_salary_breakup_sums_to_monthly_gross_and_computes_deductions():
 
 def test_absence_half_day_leave_and_overtime_affect_net_pay():
     attendance = [
-        SimpleNamespace(status="absent", overtime_minutes=0),
-        SimpleNamespace(status="half_day", overtime_minutes=0),
-        SimpleNamespace(status="unpaid_leave", overtime_minutes=0),
-        SimpleNamespace(status="paid_leave", overtime_minutes=0),
-        SimpleNamespace(status="present", overtime_minutes=120),
+        SimpleNamespace(status="absent", work_date=date(2026, 10, 1), overtime_minutes=0),
+        SimpleNamespace(status="half_day", work_date=date(2026, 10, 2), overtime_minutes=0),
+        SimpleNamespace(status="unpaid_leave", work_date=date(2026, 10, 5), overtime_minutes=0),
+        SimpleNamespace(status="paid_leave", work_date=date(2026, 10, 6), overtime_minutes=0),
+        SimpleNamespace(status="present", work_date=date(2026, 10, 7), overtime_minutes=120),
     ]
     result = _calculate_employee_monthly_payroll(
         _employee(), _profile(), attendance, 2026, 10, "fixed_days", 30, [5, 6], {}
@@ -81,6 +85,48 @@ def test_salary_count_divisor_supports_fixed_calendar_and_working_days():
     assert _salary_count_divisor(2026, 10, "calendar_days", 26, [5, 6], overrides) == 31
     assert _salary_count_divisor(2026, 10, "fixed_days", 26, [5, 6], overrides) == 26
     assert _salary_count_divisor(2026, 10, "working_days", 26, [5, 6], overrides) == 22
+
+
+def test_partial_month_employment_prorates_gross_and_statutory_deductions():
+    employee = SimpleNamespace(
+        id="emp-join", emp_code="EMP-JOIN", name="Mid-month Joiner",
+        department="Production", joining_date=date(2026, 10, 16), end_date=None,
+    )
+    result = _calculate_employee_monthly_payroll(
+        employee, _profile(), [], 2026, 10, "calendar_days", 26, [5, 6], {}
+    )
+    assert result["monthly_gross"] == Decimal("25806.45")
+    assert result["employee_pf"] == Decimal("1548.39")
+    assert result["professional_tax"] == Decimal("103.23")
+    assert result["tds"] == Decimal("258.06")
+    assert result["net_pay"] == Decimal("23896.77")
+
+
+def test_employment_end_date_is_inclusive_and_prorates_salary():
+    employee = SimpleNamespace(
+        id="emp-exit", emp_code="EMP-EXIT", name="Leaving Employee",
+        department="Production", joining_date=date(2026, 10, 1), end_date=date(2026, 10, 15),
+    )
+    result = _calculate_employee_monthly_payroll(
+        employee, _profile(), [], 2026, 10, "calendar_days", 26, [5, 6], {}
+    )
+    assert result["monthly_gross"] == Decimal("24193.55")
+    assert result["employee_pf"] == Decimal("1451.61")
+    assert result["professional_tax"] == Decimal("96.77")
+    assert result["tds"] == Decimal("241.94")
+    assert result["net_pay"] == Decimal("22403.23")
+
+
+def test_employment_period_outside_payroll_month_has_zero_payable_gross():
+    employee = SimpleNamespace(
+        id="emp-ended", emp_code="EMP-ENDED", name="Former Employee",
+        department="Production", joining_date=date(2026, 9, 1), end_date=date(2026, 9, 30),
+    )
+    result = _calculate_employee_monthly_payroll(
+        employee, _profile(), [], 2026, 10, "calendar_days", 26, [5, 6], {}
+    )
+    assert result["monthly_gross"] == Decimal("0.00")
+    assert result["net_pay"] == Decimal("0.00")
 
 
 def test_unconfigured_employee_does_not_get_configured_salary():
@@ -201,7 +247,7 @@ def test_attendance_excel_parser_reads_valid_rows_and_excel_times():
     assert rows[0]["status"] == "present"
     assert rows[0]["overtime_minutes"] == 30
     assert rows[0]["punch_in"].date() == date(2026, 10, 5)
-    assert rows[0]["punch_in"].hour == 8
+    assert rows[0]["punch_in"].hour == 3
     assert rows[0]["punch_out"].hour == 17
     assert rows[1]["status"] == "half_day"
     assert rows[1]["work_date"] == date(2026, 10, 6)
@@ -244,3 +290,117 @@ def test_attendance_excel_parser_rejects_header_changes():
             {"EMP-001": SimpleNamespace(id="emp-1", emp_code="EMP-001", active=True)},
         )
 
+
+
+
+def test_payroll_readiness_requires_explicit_status_for_each_scheduled_workday():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app import models
+    from app.api.routes.hr_payroll import _missing_payroll_attendance
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        employee = models.Employee(
+            id="salary-employee", emp_code="EMP-100", name="Salaried Employee",
+            employee_type="staff", department="Accounts", designation="Executive",
+            joining_date=date(2026, 11, 1),
+            active=True,
+        )
+        db.add(employee)
+        db.add(models.EmployeeSalaryProfile(employee_id=employee.id, annual_salary=600000))
+        db.add(models.HRPayrollSettings(id=1, week_off_days="5,6"))
+        # Monday 2 November is a holiday override; Sunday 1 November is a weekly off.
+        db.add(models.HRCalendarDay(
+            work_date=date(2026, 11, 2), day_type="holiday", description="Public holiday"
+        ))
+        db.add(models.EmployeeAttendance(
+            id="attendance-1", employee_id=employee.id,
+            work_date=date(2026, 11, 3), status="present",
+        ))
+        db.commit()
+
+        missing, unknown_joining_dates = _missing_payroll_attendance(db, 2026, 11)
+
+        expected = [
+            date(2026, 11, day)
+            for day in range(1, 31)
+            if date(2026, 11, day).weekday() not in {5, 6}
+            and date(2026, 11, day) != date(2026, 11, 2)
+            and date(2026, 11, day) != date(2026, 11, 3)
+        ]
+        assert missing == [("EMP-100", work_date) for work_date in expected]
+        assert unknown_joining_dates == []
+        assert ("EMP-100", date(2026, 11, 1)) not in missing
+        assert ("EMP-100", date(2026, 11, 2)) not in missing
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_payroll_readiness_accepts_explicit_absence_and_leave_statuses():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app import models
+    from app.api.routes.hr_payroll import _missing_payroll_attendance
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        employee = models.Employee(
+            id="salary-employee-2", emp_code="EMP-200", name="Salaried Employee",
+            employee_type="staff", department="Accounts", designation="Executive",
+            joining_date=date(2026, 11, 1), active=True,
+        )
+        db.add(employee)
+        db.add(models.EmployeeSalaryProfile(employee_id=employee.id, annual_salary=600000))
+        db.add(models.HRPayrollSettings(id=1, week_off_days="5,6"))
+        for day in range(1, 31):
+            work_date = date(2026, 11, day)
+            if work_date.weekday() not in {5, 6}:
+                db.add(models.EmployeeAttendance(
+                    id=f"attendance-{day}", employee_id=employee.id,
+                    work_date=work_date,
+                    status="absent" if day == 4 else ("paid_leave" if day == 5 else "present"),
+                ))
+        db.commit()
+
+        assert _missing_payroll_attendance(db, 2026, 11) == ([], [])
+    finally:
+        db.close()
+        engine.dispose()
+
+
+
+def test_unknown_joining_date_is_reported_and_full_month_attendance_is_required():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app import models
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        employee = models.Employee(
+            id="legacy-employee", emp_code="EMP-LEGACY", name="Legacy Employee",
+            employee_type="staff", department="Accounts", designation="Analyst",
+            joining_date=None, end_date=None, active=True,
+        )
+        db.add(employee)
+        db.add(models.EmployeeSalaryProfile(employee_id=employee.id, annual_salary=600000))
+        db.add(models.HRPayrollSettings(id=1, week_off_days="5,6"))
+        db.commit()
+
+        missing, unknown_joining_dates = _missing_payroll_attendance(db, 2026, 11)
+        assert unknown_joining_dates == ["EMP-LEGACY"]
+        assert missing
+        assert all(code == "EMP-LEGACY" for code, _ in missing)
+    finally:
+        db.close()
+        engine.dispose()

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from datetime import date, datetime
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.modules._base import Role, ItemKind, EmployeeType, MovementType, InvoiceStatus, QuotationStatus, SalesOrderStatus, DispatchStatus, PurchaseRequisitionStatus, PurchaseRequisitionSource, PurchaseOrderStatus
 from app.modules.core.schemas import ORMModel
 
@@ -34,18 +34,22 @@ class EmployeeTypeOut(ORMModel):
     active: bool
 
 class EmployeeIn(BaseModel):
-    """Editable employee fields. Employee code and lifecycle state are server-managed."""
+    """Editable employee fields. Employee code and lifecycle status are server-managed."""
     name: str = Field(min_length=1, max_length=120)
     employee_type: str = Field(default="staff", min_length=2, max_length=32)
     department: str = Field(default="", max_length=120)
     designation: str = Field(default="", max_length=120)
+    joining_date: date
+    end_date: date | None = None
 
 class EmployeeUpdate(BaseModel):
-    """Employee details only; employee code and active state cannot be changed here."""
+    """Employee details; omitted employment dates are preserved on update."""
     name: str = Field(min_length=1, max_length=120)
     employee_type: str = Field(default="staff", min_length=2, max_length=32)
     department: str = Field(default="", max_length=120)
     designation: str = Field(default="", max_length=120)
+    joining_date: date | None = None
+    end_date: date | None = None
 
 class EmployeeStatusUpdate(BaseModel):
     active: bool
@@ -63,6 +67,8 @@ class EmployeeOut(ORMModel):
     employee_type: str
     department: str
     designation: str
+    joining_date: date | None = None
+    end_date: date | None = None
     active: bool
 
 class EmployeeSkillOut(ORMModel):

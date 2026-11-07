@@ -4,6 +4,7 @@ from __future__ import annotations
 import calendar
 import io
 from datetime import date, datetime, time as time_type, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
@@ -23,7 +24,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.api.deps import require_area
 from app.db.session import get_db
-from app.services.inventory import log_audit
+from app.modules.core.audit import log_audit
 
 router = APIRouter(prefix="/hr", tags=["hr", "payroll"])
 hr_access = Depends(require_area("hr"))
@@ -57,12 +58,35 @@ def _week_offs(settings: models.HRPayrollSettings) -> list[int]:
         return [5, 6]
 
 
+def _tenant_timezone(db: Session) -> ZoneInfo:
+    settings = _ensure_settings(db)
+    try:
+        return ZoneInfo(settings.timezone or "Asia/Kolkata")
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(status_code=500, detail="Tenant timezone is invalid; update HR payroll settings") from exc
+
+
+def _to_utc(value: datetime | None, tenant_tz: ZoneInfo) -> datetime | None:
+    if value is None:
+        return None
+    local_value = value.replace(tzinfo=tenant_tz) if value.tzinfo is None else value
+    return local_value.astimezone(timezone.utc)
+
+
+def _to_local(value: datetime | None, tenant_tz: ZoneInfo) -> datetime | None:
+    if value is None:
+        return None
+    aware_value = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+    return aware_value.astimezone(tenant_tz)
+
+
 def _settings_output(row: models.HRPayrollSettings) -> dict[str, Any]:
     return {
         "id": row.id,
         "salary_count_mode": row.salary_count_mode,
         "monthly_salary_days": row.monthly_salary_days,
         "week_off_days": _week_offs(row),
+        "timezone": row.timezone or "Asia/Kolkata",
         "updated_at": row.updated_at,
     }
 
@@ -130,20 +154,63 @@ def _calculate_employee_monthly_payroll(
     calendar_overrides: dict[date, str],
 ) -> dict[str, Any]:
     components = _salary_components(profile)
+    month_start = date(year, month, 1)
+    month_end = date(year, month, calendar.monthrange(year, month)[1])
+    employment_start = max(month_start, employee.joining_date) if employee.joining_date else month_start
+    employment_end = min(month_end, employee.end_date) if employee.end_date else month_end
+    employment_active = employment_start <= employment_end
     divisor = _salary_count_divisor(
         year, month, salary_count_mode, monthly_salary_days, week_off_days, calendar_overrides
     )
+    scheduled_days = [
+        date(year, month, number)
+        for number in range(1, month_end.day + 1)
+        if _calendar_type(date(year, month, number), week_off_days, calendar_overrides) == "working_day"
+    ]
+    eligible_working_days = [
+        day for day in scheduled_days
+        if employment_active and employment_start <= day <= employment_end
+    ]
+    eligible_calendar_days = max(0, (employment_end - employment_start).days + 1) if employment_active else 0
+
+    # Prorate the monthly gross for partial-month employment using the configured
+    # salary basis. Fixed-days mode retains its configured divisor; the employee's
+    # eligible scheduled days determine the paid fraction of the standard month.
+    if not employment_active:
+        employment_fraction = Decimal("0")
+    elif salary_count_mode == "calendar_days":
+        employment_fraction = Decimal(eligible_calendar_days) / Decimal(month_end.day)
+    elif salary_count_mode == "fixed_days":
+        # The fixed divisor is a daily-rate basis, not a proxy for how much
+        # of the month the employee was employed. Compare eligible scheduled
+        # days with the month's full scheduled days so a full-month employee
+        # receives a full monthly gross even when the month has fewer than 26
+        # scheduled days (for example, because of holidays).
+        full_month_working_days = len(scheduled_days)
+        employment_fraction = (
+            Decimal(len(eligible_working_days)) / Decimal(full_month_working_days)
+            if full_month_working_days else Decimal("0")
+        )
+    else:
+        full_month_working_days = len(scheduled_days)
+        employment_fraction = (
+            Decimal(len(eligible_working_days)) / Decimal(full_month_working_days)
+            if full_month_working_days else Decimal("0")
+        )
+    employment_fraction = min(Decimal("1"), max(Decimal("0"), employment_fraction))
+    effective_gross = _money(components["monthly_gross"] * employment_fraction)
     present_days = half_days = absent_days = paid_leave_days = unpaid_leave_days = Decimal("0")
     unpaid_equivalent_days = Decimal("0")
     overtime_minutes = 0
     for row in attendance_rows:
-        # Attendance on an overridden holiday or configured week-off is not a
-        # scheduled absence. Still show the recorded attendance in the summary.
         work_date = getattr(row, "work_date", None)
+        in_employment_period = (
+            work_date is not None and employment_active
+            and employment_start <= work_date <= employment_end
+        )
         scheduled_workday = (
-            _calendar_type(work_date, week_off_days, calendar_overrides) == "working_day"
-            if work_date is not None
-            else True
+            in_employment_period
+            and _calendar_type(work_date, week_off_days, calendar_overrides) == "working_day"
         )
         if row.status == "present":
             present_days += Decimal("1")
@@ -161,34 +228,39 @@ def _calculate_employee_monthly_payroll(
             unpaid_leave_days += Decimal("1")
             if scheduled_workday:
                 unpaid_equivalent_days += Decimal("1")
-        # Rejecting or ignoring overtime for absence/leave rows avoids paying
-        # overtime that cannot be reconciled to actual attendance.
-        if row.status in {"present", "half_day"}:
+        if in_employment_period and row.status in {"present", "half_day"}:
             overtime_minutes += max(0, int(row.overtime_minutes or 0))
 
-    daily_rate = components["monthly_gross"] / Decimal(divisor)
-    absence_deduction = min(
-        components["monthly_gross"],
-        _money(daily_rate * unpaid_equivalent_days),
+    absence_divisor = (
+        Decimal(eligible_calendar_days) if salary_count_mode == "calendar_days"
+        else Decimal(len(eligible_working_days)) if salary_count_mode == "working_days"
+        else Decimal(divisor)
     )
+    if salary_count_mode == "fixed_days":
+        absence_divisor = Decimal(divisor)
+    daily_rate = effective_gross / absence_divisor if absence_divisor > 0 else Decimal("0")
+    absence_deduction = min(effective_gross, _money(daily_rate * unpaid_equivalent_days))
     overtime_pay = _money((daily_rate / Decimal("8")) * Decimal(overtime_minutes) / Decimal("60"))
+    # Statutory/contractual deductions are prorated with employment fraction too;
+    # jurisdiction-specific compliance and effective-dated structures remain separate work.
+    prorated_pf = _money(components["employee_pf"] * employment_fraction)
+    prorated_pt = _money(components["professional_tax"] * employment_fraction)
+    prorated_tds = _money(components["tds"] * employment_fraction)
     net_pay = max(
         Decimal("0.00"),
-        _money(
-            components["monthly_gross"] - absence_deduction - components["employee_pf"]
-            - components["professional_tax"] - components["tds"] + overtime_pay
-        ),
+        _money(effective_gross - absence_deduction - prorated_pf - prorated_pt - prorated_tds + overtime_pay),
     )
     return {
         "employee_id": employee.id, "employee_code": employee.emp_code, "employee_name": employee.name,
         "department": employee.department or "", "configured": profile is not None and components["annual_salary"] > 0,
         **components,
+        "monthly_gross": effective_gross,
+        "employee_pf": prorated_pf, "professional_tax": prorated_pt, "tds": prorated_tds,
         "present_days": _money(present_days), "half_days": _money(half_days),
         "absent_days": _money(absent_days), "paid_leave_days": _money(paid_leave_days),
         "unpaid_leave_days": _money(unpaid_leave_days), "overtime_minutes": overtime_minutes,
         "absence_deduction": absence_deduction, "overtime_pay": overtime_pay, "net_pay": net_pay,
     }
-
 
 def _validate_period(year: int, month: int) -> None:
     if month < 1 or month > 12 or year < 2000 or year > 2100:
@@ -275,14 +347,14 @@ def _run_output(db: Session, run: models.HRPayrollRun, include_items: bool = Tru
 
 def _attendance_output(
     employee: models.Employee, work_date: date, row: models.EmployeeAttendance | None,
-    calendar_type: str, calendar_description: str,
+    calendar_type: str, calendar_description: str, tenant_tz: ZoneInfo,
 ) -> dict[str, Any]:
     return {
         "id": row.id if row else None, "employee_id": employee.id, "employee_code": employee.emp_code,
         "employee_name": employee.name, "work_date": work_date,
         "status": row.status if row else (calendar_type if calendar_type in {"holiday", "week_off"} else "unmarked"),
         "calendar_type": calendar_type, "calendar_description": calendar_description,
-        "punch_in": row.punch_in if row else None, "punch_out": row.punch_out if row else None,
+        "punch_in": _to_local(row.punch_in, tenant_tz) if row else None, "punch_out": _to_local(row.punch_out, tenant_tz) if row else None,
         "overtime_minutes": row.overtime_minutes if row else 0, "note": row.note if row else "",
     }
 
@@ -411,9 +483,11 @@ def _parse_attendance_workbook(
     year: int,
     month: int,
     employees_by_code: dict[str, Any],
+    tenant_tz: ZoneInfo | None = None,
 ) -> list[dict[str, Any]]:
     """Validate the entire workbook before the caller makes any database changes."""
     _validate_period(year, month)
+    tenant_tz = tenant_tz or ZoneInfo("Asia/Kolkata")
     try:
         workbook = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
     except (InvalidFileException, BadZipFile, OSError, ValueError) as exc:
@@ -478,7 +552,7 @@ def _parse_attendance_workbook(
             try:
                 parsed_time = _parse_attendance_excel_time(raw_punch_in)
                 if parsed_time is not None and work_date is not None:
-                    punch_in = datetime.combine(work_date, parsed_time).replace(tzinfo=timezone.utc)
+                    punch_in = datetime.combine(work_date, parsed_time, tzinfo=tenant_tz).astimezone(timezone.utc)
             except ValueError as exc:
                 errors.append(f"Row {row_number}: Punch In {exc}.")
             try:
@@ -536,6 +610,11 @@ def update_payroll_settings(
     row.salary_count_mode = payload.salary_count_mode
     row.monthly_salary_days = payload.monthly_salary_days
     row.week_off_days = ",".join(str(day) for day in payload.week_off_days)
+    try:
+        ZoneInfo(payload.timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(status_code=422, detail="Timezone must be a valid IANA timezone identifier") from exc
+    row.timezone = payload.timezone
     log_audit(db, user.username, "UPDATE", "hr_payroll_settings", payload.salary_count_mode)
     db.commit()
     db.refresh(row)
@@ -678,8 +757,9 @@ def get_monthly_attendance(
     ).all()
     descriptions = {row.work_date: row.description for row in calendar_rows}
     week_off_days = _week_offs(settings)
+    tenant_tz = _tenant_timezone(db)
     return [
-        _attendance_output(employee, day, by_date.get(day), _calendar_type(day, week_off_days, overrides), descriptions.get(day, ""))
+        _attendance_output(employee, day, by_date.get(day), _calendar_type(day, week_off_days, overrides), descriptions.get(day, ""), tenant_tz)
         for day in (date(year, month, number) for number in range(1, end.day + 1))
     ]
 
@@ -720,10 +800,14 @@ async def import_attendance_from_excel(
 
     employees_by_code = {
         row.emp_code.strip().upper(): row
-        for row in db.query(models.Employee).filter(models.Employee.active.is_(True)).all()
+        for row in db.query(models.Employee).filter(
+            models.Employee.active.is_(True),
+            models.Employee.joining_date <= date(year, month, calendar.monthrange(year, month)[1]),
+            (models.Employee.end_date.is_(None)) | (models.Employee.end_date >= date(year, month, 1)),
+        ).all()
     }
     try:
-        rows = _parse_attendance_workbook(content, year, month, employees_by_code)
+        rows = _parse_attendance_workbook(content, year, month, employees_by_code, _tenant_timezone(db))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -775,11 +859,9 @@ def upsert_daily_attendance(
     employee = db.get(models.Employee, payload.employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
-    punch_in, punch_out = payload.punch_in, payload.punch_out
-    if punch_in is not None and punch_in.tzinfo is None:
-        punch_in = punch_in.replace(tzinfo=timezone.utc)
-    if punch_out is not None and punch_out.tzinfo is None:
-        punch_out = punch_out.replace(tzinfo=timezone.utc)
+    tenant_tz = _tenant_timezone(db)
+    punch_in = _to_utc(payload.punch_in, tenant_tz)
+    punch_out = _to_utc(payload.punch_out, tenant_tz)
     if punch_in and punch_out and punch_out <= punch_in:
         raise HTTPException(status_code=422, detail="Punch-out must be after punch-in")
     row = db.query(models.EmployeeAttendance).filter_by(employee_id=payload.employee_id, work_date=payload.work_date).first()
@@ -804,7 +886,7 @@ def upsert_daily_attendance(
     settings = _ensure_settings(db)
     override = db.query(models.HRCalendarDay).filter_by(work_date=payload.work_date).first()
     calendar_type = _calendar_type(payload.work_date, _week_offs(settings), {payload.work_date: override.day_type} if override else {})
-    return _attendance_output(employee, payload.work_date, row, calendar_type, override.description if override else "")
+    return _attendance_output(employee, payload.work_date, row, calendar_type, override.description if override else "", tenant_tz)
 
 
 @router.delete("/attendance/{employee_id}/{work_date}", status_code=204)
@@ -847,6 +929,53 @@ def get_payroll_run(
     return _run_output(db, run)
 
 
+def _missing_payroll_attendance(
+    db: Session, year: int, month: int
+) -> tuple[list[tuple[str, date]], list[str]]:
+    """Find missing daily statuses and salaried employees with unknown joining dates."""
+    start, end, settings, overrides, employees = _period_data(db, year, month)
+    week_off_days = _week_offs(settings)
+    profiles = {
+        row.employee_id: row
+        for row in db.query(models.EmployeeSalaryProfile).all()
+        if _dec(row.annual_salary) > 0
+    }
+    salaried_employees = [employee for employee in employees if employee.id in profiles]
+    unknown_joining_dates = [
+        employee.emp_code for employee in salaried_employees
+        if employee.joining_date is None
+    ]
+    scheduled_days = [
+        date(year, month, number)
+        for number in range(1, end.day + 1)
+        if _calendar_type(date(year, month, number), week_off_days, overrides) == "working_day"
+    ]
+    attendance_rows = db.query(models.EmployeeAttendance).filter(
+        models.EmployeeAttendance.work_date >= start,
+        models.EmployeeAttendance.work_date <= end,
+        models.EmployeeAttendance.employee_id.in_([employee.id for employee in salaried_employees]),
+    ).all() if salaried_employees else []
+    recorded_statuses = {
+        (row.employee_id, row.work_date): row.status
+        for row in attendance_rows
+    }
+    explicit_statuses = {"present", "half_day", "absent", "paid_leave", "unpaid_leave"}
+    missing: list[tuple[str, date]] = []
+    for employee in salaried_employees:
+        # Unknown legacy joining dates are not guessed. They are reported above,
+        # and the full month remains subject to attendance completeness until HR
+        # enters the actual joining date.
+        eligible_days = [
+            day for day in scheduled_days
+            if (employee.joining_date is None or day >= employee.joining_date)
+            and (employee.end_date is None or day <= employee.end_date)
+        ]
+        for work_date in eligible_days:
+            status = recorded_statuses.get((employee.id, work_date))
+            if status not in explicit_statuses:
+                missing.append((employee.emp_code, work_date))
+    return missing, unknown_joining_dates
+
 @router.post("/payroll/runs/{year}/{month}/finalize", response_model=schemas.PayrollRunOut)
 def finalize_monthly_payroll(
     year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
@@ -859,6 +988,32 @@ def finalize_monthly_payroll(
     configured_items = [item for item in preview["items"] if item["configured"] and item["annual_salary"] > 0]
     if not configured_items:
         raise HTTPException(status_code=409, detail="Configure annual salary for at least one active employee before finalizing payroll")
+
+    missing_attendance, unknown_joining_dates = _missing_payroll_attendance(db, year, month)
+    readiness_issues: list[str] = []
+    if unknown_joining_dates:
+        readiness_issues.append(
+            "Joining dates are missing for active salaried employee(s): "
+            + ", ".join(unknown_joining_dates[:20])
+            + ("; additional employees require review" if len(unknown_joining_dates) > 20 else "")
+        )
+    if missing_attendance:
+        examples = ", ".join(
+            f"{employee_code} ({work_date.isoformat()})"
+            for employee_code, work_date in missing_attendance[:20]
+        )
+        remaining = len(missing_attendance) - min(len(missing_attendance), 20)
+        suffix = f"; and {remaining} more" if remaining else ""
+        readiness_issues.append(
+            f"{len(missing_attendance)} scheduled employee-day attendance record(s) are missing. "
+            f"Record an explicit status for each working day. Missing: {examples}{suffix}"
+        )
+    if readiness_issues:
+        raise HTTPException(
+            status_code=409,
+            detail="Payroll cannot be finalized: " + " | ".join(readiness_issues),
+        )
+
     now = datetime.now(timezone.utc)
     run = existing or models.HRPayrollRun(year=year, month=month, status="finalized", created_by=user.username, finalized_at=now)
     run.status, run.finalized_at = "finalized", now

@@ -9,7 +9,7 @@ from app import models, schemas
 from app.api.deps import require_area
 from app.db.session import get_db
 from app.services.gst import compute_line, is_inter_state, round_off
-from app.services.inventory import log_audit
+from app.modules.core.audit import log_audit
 
 router = APIRouter(
     prefix="/quotations",

@@ -44,19 +44,20 @@ def test_production_users_retain_production_access_without_hr_management():
 
 
 def test_employee_create_schema_validates_name_and_ignores_client_employee_code():
+    from datetime import date
     from pydantic import ValidationError
 
     from app.schemas import EmployeeIn
 
     # Employee codes are server-generated and are not accepted as editable fields.
-    payload = EmployeeIn(name="Valid name", emp_code="CLIENT-SUPPLIED")
+    payload = EmployeeIn(name="Valid name", joining_date=date(2026, 1, 1), emp_code="CLIENT-SUPPLIED")
     assert payload.name == "Valid name"
     assert not hasattr(payload, "emp_code")
 
     with pytest.raises(ValidationError):
-        EmployeeIn(name="")
+        EmployeeIn(name="", joining_date=date(2026, 1, 1))
     with pytest.raises(ValidationError):
-        EmployeeIn(name="N" * 121)
+        EmployeeIn(name="N" * 121, joining_date=date(2026, 1, 1))
 
 
 
@@ -84,7 +85,7 @@ def test_tenant_hr_migration_chain_has_single_latest_head():
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["hr_payroll_005"]
+    assert script.get_heads() == ["hr_timezone_006"]
     assert script.get_revision("hr_role_001").down_revision == "employee_type_001"
     assert script.get_revision("hr_employee_types_002").down_revision == "hr_role_001"
     assert script.get_revision("hr_employee_codes_003").down_revision == "hr_employee_types_002"

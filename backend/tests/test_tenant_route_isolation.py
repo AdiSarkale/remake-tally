@@ -6,6 +6,7 @@ route modules. That proves the HTTP route layer, not only authentication, is
 resolved against the JWT-selected tenant database.
 """
 
+from datetime import date
 from pathlib import Path
 import sys
 
@@ -557,6 +558,7 @@ def test_admin_can_create_employees_and_manage_employee_skills(isolated_tenants)
             "department": "Production",
             "designation": "Operator",
             "active": True,
+            "joining_date": "2026-01-01",
         },
     )
     assert created.status_code == 201, created.text
@@ -642,6 +644,7 @@ def test_hr_employee_api_generates_immutable_codes_and_handles_lifecycle(isolate
             # These extra fields must not let clients control codes or status.
             "emp_code": "CLIENT-OVERRIDE",
             "active": False,
+            "joining_date": "2026-01-01",
         },
     )
     assert created.status_code == 201, created.text
@@ -725,6 +728,7 @@ def test_hr_employee_api_generates_immutable_codes_and_handles_lifecycle(isolate
             "employee_type": "staff",
             "department": "Office",
             "designation": "Coordinator",
+            "joining_date": "2026-01-01",
         },
     )
     assert second.status_code == 201, second.text
@@ -753,6 +757,7 @@ def test_hr_api_authorization_separates_hr_management_from_production(isolated_t
             "employee_type": "shop_floor",
             "department": "Production",
             "designation": "Operator",
+            "joining_date": "2026-01-01",
         },
     )
     assert created.status_code == 201, created.text
@@ -847,6 +852,7 @@ def test_hr_type_codes_are_immutable_and_code_patterns_are_validated(isolated_te
             "employee_type": "contractor",
             "department": "Field Ops",
             "designation": "Technician",
+            "joining_date": "2026-01-01",
         },
     )
     assert employee.status_code == 201, employee.text
@@ -910,6 +916,7 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
                 employee_type="staff",
                 department="Production",
                 designation="Operator",
+                joining_date=date(2026, 10, 1),
                 active=True,
             )
         )
@@ -954,14 +961,17 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
     assert salary.json()["annual_salary"] == 600000
     assert salary.json()["monthly_gross"] == 50000
 
-    for work_date in ("2026-10-05", "2026-10-06"):
+    # Every scheduled working day requires an explicit status before finalization.
+    # The holiday remains excluded from attendance completeness.
+    for day in range(1, 32):
+        work_date = f"2026-10-{day:02d}"
         response = client.put(
             "/api/v1/hr/attendance",
             headers=headers,
             json={
                 "employee_id": employee_id,
                 "work_date": work_date,
-                "status": "absent",
+                "status": "absent" if day in (5, 6) else "present",
                 "overtime_minutes": 0,
                 "note": "Payroll regression test",
             },
@@ -1046,3 +1056,63 @@ def test_payroll_run_and_salary_slip_validate_period_before_lookup(isolated_tena
 
     assert run.status_code == 422
     assert slip.status_code == 422
+
+
+def test_employee_api_reads_and_mutations_are_tenant_scoped(isolated_tenants):
+    client = isolated_tenants["client"]
+    tenant_a, tenant_b = isolated_tenants["sessions"]
+
+    a_db = tenant_a()
+    b_db = tenant_b()
+    try:
+        a_db.add(models.Employee(
+            id="employee-a", emp_code="EMP-A01", name="Company A Employee",
+            employee_type="shop_floor", department="Production",
+            designation="Operator", joining_date=date(2026, 1, 1), active=True,
+        ))
+        b_db.add(models.Employee(
+            id="employee-b", emp_code="EMP-B01", name="Company B Employee",
+            employee_type="shop_floor", department="Production",
+            designation="Operator", joining_date=date(2026, 1, 1), active=True,
+        ))
+        a_db.commit()
+        b_db.commit()
+    finally:
+        a_db.close()
+        b_db.close()
+
+    a = _login(client, "AA")
+    b = _login(client, "BB")
+    a_headers = {"Authorization": f"Bearer {a['access_token']}"}
+    b_headers = {"Authorization": f"Bearer {b['access_token']}"}
+
+    a_rows = client.get("/api/v1/manufacturing/employees", headers=a_headers)
+    b_rows = client.get("/api/v1/manufacturing/employees", headers=b_headers)
+    assert a_rows.status_code == 200, a_rows.text
+    assert b_rows.status_code == 200, b_rows.text
+
+    a_codes = {row["emp_code"] for row in a_rows.json()}
+    b_codes = {row["emp_code"] for row in b_rows.json()}
+    assert "EMP-A01" in a_codes
+    assert "EMP-B01" not in a_codes
+    assert "EMP-B01" in b_codes
+    assert "EMP-A01" not in b_codes
+
+    cross_tenant_update = client.put(
+        "/api/v1/manufacturing/employees/employee-a",
+        headers=b_headers,
+        json={
+            "name": "Company B attempted takeover",
+            "employee_type": "shop_floor",
+            "department": "Production",
+            "designation": "Operator",
+        },
+    )
+    assert cross_tenant_update.status_code == 404
+
+    cross_tenant_deactivation = client.patch(
+        "/api/v1/manufacturing/employees/employee-a/status",
+        headers=b_headers,
+        json={"active": False},
+    )
+    assert cross_tenant_deactivation.status_code == 404

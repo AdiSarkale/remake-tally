@@ -15,6 +15,7 @@ class HRPayrollSettings(Base):
     salary_count_mode: Mapped[str] = mapped_column(String(20), default="working_days", nullable=False)
     monthly_salary_days: Mapped[int] = mapped_column(Integer, default=26, nullable=False)
     week_off_days: Mapped[str] = mapped_column(String(20), default="5,6", nullable=False)
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Kolkata", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 

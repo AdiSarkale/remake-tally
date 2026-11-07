@@ -8,7 +8,8 @@ from app import models, schemas
 from app.api.deps import require_area
 from app.db.session import get_db
 from app.models import ItemKind, MovementType
-from app.services.inventory import apply_movement, log_audit, next_batch_no
+from app.modules.core.audit import log_audit
+from app.services.inventory import apply_movement, next_batch_no
 
 router = APIRouter(prefix="/production", tags=["production"])
 guard = Depends(require_area("production"))
