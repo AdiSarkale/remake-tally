@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
@@ -187,11 +189,7 @@ def enforce_employee_data_scope(
     target = db.get(models.Employee, employee_id)
     if actor is None or target is None:
         raise HTTPException(status_code=403, detail="Employee relationship is unavailable")
-    if data_scope == "department":
-        if not actor.department or actor.department != target.department:
-            raise HTTPException(status_code=403, detail="Department scope does not include this employee")
-        return
-    today = __import__("datetime").date.today()
+    today = date.today()
     assignments = db.query(EmployeeOrgAssignment).filter(
         EmployeeOrgAssignment.valid_from <= today,
         (EmployeeOrgAssignment.valid_to.is_(None) | (EmployeeOrgAssignment.valid_to >= today)),
@@ -199,6 +197,12 @@ def enforce_employee_data_scope(
     current = {row.employee_id: row for row in assignments}
     actor_assignment = current.get(actor_link.employee_id)
     target_assignment = current.get(employee_id)
+    if data_scope == "department":
+        actor_department = actor_assignment.department if actor_assignment else actor.department
+        target_department = target_assignment.department if target_assignment else target.department
+        if not actor_department or actor_department != target_department:
+            raise HTTPException(status_code=403, detail="Department scope does not include this employee")
+        return
     if data_scope == "branch":
         if actor_assignment is None or target_assignment is None or not actor_assignment.branch_id or actor_assignment.branch_id != target_assignment.branch_id:
             raise HTTPException(status_code=403, detail="Branch scope does not include this employee")
