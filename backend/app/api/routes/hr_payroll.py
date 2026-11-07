@@ -643,6 +643,7 @@ def get_payroll_settings(db: Session = Depends(get_db), user: models.User = hr_a
 def update_payroll_settings(
     payload: schemas.PayrollSettingsIn, db: Session = Depends(get_db), user: models.User = hr_access
 ):
+    _ensure_no_pending_payroll_snapshot(db)
     row = _ensure_settings(db)
     row.salary_count_mode = payload.salary_count_mode
     row.monthly_salary_days = payload.monthly_salary_days
