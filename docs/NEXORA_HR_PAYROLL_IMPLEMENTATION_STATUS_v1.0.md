@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.2  
+**Version:** 1.3  
 **Status:** Active implementation tracker  
 **Baseline:** 8 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -349,15 +349,17 @@ A workstream may be marked **Implemented** only when all applicable items are co
 |---|---|---|
 | 1.0 | 7 November 2026 | Initial shared HR/Payroll implementation tracker. |
 | 1.1 | 8 November 2026 | Updated after P0 integration into the PR #27 head branch: records branch/team scopes, granular authorization framework and monthly/pro-rata leave accrual as implemented, with operational and migration limitations explicitly retained. |
-| 1.2 | 8 November 2026 | Records follow-up branch-scope regression coverage, Playwright smoke selector corrections and actual CI outcomes (backend/PostgreSQL pass; first UI smoke attempt failed and rerun pending). |
+| 1.2 | 8 November 2026 | Records follow-up branch-scope regression coverage, Playwright smoke selector corrections and actual CI outcomes. |
+| 1.3 | 8 November 2026 | Records the final Payroll smoke navigation fix integrated through PR #30 and the latest CI rerun status. |
 
 ## 11. Integration and verification record
 
 - P0 feature branch: `feat/p0-hr-leave-payroll-authorization`.
 - Integrated into the PR #27 head branch through [PR #28](https://github.com/AdiSarkale/remake-tally/pull/28), merged on 8 November 2026.
-- Follow-up branch-scope regression coverage and UI smoke-selector fixes integrated through [PR #29](https://github.com/AdiSarkale/remake-tally/pull/29), merged on 8 November 2026.
-- Latest integration commit: `62a6da913c7412af91086c803f16e0c4a05f3268`.
+- Follow-up branch-scope regression coverage and initial UI smoke-selector fixes integrated through [PR #29](https://github.com/AdiSarkale/remake-tally/pull/29), merged on 8 November 2026.
+- Final Payroll smoke navigation fix integrated through [PR #30](https://github.com/AdiSarkale/remake-tally/pull/30), merged on 8 November 2026.
+- Latest integration commit: `e4c2b40f5a1cc60a22574b5a674ec5c0a008a7bf`.
 - PR #27 remains open and unmerged; its target is `main`, but no merge to `main` has been performed.
-- CI on the first integration commit passed backend unit tests, backend tenant-isolation tests, PostgreSQL tenant migrations/provisioning, frontend typecheck and production build. The Playwright smoke job failed on a duplicate text locator and an outdated Admin UI label; both selectors were corrected in PR #29. A rerun against the latest integration commit is pending. Do not treat the earlier failed smoke job as a pass.
+- CI on the first integration commit passed backend unit tests, backend tenant-isolation tests, PostgreSQL tenant migrations/provisioning, frontend typecheck and production build. The Playwright smoke job exposed stale selectors; PR #29 corrected the duplicate heading/Admin label selectors and PR #30 corrected the Payroll tab navigation. CI was triggered again for the latest integration commit; its final Playwright result is still pending at the time of this document update.
 
 **End of document.**
