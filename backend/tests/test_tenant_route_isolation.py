@@ -941,7 +941,12 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
     tenant_a.add(approver)
     tenant_a.commit()
     tenant_a.close()
-    approver_token = _login(client, "AA") if False else None
+    approver_login = client.post(
+        "/api/v1/auth/login",
+        json={"company_code": "AA", "username": "hr-approver", "password": "Password@123"},
+    )
+    assert approver_login.status_code == 200, approver_login.text
+    approver_headers = {"Authorization": f"Bearer {approver_login.json()['access_token']}"}
     settings = client.put(
         "/api/v1/hr/payroll/settings",
         headers=headers,
@@ -1017,13 +1022,42 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
     assert item["absence_deduction"] == 1923.08
     assert item["net_pay"] == 44376.92
 
+    prepared = client.post("/api/v1/hr/payroll/runs/2026/10/prepare", headers=headers)
+    assert prepared.status_code == 200, prepared.text
+    assert prepared.json()["status"] == "prepared"
+    frozen_run_id = prepared.json()["id"]
+    assert prepared.json()["items"][0]["monthly_gross"] == 50000
+
+    # The preparer cannot approve their own snapshot.
+    self_approval = client.post(f"/api/v1/hr/payroll/runs/{frozen_run_id}/approve", headers=headers)
+    assert self_approval.status_code == 403
+
+    changed_salary_while_prepared = client.put(
+        f"/api/v1/hr/employees/{employee_id}/salary",
+        headers=headers,
+        json={
+            "annual_salary": 1200000,
+            "basic_pct": 50,
+            "hra_pct": 40,
+            "da_pct": 0,
+            "conveyance_monthly": 1000,
+            "medical_allowance_monthly": 1000,
+            "pf_pct": 12,
+            "professional_tax_monthly": 200,
+            "tds_monthly": 500,
+        },
+    )
+    assert changed_salary_while_prepared.status_code == 409
+
+    approved = client.post(f"/api/v1/hr/payroll/runs/{frozen_run_id}/approve", headers=approver_headers)
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "approved"
+
     finalized = client.post("/api/v1/hr/payroll/runs/2026/10/finalize", headers=headers)
     assert finalized.status_code == 200, finalized.text
     assert finalized.json()["status"] == "finalized"
-    frozen_run_id = finalized.json()["id"]
-    assert finalized.json()["items"][0]["monthly_gross"] == 50000
 
-    # A finalization is a snapshot: later salary-profile edits do not rewrite it.
+    # The finalized employee snapshot remains unchanged after later profile edits.
     changed_salary = client.put(
         f"/api/v1/hr/employees/{employee_id}/salary",
         headers=headers,
@@ -1045,10 +1079,29 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
     assert finalized_again.json()["id"] == frozen_run_id
     assert finalized_again.json()["items"][0]["monthly_gross"] == 50000
 
+    locked = client.post(f"/api/v1/hr/payroll/runs/{frozen_run_id}/lock", headers=headers)
+    assert locked.status_code == 200, locked.text
+    assert locked.json()["status"] == "locked"
+
     slip = client.get(f"/api/v1/hr/payroll/slips/{employee_id}/2026/10", headers=headers)
     assert slip.status_code == 200, slip.text
     assert slip.headers["content-type"].startswith("application/pdf")
     assert slip.content.startswith(b"%PDF-")
+
+    reversed_run = client.post(
+        f"/api/v1/hr/payroll/runs/{frozen_run_id}/reverse",
+        headers=headers,
+        json={"reason": "Approved payroll correction required"},
+    )
+    assert reversed_run.status_code == 200, reversed_run.text
+    assert reversed_run.json()["status"] == "reversed"
+    slip_after_reversal = client.get(f"/api/v1/hr/payroll/slips/{employee_id}/2026/10", headers=headers)
+    assert slip_after_reversal.status_code == 404
+
+    next_revision = client.post("/api/v1/hr/payroll/runs/2026/10/prepare", headers=headers)
+    assert next_revision.status_code == 200, next_revision.text
+    assert next_revision.json()["revision"] == 2
+    assert next_revision.json()["status"] == "prepared"
 
     # Company B cannot see Company A's employees or salary profiles.
     token_b = _login(client, "BB")
