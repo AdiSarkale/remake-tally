@@ -728,6 +728,7 @@ def test_hr_employee_api_generates_immutable_codes_and_handles_lifecycle(isolate
             "employee_type": "staff",
             "department": "Office",
             "designation": "Coordinator",
+            "joining_date": "2026-01-01",
         },
     )
     assert second.status_code == 201, second.text
