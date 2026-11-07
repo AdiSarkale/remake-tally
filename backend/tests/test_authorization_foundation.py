@@ -42,22 +42,33 @@ def test_employee_scope_rejects_unmapped_user_for_self_service():
 
 
 def test_employee_scope_rejects_unknown_scope():
+    from types import SimpleNamespace
+
     class Query:
         def filter_by(self, **kwargs):
+            return self
+
+        def filter(self, *args):
             return self
 
         def first(self):
             return type("Link", (), {"employee_id": "employee-1"})()
 
+        def all(self):
+            return []
+
     class DB:
         def query(self, model):
             return Query()
+
+        def get(self, model, employee_id):
+            return SimpleNamespace(department="Operations")
 
     class User:
         id = "mapped-user"
 
     with pytest.raises(HTTPException) as error:
-        enforce_employee_data_scope(DB(), User(), "employee-1", "branch")
+        enforce_employee_data_scope(DB(), User(), "employee-1", "division")
     assert error.value.status_code == 403
 
 
