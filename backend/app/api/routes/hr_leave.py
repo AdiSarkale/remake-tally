@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.deps import current_user, enforce_employee_data_scope
+from app.api.deps import current_user, enforce_employee_data_scope, require_permission
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
 from app.modules.hr.leave import HRLeaveBalance, HRLeaveRequest, HRLeaveType
@@ -147,7 +147,7 @@ def _employee_for_user(db: Session, user: models.User) -> models.Employee:
 
 
 @router.get("/types", response_model=list[LeaveTypeOut])
-def list_leave_types(db: Session = Depends(get_db), user: models.User = Depends(current_user)):
+def list_leave_types(db: Session = Depends(get_db), user: models.User = Depends(require_permission("hr", "leave_types", "read", "self"))):
     query = db.query(HRLeaveType)
     if not _is_hr(user):
         query = query.filter(HRLeaveType.active.is_(True))
@@ -155,7 +155,7 @@ def list_leave_types(db: Session = Depends(get_db), user: models.User = Depends(
 
 
 @router.post("/types", response_model=LeaveTypeOut, status_code=201)
-def create_leave_type(payload: LeaveTypeIn, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
+def create_leave_type(payload: LeaveTypeIn, db: Session = Depends(get_db), user: models.User = Depends(require_permission("hr", "leave_types", "write", "tenant"))):
     if not _is_hr(user):
         raise HTTPException(403, "Only HR or Admin can manage leave types")
     row = HRLeaveType(**payload.model_dump())
@@ -171,7 +171,7 @@ def create_leave_type(payload: LeaveTypeIn, db: Session = Depends(get_db), user:
 
 
 @router.put("/types/{leave_type_id}", response_model=LeaveTypeOut)
-def update_leave_type(leave_type_id: str, payload: LeaveTypeIn, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
+def update_leave_type(leave_type_id: str, payload: LeaveTypeIn, db: Session = Depends(get_db), user: models.User = Depends(require_permission("hr", "leave_types", "write", "tenant"))):
     if not _is_hr(user):
         raise HTTPException(403, "Only HR or Admin can manage leave types")
     row = db.get(HRLeaveType, leave_type_id)
@@ -188,7 +188,7 @@ def update_leave_type(leave_type_id: str, payload: LeaveTypeIn, db: Session = De
 @router.get("/balances", response_model=list[LeaveBalanceOut])
 def list_leave_balances(
     employee_id: str | None = None, year: int = Query(ge=2000, le=2100),
-    db: Session = Depends(get_db), user: models.User = Depends(current_user),
+    db: Session = Depends(get_db), user: models.User = Depends(require_permission("hr", "leave_balances", "read", "self")),
 ):
     if _is_hr(user):
         query = db.query(HRLeaveBalance).filter(HRLeaveBalance.year == year)
@@ -203,7 +203,7 @@ def list_leave_balances(
 
 
 @router.put("/balances", response_model=LeaveBalanceOut)
-def upsert_leave_balance(payload: LeaveBalanceIn, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
+def upsert_leave_balance(payload: LeaveBalanceIn, db: Session = Depends(get_db), user: models.User = Depends(require_permission("hr", "leave_balances", "write", "tenant"))):
     if not _is_hr(user):
         raise HTTPException(403, "Only HR or Admin can allocate or adjust leave balances")
     employee = db.get(models.Employee, payload.employee_id)
@@ -231,7 +231,7 @@ def upsert_leave_balance(payload: LeaveBalanceIn, db: Session = Depends(get_db),
 
 
 @router.post("/requests", response_model=LeaveRequestOut, status_code=201)
-def create_leave_request(payload: LeaveRequestIn, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
+def create_leave_request(payload: LeaveRequestIn, db: Session = Depends(get_db), user: models.User = Depends(require_permission("hr", "leave_requests", "create", "self"))):
     employee = _employee_for_user(db, user)
     if payload.end_date < payload.start_date:
         raise HTTPException(422, "End date cannot be earlier than start date")
@@ -287,13 +287,14 @@ def create_leave_request(payload: LeaveRequestIn, db: Session = Depends(get_db),
 @router.get("/requests", response_model=list[LeaveRequestOut])
 def list_leave_requests(
     status_filter: str | None = None, db: Session = Depends(get_db),
-    user: models.User = Depends(current_user),
+    user: models.User = Depends(require_permission("hr", "leave_requests", "read", "self")),
 ):
     query = db.query(HRLeaveRequest)
     if _is_hr(user):
         pass
     else:
         employee = _employee_for_user(db, user)
+        enforce_employee_data_scope(db, user, employee.id, "self")
         query = query.filter(
             (HRLeaveRequest.employee_id == employee.id) |
             (HRLeaveRequest.approver_username == user.username)
