@@ -9,6 +9,7 @@ from openpyxl import Workbook, load_workbook
 from pydantic import ValidationError
 
 from app.api.routes.hr_payroll import (
+    _missing_payroll_attendance,
     _attendance_template_workbook,
     _calculate_employee_monthly_payroll,
     _calendar_type,
@@ -364,7 +365,37 @@ def test_payroll_readiness_accepts_explicit_absence_and_leave_statuses():
                 ))
         db.commit()
 
-        assert _missing_payroll_attendance(db, 2026, 11) == []
+        assert _missing_payroll_attendance(db, 2026, 11) == ([], [])
+    finally:
+        db.close()
+        engine.dispose()
+
+
+
+def test_unknown_joining_date_is_reported_and_full_month_attendance_is_required():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app import models
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        employee = models.Employee(
+            id="legacy-employee", emp_code="EMP-LEGACY", name="Legacy Employee",
+            employee_type="staff", department="Accounts", designation="Analyst",
+            joining_date=None, end_date=None, active=True,
+        )
+        db.add(employee)
+        db.add(models.EmployeeSalaryProfile(employee_id=employee.id, annual_salary=600000))
+        db.add(models.HRPayrollSettings(id=1, week_off_days="5,6"))
+        db.commit()
+
+        missing, unknown_joining_dates = _missing_payroll_attendance(db, 2026, 11)
+        assert unknown_joining_dates == ["EMP-LEGACY"]
+        assert missing
+        assert all(code == "EMP-LEGACY" for code, _ in missing)
     finally:
         db.close()
         engine.dispose()
