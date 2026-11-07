@@ -228,6 +228,14 @@ def _calculate_employee_monthly_payroll(
             unpaid_leave_days += Decimal("1")
             if scheduled_workday:
                 unpaid_equivalent_days += Decimal("1")
+        elif row.status == "paid_half_day":
+            half_days += Decimal("1")
+            paid_leave_days += Decimal("0.5")
+        elif row.status == "unpaid_half_day":
+            half_days += Decimal("1")
+            unpaid_leave_days += Decimal("0.5")
+            if scheduled_workday:
+                unpaid_equivalent_days += Decimal("0.5")
         if in_employment_period and row.status in {"present", "half_day"}:
             overtime_minutes += max(0, int(row.overtime_minutes or 0))
 
@@ -363,7 +371,7 @@ def _attendance_output(
 _ATTENDANCE_EXCEL_HEADERS = [
     "Employee Code", "Work Date", "Status", "Overtime Minutes", "Punch In", "Punch Out", "Note",
 ]
-_ATTENDANCE_EXCEL_STATUSES = {"present", "half_day", "absent", "paid_leave", "unpaid_leave", "unmarked"}
+_ATTENDANCE_EXCEL_STATUSES = {"present", "half_day", "absent", "paid_leave", "unpaid_leave", "paid_half_day", "unpaid_half_day", "unmarked"}
 _MAX_ATTENDANCE_IMPORT_BYTES = 5 * 1024 * 1024
 _MAX_ATTENDANCE_IMPORT_ROWS = 10000
 
@@ -389,7 +397,7 @@ def _attendance_template_workbook(year: int, month: int) -> io.BytesIO:
         sheet.cell(row=row_number, column=6).number_format = "hh:mm"
     status_validation = DataValidation(
         type="list",
-        formula1='"present,half_day,absent,paid_leave,unpaid_leave,unmarked"',
+        formula1='"present,half_day,absent,paid_leave,unpaid_leave,paid_half_day,unpaid_half_day,unmarked"',
         allow_blank=False,
     )
     status_validation.errorTitle = "Invalid attendance status"
@@ -408,7 +416,7 @@ def _attendance_template_workbook(year: int, month: int) -> io.BytesIO:
         ["Use one row per employee per work date. Do not upload duplicate employee/date pairs."],
         ["Employee Code: exact code of an active employee, for example EMP-001."],
         ["Work Date: an Excel date or YYYY-MM-DD; every date must belong to the selected period."],
-        ["Status: present, half_day, absent, paid_leave, unpaid_leave, or unmarked."],
+        ["Status: present, half_day, absent, paid_leave, unpaid_leave, paid_half_day, unpaid_half_day, or unmarked."],
         ["Overtime Minutes: whole number from 0 to 1440; leave blank or enter 0 if none."],
         ["Punch In / Punch Out: optional Excel times (HH:MM). Punch Out must be after Punch In."],
         ["Note: optional text describing the attendance entry."],
@@ -959,7 +967,7 @@ def _missing_payroll_attendance(
         (row.employee_id, row.work_date): row.status
         for row in attendance_rows
     }
-    explicit_statuses = {"present", "half_day", "absent", "paid_leave", "unpaid_leave"}
+    explicit_statuses = {"present", "half_day", "absent", "paid_leave", "unpaid_leave", "paid_half_day", "unpaid_half_day"}
     missing: list[tuple[str, date]] = []
     for employee in salaried_employees:
         # Unknown legacy joining dates are not guessed. They are reported above,
