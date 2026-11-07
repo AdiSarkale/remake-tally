@@ -45,18 +45,19 @@ def test_production_users_retain_production_access_without_hr_management():
 
 def test_employee_create_schema_validates_name_and_ignores_client_employee_code():
     from pydantic import ValidationError
+from datetime import date
 
     from app.schemas import EmployeeIn
 
     # Employee codes are server-generated and are not accepted as editable fields.
-    payload = EmployeeIn(name="Valid name", emp_code="CLIENT-SUPPLIED")
+    payload = EmployeeIn(name="Valid name", joining_date=date(2026, 1, 1), emp_code="CLIENT-SUPPLIED")
     assert payload.name == "Valid name"
     assert not hasattr(payload, "emp_code")
 
     with pytest.raises(ValidationError):
-        EmployeeIn(name="")
+        EmployeeIn(name="", joining_date=date(2026, 1, 1))
     with pytest.raises(ValidationError):
-        EmployeeIn(name="N" * 121)
+        EmployeeIn(name="N" * 121, joining_date=date(2026, 1, 1))
 
 
 
