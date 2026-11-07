@@ -50,7 +50,7 @@ def client(db_session):
     db_session.add_all([
         user, customer, supplier,
         models.RolePermissionGrant(
-            role="Admin", module="finance", feature="access", action="read",
+            role="Admin", module="finance", feature="*", action="*",
             data_scope="tenant", allowed=True, updated_by="test",
         ),
     ])
