@@ -106,3 +106,13 @@ These sources demonstrate why static PF/PT/TDS constants are unsafe:
 - Maharashtra notification dated 28 February 2026 amends PT return/payment due-date rules; it is not itself a replacement salary-rate schedule: https://www.mahagst.gov.in/public/uploads/mvatservices/1772710759_PT%20Notification%2028.2.2026.pdf
 
 Before statutory auto-calculation can be enabled, each tenant must specify its operating state(s), establishment PF applicability and contribution category, employee PF membership/entry status and wage basis, Maharashtra PT exemption/category where applicable, and employee tax regime/declarations/prior-employer income. A compliance reviewer must approve the effective-dated rule set. TDS cannot be calculated correctly from a single fixed monthly amount alone.
+
+
+## Browser workflow verification
+
+A Playwright smoke suite runs in CI against the frontend with isolated API mocks. It checks:
+- Operator/employee can open Leave self-service but cannot see policy administration or Access Control.
+- HR can open Leave policy administration and Payroll but cannot see Access Control.
+- Admin can open branch/reporting assignment controls and Finance ledger/journal history.
+
+These are browser-level UI smoke tests, not end-to-end backend integration. The final release still requires a manual staging walkthrough with real tenant data and authenticated Employee, HOD, HR, Admin and Finance accounts, including leave submission/decision, account mapping, payroll approval/finalization/reversal, and journal reconciliation.
