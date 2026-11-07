@@ -126,6 +126,14 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
             amount=10 if suffix == "a" else 20,
             created_by="admin",
         )
+        module_grants = [
+            models.RolePermissionGrant(
+                role=role.value, module=module, feature="access", action="read",
+                data_scope="tenant", allowed=True, updated_by="test",
+            )
+            for role, modules in deps.ROLE_PERMISSIONS.items()
+            for module in modules
+        ]
         payroll_grants = [
             models.RolePermissionGrant(
                 role=role, module="hr", feature="payroll", action=action,
@@ -134,7 +142,7 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
             for role in ("Admin", "HR")
             for action in ("read", "write", "prepare", "approve", "finalize", "lock", "reverse")
         ]
-        db.add_all([user, customer, supplier, product, material, invoice, requisition, payment, *payroll_grants])
+        db.add_all([user, customer, supplier, product, material, invoice, requisition, payment, *module_grants, *payroll_grants])
         db.commit()
         db.close()
 
