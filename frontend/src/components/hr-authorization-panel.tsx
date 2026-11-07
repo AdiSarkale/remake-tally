@@ -7,16 +7,22 @@ import { api } from "@/lib/api/client";
 import * as H from "@/lib/api/hooks";
 
 interface EmployeeLink { id: string; user_id: string; employee_id: string; created_by: string; }
+interface Branch { id: string; code: string; name: string; timezone: string; active: boolean; }
+interface OrgAssignment { id: string; employee_id: string; branch_id: string | null; manager_employee_id: string | null; department: string; valid_from: string; valid_to: string | null; created_by: string; }
 interface RoleGrant {
   id: string; role: string; module: string; feature: string; action: string;
   data_scope: "tenant" | "self" | "department"; allowed: boolean; updated_by: string;
 }
-const scopes = ["tenant", "department", "self"] as const;
+const scopes = ["tenant", "department", "branch", "team", "self"] as const;
 
 export function AuthorizationPanel() {
   const users = H.useUsers();
   const employees = H.useEmployees(true);
   const [links, setLinks] = useState<EmployeeLink[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [assignments, setAssignments] = useState<OrgAssignment[]>([]);
+  const [branchForm, setBranchForm] = useState({ code: "", name: "", timezone: "Asia/Kolkata", address: "" });
+  const [assignmentForm, setAssignmentForm] = useState({ employee_id: "", branch_id: "", manager_employee_id: "", department: "", valid_from: new Date().toISOString().slice(0, 10) });
   const [grants, setGrants] = useState<RoleGrant[]>([]);
   const [userId, setUserId] = useState("");
   const [employeeId, setEmployeeId] = useState("");
@@ -28,12 +34,16 @@ export function AuthorizationPanel() {
 
   const load = async () => {
     try {
-      const [linkRows, grantRows] = await Promise.all([
+      const [linkRows, grantRows, branchRows, assignmentRows] = await Promise.all([
         api.get<EmployeeLink[]>("/authorization/employee-links"),
         api.get<RoleGrant[]>("/authorization/role-grants"),
+        api.get<Branch[]>("/authorization/branches"),
+        api.get<OrgAssignment[]>("/authorization/employee-org-assignments"),
       ]);
       setLinks(linkRows);
       setGrants(grantRows);
+      setBranches(branchRows);
+      setAssignments(assignmentRows);
     } catch (err) { toast.error(err instanceof Error ? err.message : "Could not load authorization settings"); }
   };
   useEffect(() => { void load(); }, []);
@@ -61,6 +71,21 @@ export function AuthorizationPanel() {
       toast.success("Employee link removed");
       await load();
     } catch (err) { toast.error(err instanceof Error ? err.message : "Could not remove employee link"); }
+    finally { setBusy(false); }
+  };
+
+  const createBranch = async () => {
+    if (!branchForm.code.trim() || !branchForm.name.trim()) { toast.error("Enter branch code and name"); return; }
+    setBusy(true);
+    try { await api.post("/authorization/branches", branchForm); toast.success("Branch created"); setBranchForm({ code: "", name: "", timezone: "Asia/Kolkata", address: "" }); await load(); }
+    catch (err) { toast.error(err instanceof Error ? err.message : "Could not create branch"); }
+    finally { setBusy(false); }
+  };
+  const saveAssignment = async () => {
+    if (!assignmentForm.employee_id || !assignmentForm.valid_from) { toast.error("Choose an employee and effective date"); return; }
+    setBusy(true);
+    try { await api.post("/authorization/employee-org-assignments", { ...assignmentForm, branch_id: assignmentForm.branch_id || null, manager_employee_id: assignmentForm.manager_employee_id || null }); toast.success("Employee organisation assignment saved"); await load(); }
+    catch (err) { toast.error(err instanceof Error ? err.message : "Could not save assignment"); }
     finally { setBusy(false); }
   };
 
@@ -99,6 +124,31 @@ export function AuthorizationPanel() {
       </div>
 
       <div className="rounded-lg border p-4 space-y-3">
+        <h3 className="font-semibold">Branches and reporting structure</h3>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Create branch</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Input placeholder="Branch code" value={branchForm.code} onChange={(e) => setBranchForm({ ...branchForm, code: e.target.value.toUpperCase() })} />
+              <Input placeholder="Branch name" value={branchForm.name} onChange={(e) => setBranchForm({ ...branchForm, name: e.target.value })} />
+              <Input placeholder="IANA timezone" value={branchForm.timezone} onChange={(e) => setBranchForm({ ...branchForm, timezone: e.target.value })} />
+              <Input placeholder="Address" value={branchForm.address} onChange={(e) => setBranchForm({ ...branchForm, address: e.target.value })} />
+            </div>
+            <Button size="sm" disabled={busy} onClick={() => void createBranch()}>Add branch</Button>
+            {branches.map((row) => <p key={row.id} className="text-sm">{row.code} · {row.name} <span className="text-muted-foreground">({row.timezone})</span></p>)}
+          </div>
+          <div className="space-y-2">
+            <p className="text-sm font-medium">Assign employee organisation</p>
+            <p className="text-xs text-muted-foreground">Effective-dated; a new assignment closes the previous assignment the day before it starts.</p>
+            <select className="h-9 w-full rounded-md border bg-background px-2" value={assignmentForm.employee_id} onChange={(e) => setAssignmentForm({ ...assignmentForm, employee_id: e.target.value })}><option value="">Select employee</option>{(employees.data ?? []).filter((row) => row.active).map((row) => <option key={row.id} value={row.id}>{row.emp_code} · {row.name}</option>)}</select>
+            <select className="h-9 w-full rounded-md border bg-background px-2" value={assignmentForm.branch_id} onChange={(e) => setAssignmentForm({ ...assignmentForm, branch_id: e.target.value })}><option value="">No branch</option>{branches.filter((row) => row.active).map((row) => <option key={row.id} value={row.id}>{row.code} · {row.name}</option>)}</select>
+            <select className="h-9 w-full rounded-md border bg-background px-2" value={assignmentForm.manager_employee_id} onChange={(e) => setAssignmentForm({ ...assignmentForm, manager_employee_id: e.target.value })}><option value="">No manager</option>{(employees.data ?? []).filter((row) => row.active && row.id !== assignmentForm.employee_id).map((row) => <option key={row.id} value={row.id}>{row.emp_code} · {row.name}</option>)}</select>
+            <Input placeholder="Department" value={assignmentForm.department} onChange={(e) => setAssignmentForm({ ...assignmentForm, department: e.target.value })} />
+            <Input type="date" value={assignmentForm.valid_from} onChange={(e) => setAssignmentForm({ ...assignmentForm, valid_from: e.target.value })} />
+            <Button size="sm" disabled={busy} onClick={() => void saveAssignment()}>Save assignment</Button>
+            <div className="max-h-32 overflow-auto text-xs">{assignments.map((row) => <p key={row.id} className="border-b py-1">{employeeLabel(row.employee_id)} · {row.valid_from} – {row.valid_to || "current"}</p>)}</div>
+          </div>
+        </div>
         <h3 className="font-semibold">Role permission grants</h3>
         <p className="text-xs text-muted-foreground">A grant is defined by role → module → feature → action → data scope. Setting Allowed to off revokes that exact grant. Branch and team scopes are not available until those relationships exist in the data model.</p>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
