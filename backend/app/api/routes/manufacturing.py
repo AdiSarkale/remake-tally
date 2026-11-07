@@ -30,6 +30,68 @@ def _auto_employee(db: Session, operation: models.RoutingOperation) -> models.Em
     return q.order_by(models.EmployeeSkill.level.desc(), models.Employee.emp_code.asc()).first()
 
 
+# Backward-compatible employee routes: employee ownership and mutations live in HR.
+# Production callers keep their historical URL surface while sharing the HR handlers.
+from app.api.routes import hr as hr_routes
+
+
+@router.get("/employees", response_model=list[schemas.EmployeeOut])
+def list_employees_compat(
+    include_inactive: bool = False,
+    db: Session = Depends(get_db),
+    user: models.User = employee_access,
+):
+    return hr_routes.list_employees(include_inactive=include_inactive, db=db, user=user)
+
+
+@router.post("/employees", response_model=schemas.EmployeeOut, status_code=201)
+def create_employee_compat(
+    payload: schemas.EmployeeIn,
+    db: Session = Depends(get_db),
+    user: models.User = hr_employee_access,
+):
+    return hr_routes.create_employee(payload=payload, db=db, user=user)
+
+
+@router.put("/employees/{employee_id}", response_model=schemas.EmployeeOut)
+def update_employee_compat(
+    employee_id: str,
+    payload: schemas.EmployeeUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = hr_employee_access,
+):
+    return hr_routes.update_employee(employee_id=employee_id, payload=payload, db=db, user=user)
+
+
+@router.patch("/employees/{employee_id}/status", response_model=schemas.EmployeeOut)
+def update_employee_status_compat(
+    employee_id: str,
+    payload: schemas.EmployeeStatusUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = hr_employee_access,
+):
+    return hr_routes.set_employee_status(employee_id=employee_id, payload=payload, db=db, user=user)
+
+
+@router.get("/employees/{employee_id}/skills", response_model=list[schemas.EmployeeSkillOut])
+def list_employee_skills_compat(
+    employee_id: str,
+    db: Session = Depends(get_db),
+    user: models.User = employee_access,
+):
+    return hr_routes.list_employee_skills(employee_id=employee_id, db=db, user=user)
+
+
+@router.post("/employees/{employee_id}/skills", response_model=schemas.EmployeeSkillOut, status_code=201)
+def add_employee_skill_compat(
+    employee_id: str,
+    payload: schemas.EmployeeSkillIn,
+    db: Session = Depends(get_db),
+    user: models.User = hr_employee_access,
+):
+    return hr_routes.add_employee_skill(employee_id=employee_id, payload=payload, db=db, user=user)
+
+
 @router.get("/workcenters", response_model=list[schemas.WorkcenterOut])
 def list_workcenters(db: Session = Depends(get_db), user: models.User = guard):
     rows = db.query(models.Workcenter).order_by(models.Workcenter.code).all()
