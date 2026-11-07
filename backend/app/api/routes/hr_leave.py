@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import calendar
 from datetime import date, datetime
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -297,6 +298,23 @@ def carry_forward_leave_balances(
     return [_balance_output(row) for row in created]
 
 
+def _monthly_accrual_amount(
+    annual_entitlement: float,
+    accrual_method: str,
+    eligible_start: date,
+    eligible_end: date,
+    period_end: date,
+) -> float:
+    """Calculate a calendar-month accrual, optionally prorated by eligible days."""
+    if eligible_start > eligible_end:
+        return 0.0
+    monthly = Decimal(str(annual_entitlement)) / Decimal("12")
+    if accrual_method == "monthly_prorated":
+        eligible_days = (eligible_end - eligible_start).days + 1
+        monthly *= Decimal(eligible_days) / Decimal(period_end.day)
+    return float(monthly.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
 class LeaveAccrualRunOut(BaseModel):
     year: int
     month: int
@@ -337,7 +355,11 @@ def run_monthly_leave_accrual(
         for employee in employees:
             if employee.joining_date is None:
                 continue
-            if not employee.active and (employee.end_date is None or employee.end_date < period_start):
+            # An inactive employee without a verified end date is not eligible.
+            # A known end date is respected even if the legacy active flag was not updated.
+            if (not employee.active and employee.end_date is None) or (
+                employee.end_date is not None and employee.end_date < period_start
+            ):
                 continue
             eligible_start = max(period_start, employee.joining_date, leave_type.accrual_effective_from)
             eligible_end = min(period_end, employee.end_date) if employee.end_date else period_end
@@ -349,11 +371,13 @@ def run_monthly_leave_accrual(
             if existing is not None:
                 skipped_existing += 1
                 continue
-            monthly_amount = float(leave_type.annual_entitlement) / 12.0
-            if leave_type.accrual_method == "monthly_prorated":
-                eligible_days = (eligible_end - eligible_start).days + 1
-                monthly_amount *= eligible_days / period_end.day
-            amount = round(monthly_amount, 2)
+            amount = _monthly_accrual_amount(
+                leave_type.annual_entitlement,
+                leave_type.accrual_method,
+                eligible_start,
+                eligible_end,
+                period_end,
+            )
             if amount <= 0:
                 continue
             balance = db.query(HRLeaveBalance).filter_by(
