@@ -77,9 +77,6 @@ def apply_movement(
     return movement
 
 
-def log_audit(db: Session, username: str, action: str, entity: str, detail: str) -> None:
-    db.add(models.AuditLog(username=username, action=action, entity=entity, detail=detail))
-
 
 def next_batch_no(db: Session) -> str:
     count = db.query(models.ProductionEntry).count()
