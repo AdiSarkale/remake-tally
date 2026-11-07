@@ -21,15 +21,7 @@ def upgrade() -> None:
         "employees",
         sa.Column("end_date", sa.Date(), nullable=True),
     )
-    # Existing records predate employment dates. Backfill a conservative date
-    # so historical payroll eligibility is not silently shortened.
-    op.execute("UPDATE employees SET joining_date = CURRENT_DATE WHERE joining_date IS NULL")
-    with op.batch_alter_table("employees") as batch_op:
-        batch_op.alter_column(
-            "joining_date",
-            existing_type=sa.Date(),
-            nullable=False,
-        )
+    # Keep legacy employment dates unknown rather than inventing history.
     op.add_column(
         "hr_payroll_settings",
         sa.Column("timezone", sa.String(length=64), nullable=False, server_default="Asia/Kolkata"),
