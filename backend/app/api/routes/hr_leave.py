@@ -4,6 +4,7 @@ from __future__ import annotations
 import calendar
 from datetime import date, datetime
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
@@ -305,7 +306,11 @@ def run_monthly_leave_accrual(
     _require_grant(db, user, "leave_balances", "write", "tenant")
     if year < 2000 or year > 2100 or month < 1 or month > 12:
         raise HTTPException(422, "Invalid accrual period")
-    today = date.today()
+    settings = db.get(models.HRPayrollSettings, 1)
+    try:
+        today = datetime.now(ZoneInfo(settings.timezone if settings else "Asia/Kolkata")).date()
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(500, "Tenant payroll timezone is invalid") from exc
     if date(year, month, 1) > today.replace(day=1):
         raise HTTPException(422, "Leave accrual cannot be run for a future month")
     period_start = date(year, month, 1)
