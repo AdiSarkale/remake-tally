@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.api.deps import require_area
 from app.db.session import get_db
-from app.services.inventory import apply_movement, log_audit
+from app.modules.core.audit import log_audit
+from app.services.inventory import apply_movement
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 guard = Depends(require_area("inventory"))
