@@ -15,6 +15,7 @@ from app import models
 from app.api.deps import current_user, enforce_employee_data_scope, require_permission
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
+from app.modules.core.authorization import RolePermissionGrant
 from app.modules.hr.leave import HRLeaveBalance, HRLeaveRequest, HRLeaveType
 from app.modules.hr.payroll import EmployeeAttendance, HRCalendarDay, HRPayrollSettings
 from app.api.routes.approvals import Department
@@ -91,6 +92,15 @@ class LeaveRequestOut(BaseModel):
     decision_note: str
     decided_at: datetime | None
     created_at: datetime | None
+
+
+def _require_grant(db: Session, user: models.User, feature: str, action: str, scope: str) -> None:
+    grant = db.query(RolePermissionGrant).filter_by(
+        role=user.role.value, module="hr", feature=feature, action=action,
+        data_scope=scope, allowed=True,
+    ).first()
+    if grant is None:
+        raise HTTPException(403, f"Missing permission: hr.{feature}.{action} ({scope})")
 
 
 def _is_hr(user: models.User) -> bool:
@@ -188,13 +198,15 @@ def update_leave_type(leave_type_id: str, payload: LeaveTypeIn, db: Session = De
 @router.get("/balances", response_model=list[LeaveBalanceOut])
 def list_leave_balances(
     employee_id: str | None = None, year: int = Query(ge=2000, le=2100),
-    db: Session = Depends(get_db), user: models.User = Depends(require_permission("hr", "leave_balances", "read", "self")),
+    db: Session = Depends(get_db), user: models.User = Depends(current_user),
 ):
     if _is_hr(user):
+        _require_grant(db, user, "leave_balances", "read", "tenant")
         query = db.query(HRLeaveBalance).filter(HRLeaveBalance.year == year)
         if employee_id:
             query = query.filter(HRLeaveBalance.employee_id == employee_id)
     else:
+        _require_grant(db, user, "leave_balances", "read", "self")
         employee = _employee_for_user(db, user)
         query = db.query(HRLeaveBalance).filter(
             HRLeaveBalance.year == year, HRLeaveBalance.employee_id == employee.id
@@ -287,12 +299,13 @@ def create_leave_request(payload: LeaveRequestIn, db: Session = Depends(get_db),
 @router.get("/requests", response_model=list[LeaveRequestOut])
 def list_leave_requests(
     status_filter: str | None = None, db: Session = Depends(get_db),
-    user: models.User = Depends(require_permission("hr", "leave_requests", "read", "self")),
+    user: models.User = Depends(current_user),
 ):
     query = db.query(HRLeaveRequest)
     if _is_hr(user):
-        pass
+        _require_grant(db, user, "leave_requests", "read", "tenant")
     else:
+        _require_grant(db, user, "leave_requests", "read", "self")
         employee = _employee_for_user(db, user)
         enforce_employee_data_scope(db, user, employee.id, "self")
         query = query.filter(
