@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -235,4 +237,138 @@ def list_payables(
             balance_amount=max(balance, 0),
             status=po.status,
         ))
+    return result
+
+
+class FinanceAccountIn(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=120)
+    account_type: Literal["asset", "liability", "equity", "income", "expense"]
+    active: bool = True
+
+
+class FinanceAccountOut(FinanceAccountIn):
+    id: str
+    system_account: bool
+    created_by: str
+    model_config = {"from_attributes": True}
+
+
+class PayrollAccountMappingIn(BaseModel):
+    salary_expense_account_id: str
+    salary_payable_account_id: str
+    employee_pf_payable_account_id: str
+    professional_tax_payable_account_id: str
+    tds_payable_account_id: str
+
+
+class PayrollAccountMappingOut(PayrollAccountMappingIn):
+    id: int
+    updated_by: str
+    model_config = {"from_attributes": True}
+
+
+class FinanceJournalLineOut(BaseModel):
+    id: str
+    account_id: str
+    description: str
+    debit: float
+    credit: float
+    model_config = {"from_attributes": True}
+
+
+class FinanceJournalOut(BaseModel):
+    id: str
+    journal_no: str
+    entry_date: object
+    narration: str
+    source_type: str
+    source_id: str
+    status: str
+    reversal_of_id: str | None
+    created_by: str
+    lines: list[FinanceJournalLineOut]
+
+
+@router.get("/accounts", response_model=list[FinanceAccountOut])
+def list_finance_accounts(db: Session = Depends(get_db), user: models.User = guard):
+    return db.query(models.FinanceAccount).order_by(models.FinanceAccount.code).all()
+
+
+@router.post("/accounts", response_model=FinanceAccountOut, status_code=201)
+def create_finance_account(payload: FinanceAccountIn, db: Session = Depends(get_db), user: models.User = guard):
+    row = models.FinanceAccount(**payload.model_dump(), system_account=False, created_by=user.username)
+    db.add(row)
+    log_audit(db, user.username, "CREATE", "finance_account", f"{payload.code}; {payload.name}; {payload.account_type}")
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        if "unique" in str(exc).lower():
+            raise HTTPException(409, "Finance account code already exists") from exc
+        raise
+    db.refresh(row)
+    return row
+
+
+@router.get("/payroll-account-mapping", response_model=PayrollAccountMappingOut)
+def get_payroll_account_mapping(db: Session = Depends(get_db), user: models.User = guard):
+    row = db.get(models.FinancePayrollAccountMapping, 1)
+    if row is None:
+        raise HTTPException(404, "Payroll account mapping is not configured")
+    return row
+
+
+@router.put("/payroll-account-mapping", response_model=PayrollAccountMappingOut)
+def update_payroll_account_mapping(
+    payload: PayrollAccountMappingIn, db: Session = Depends(get_db), user: models.User = guard,
+):
+    values = payload.model_dump()
+    ids = list(values.values())
+    if len(set(ids)) != len(ids):
+        raise HTTPException(422, "Each payroll component must map to a distinct ledger account")
+    accounts = {row.id: row for row in db.query(models.FinanceAccount).filter(
+        models.FinanceAccount.id.in_(ids), models.FinanceAccount.active.is_(True)
+    ).all()}
+    if len(accounts) != len(ids):
+        raise HTTPException(422, "Every mapped account must exist and be active")
+    if accounts[values["salary_expense_account_id"]].account_type != "expense":
+        raise HTTPException(422, "Salary expense must map to an expense account")
+    for key, account_id in values.items():
+        if key != "salary_expense_account_id" and accounts[account_id].account_type != "liability":
+            raise HTTPException(422, f"{key} must map to a liability account")
+    row = db.get(models.FinancePayrollAccountMapping, 1)
+    if row is None:
+        row = models.FinancePayrollAccountMapping(id=1, **values, updated_by=user.username)
+        db.add(row)
+    else:
+        for key, value in values.items():
+            setattr(row, key, value)
+        row.updated_by = user.username
+    log_audit(db, user.username, "UPDATE", "finance_payroll_account_mapping", str(values))
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.get("/journals", response_model=list[FinanceJournalOut])
+def list_finance_journals(
+    source_type: str | None = None, db: Session = Depends(get_db), user: models.User = guard,
+):
+    query = db.query(models.FinanceJournalEntry)
+    if source_type:
+        query = query.filter(models.FinanceJournalEntry.source_type == source_type)
+    entries = query.order_by(
+        models.FinanceJournalEntry.entry_date.desc(),
+        models.FinanceJournalEntry.created_at.desc(),
+    ).limit(500).all()
+    result = []
+    for entry in entries:
+        result.append({
+            "id": entry.id, "journal_no": entry.journal_no, "entry_date": entry.entry_date,
+            "narration": entry.narration, "source_type": entry.source_type,
+            "source_id": entry.source_id, "status": entry.status,
+            "reversal_of_id": entry.reversal_of_id, "created_by": entry.created_by,
+            "lines": db.query(models.FinanceJournalLine).filter_by(journal_entry_id=entry.id).all(),
+        })
     return result
