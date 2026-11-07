@@ -1201,6 +1201,10 @@ def download_salary_slip(
     ).order_by(models.HRPayrollRun.revision.desc()).first()
     if run is None:
         raise HTTPException(status_code=404, detail="Finalize payroll for this month before downloading salary slips")
+    if user.role not in (models.Role.admin, models.Role.hr):
+        link = db.query(models.EmployeeUserLink).filter_by(user_id=user.id).first()
+        if link is None or link.employee_id != employee_id:
+            raise HTTPException(status_code=403, detail="Salary slips are available only to HR or the linked employee")
     item = db.query(models.HRPayrollItem).filter_by(payroll_run_id=run.id, employee_id=employee_id).first()
     if item is None:
         raise HTTPException(status_code=404, detail="Salary slip not found for this employee and period")
