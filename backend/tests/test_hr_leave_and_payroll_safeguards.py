@@ -1,5 +1,6 @@
 """Regression tests for HR leave workflows and payroll state safeguards."""
 import ast
+from typing import get_args
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
@@ -24,8 +25,8 @@ def _profile():
 
 
 def test_paid_and_unpaid_half_day_statuses_are_supported():
-    assert AttendanceStatus("paid_half_day") == "paid_half_day"
-    assert AttendanceStatus("unpaid_half_day") == "unpaid_half_day"
+    assert "paid_half_day" in get_args(AttendanceStatus)
+    assert "unpaid_half_day" in get_args(AttendanceStatus)
 
 
 def test_paid_half_day_does_not_create_absence_deduction():
