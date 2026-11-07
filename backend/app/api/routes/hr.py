@@ -19,7 +19,7 @@ hr_access = Depends(require_area("hr"))
 employee_access = Depends(require_any_area("production", "hr"))
 hr_employee_access = Depends(require_area("hr"))
 
-_CODE_TOKEN = re.compile(r"\\{(SEQ(?::0?[1-9][0-9]?)?|YEAR|TYPE|DEPT)\\}")
+_CODE_TOKEN = re.compile(r"\{(SEQ(?::0?[1-9][0-9]?)?|YEAR|TYPE|DEPT)\}")
 _ALLOWED_CODE_LITERAL = re.compile(r"^[A-Za-z0-9._{}:-]+$")
 
 
