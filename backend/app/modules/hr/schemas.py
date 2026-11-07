@@ -75,6 +75,8 @@ class EmployeeOut(ORMModel):
     employee_type: str
     department: str
     designation: str
+    joining_date: date
+    end_date: date | None = None
     active: bool
 
 class EmployeeSkillOut(ORMModel):
