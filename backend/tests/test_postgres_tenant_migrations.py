@@ -191,7 +191,7 @@ def test_existing_tenant_upgrades_from_previous_head_to_current_head():
                     text("SELECT version_num FROM alembic_version")
                 ).scalar_one()
 
-            assert revision == "hr_payroll_005"
+            assert revision == "hr_timezone_006"
         finally:
             engine.dispose()
     finally:
