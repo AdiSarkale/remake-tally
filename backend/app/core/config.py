@@ -54,6 +54,11 @@ class Settings(BaseSettings):
         if normalized.startswith("postgresql://"):
             normalized = "postgresql+psycopg://" + normalized[len("postgresql://"):]
 
+        # This normalizer is PostgreSQL-specific. Preserve SQLite and any other
+        # supported SQLAlchemy URL schemes exactly as supplied.
+        if not normalized.startswith("postgresql"):
+            return normalized
+
         # Railway's UI may expose TLS as ssl_mode; libpq/psycopg expects sslmode.
         parts = urlsplit(normalized)
         query_items = parse_qsl(parts.query, keep_blank_values=True)
@@ -61,10 +66,9 @@ class Settings(BaseSettings):
             ("sslmode" if key.lower() == "ssl_mode" else key, value)
             for key, value in query_items
         ]
-        normalized = urlunsplit(
+        return urlunsplit(
             (parts.scheme, parts.netloc, parts.path, urlencode(query_items), parts.fragment)
         )
-        return normalized
 
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
