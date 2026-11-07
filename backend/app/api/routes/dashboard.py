@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.api.deps import current_user, require_area
 from app.db.session import get_db
-from app.services.inventory import log_audit
+from app.modules.core.audit import log_audit
 
 
 router = APIRouter(tags=["dashboard"])
