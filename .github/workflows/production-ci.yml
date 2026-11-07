@@ -32,7 +32,10 @@ jobs:
         run: python -m compileall -q backend/app
 
   postgres-migrations:
-    runs-on: ubuntu-latest
+    # Keep the runner's PostgreSQL client on the same major as the PostgreSQL 16
+    # service. Newer pg_dump/pg_restore clients emit settings (for example
+    # transaction_timeout) that PostgreSQL 16 does not understand.
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16
@@ -55,6 +58,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Verify PostgreSQL client compatibility
+        run: |
+          pg_dump --version
+          pg_restore --version
+          pg_dump --version | grep -Eq ' 16[.]'
+          pg_restore --version | grep -Eq ' 16[.]'
       - name: Install backend dependencies
         run: pip install -r requirements.txt
       - name: Create isolated control database
