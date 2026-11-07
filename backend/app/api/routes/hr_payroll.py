@@ -4,6 +4,7 @@ from __future__ import annotations
 import calendar
 import io
 from datetime import date, datetime, time as time_type, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
@@ -57,12 +58,35 @@ def _week_offs(settings: models.HRPayrollSettings) -> list[int]:
         return [5, 6]
 
 
+def _tenant_timezone(db: Session) -> ZoneInfo:
+    settings = _ensure_settings(db)
+    try:
+        return ZoneInfo(settings.timezone or "Asia/Kolkata")
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(status_code=500, detail="Tenant timezone is invalid; update HR payroll settings") from exc
+
+
+def _to_utc(value: datetime | None, tenant_tz: ZoneInfo) -> datetime | None:
+    if value is None:
+        return None
+    local_value = value.replace(tzinfo=tenant_tz) if value.tzinfo is None else value
+    return local_value.astimezone(timezone.utc)
+
+
+def _to_local(value: datetime | None, tenant_tz: ZoneInfo) -> datetime | None:
+    if value is None:
+        return None
+    aware_value = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+    return aware_value.astimezone(tenant_tz)
+
+
 def _settings_output(row: models.HRPayrollSettings) -> dict[str, Any]:
     return {
         "id": row.id,
         "salary_count_mode": row.salary_count_mode,
         "monthly_salary_days": row.monthly_salary_days,
         "week_off_days": _week_offs(row),
+        "timezone": row.timezone or "Asia/Kolkata",
         "updated_at": row.updated_at,
     }
 
@@ -275,14 +299,14 @@ def _run_output(db: Session, run: models.HRPayrollRun, include_items: bool = Tru
 
 def _attendance_output(
     employee: models.Employee, work_date: date, row: models.EmployeeAttendance | None,
-    calendar_type: str, calendar_description: str,
+    calendar_type: str, calendar_description: str, tenant_tz: ZoneInfo,
 ) -> dict[str, Any]:
     return {
         "id": row.id if row else None, "employee_id": employee.id, "employee_code": employee.emp_code,
         "employee_name": employee.name, "work_date": work_date,
         "status": row.status if row else (calendar_type if calendar_type in {"holiday", "week_off"} else "unmarked"),
         "calendar_type": calendar_type, "calendar_description": calendar_description,
-        "punch_in": row.punch_in if row else None, "punch_out": row.punch_out if row else None,
+        "punch_in": _to_local(row.punch_in, tenant_tz) if row else None, "punch_out": _to_local(row.punch_out, tenant_tz) if row else None,
         "overtime_minutes": row.overtime_minutes if row else 0, "note": row.note if row else "",
     }
 
@@ -411,9 +435,11 @@ def _parse_attendance_workbook(
     year: int,
     month: int,
     employees_by_code: dict[str, Any],
+    tenant_tz: ZoneInfo | None = None,
 ) -> list[dict[str, Any]]:
     """Validate the entire workbook before the caller makes any database changes."""
     _validate_period(year, month)
+    tenant_tz = tenant_tz or ZoneInfo("Asia/Kolkata")
     try:
         workbook = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
     except (InvalidFileException, BadZipFile, OSError, ValueError) as exc:
@@ -478,7 +504,7 @@ def _parse_attendance_workbook(
             try:
                 parsed_time = _parse_attendance_excel_time(raw_punch_in)
                 if parsed_time is not None and work_date is not None:
-                    punch_in = datetime.combine(work_date, parsed_time).replace(tzinfo=timezone.utc)
+                    punch_in = datetime.combine(work_date, parsed_time, tzinfo=tenant_tz).astimezone(timezone.utc)
             except ValueError as exc:
                 errors.append(f"Row {row_number}: Punch In {exc}.")
             try:
@@ -536,6 +562,11 @@ def update_payroll_settings(
     row.salary_count_mode = payload.salary_count_mode
     row.monthly_salary_days = payload.monthly_salary_days
     row.week_off_days = ",".join(str(day) for day in payload.week_off_days)
+    try:
+        ZoneInfo(payload.timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(status_code=422, detail="Timezone must be a valid IANA timezone identifier") from exc
+    row.timezone = payload.timezone
     log_audit(db, user.username, "UPDATE", "hr_payroll_settings", payload.salary_count_mode)
     db.commit()
     db.refresh(row)
@@ -678,8 +709,9 @@ def get_monthly_attendance(
     ).all()
     descriptions = {row.work_date: row.description for row in calendar_rows}
     week_off_days = _week_offs(settings)
+    tenant_tz = _tenant_timezone(db)
     return [
-        _attendance_output(employee, day, by_date.get(day), _calendar_type(day, week_off_days, overrides), descriptions.get(day, ""))
+        _attendance_output(employee, day, by_date.get(day), _calendar_type(day, week_off_days, overrides), descriptions.get(day, ""), tenant_tz)
         for day in (date(year, month, number) for number in range(1, end.day + 1))
     ]
 
@@ -720,10 +752,14 @@ async def import_attendance_from_excel(
 
     employees_by_code = {
         row.emp_code.strip().upper(): row
-        for row in db.query(models.Employee).filter(models.Employee.active.is_(True)).all()
+        for row in db.query(models.Employee).filter(
+            models.Employee.active.is_(True),
+            models.Employee.joining_date <= date(year, month, calendar.monthrange(year, month)[1]),
+            (models.Employee.end_date.is_(None)) | (models.Employee.end_date >= date(year, month, 1)),
+        ).all()
     }
     try:
-        rows = _parse_attendance_workbook(content, year, month, employees_by_code)
+        rows = _parse_attendance_workbook(content, year, month, employees_by_code, _tenant_timezone(db))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -775,11 +811,9 @@ def upsert_daily_attendance(
     employee = db.get(models.Employee, payload.employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
-    punch_in, punch_out = payload.punch_in, payload.punch_out
-    if punch_in is not None and punch_in.tzinfo is None:
-        punch_in = punch_in.replace(tzinfo=timezone.utc)
-    if punch_out is not None and punch_out.tzinfo is None:
-        punch_out = punch_out.replace(tzinfo=timezone.utc)
+    tenant_tz = _tenant_timezone(db)
+    punch_in = _to_utc(payload.punch_in, tenant_tz)
+    punch_out = _to_utc(payload.punch_out, tenant_tz)
     if punch_in and punch_out and punch_out <= punch_in:
         raise HTTPException(status_code=422, detail="Punch-out must be after punch-in")
     row = db.query(models.EmployeeAttendance).filter_by(employee_id=payload.employee_id, work_date=payload.work_date).first()
@@ -804,7 +838,7 @@ def upsert_daily_attendance(
     settings = _ensure_settings(db)
     override = db.query(models.HRCalendarDay).filter_by(work_date=payload.work_date).first()
     calendar_type = _calendar_type(payload.work_date, _week_offs(settings), {payload.work_date: override.day_type} if override else {})
-    return _attendance_output(employee, payload.work_date, row, calendar_type, override.description if override else "")
+    return _attendance_output(employee, payload.work_date, row, calendar_type, override.description if override else "", tenant_tz)
 
 
 @router.delete("/attendance/{employee_id}/{work_date}", status_code=204)
@@ -879,7 +913,12 @@ def _missing_payroll_attendance(
     explicit_statuses = {"present", "half_day", "absent", "paid_leave", "unpaid_leave"}
     missing: list[tuple[str, date]] = []
     for employee in salaried_employees:
-        for work_date in scheduled_days:
+        eligible_days = [
+            day for day in scheduled_days
+            if (employee.joining_date is None or day >= employee.joining_date)
+            and (employee.end_date is None or day <= employee.end_date)
+        ]
+        for work_date in eligible_days:
             status = recorded_statuses.get((employee.id, work_date))
             if status not in explicit_statuses:
                 missing.append((employee.emp_code, work_date))
