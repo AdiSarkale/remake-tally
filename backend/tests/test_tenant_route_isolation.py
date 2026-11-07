@@ -1278,6 +1278,31 @@ def test_hr_leave_request_approval_attendance_and_carry_forward(isolated_tenants
     assert leave_type.status_code == 201, leave_type.text
     leave_type_id = leave_type.json()["id"]
 
+    accrual_type = client.post(
+        "/api/v1/hr/leave/types",
+        headers=admin_headers,
+        json={
+            "code": "AL", "name": "Accrued Leave", "is_paid": True,
+            "annual_entitlement": 12, "carry_forward_limit": 0,
+            "accrual_method": "monthly_prorated", "accrual_effective_from": "2026-10-16",
+            "count_week_offs": False, "count_holidays": False,
+            "allow_half_day": True, "active": True,
+        },
+    )
+    assert accrual_type.status_code == 201, accrual_type.text
+    accrual_type_id = accrual_type.json()["id"]
+    accrual = client.post("/api/v1/hr/leave/accruals/run/2026/10", headers=admin_headers)
+    assert accrual.status_code == 200, accrual.text
+    assert accrual.json()["created_count"] == 1
+    assert accrual.json()["total_accrued"] == 0.52
+    accrual_repeat = client.post("/api/v1/hr/leave/accruals/run/2026/10", headers=admin_headers)
+    assert accrual_repeat.status_code == 200, accrual_repeat.text
+    assert accrual_repeat.json()["created_count"] == 0
+    assert accrual_repeat.json()["skipped_existing"] == 1
+    accrued_balance = client.get("/api/v1/hr/leave/balances?year=2026", headers=admin_headers)
+    assert accrued_balance.status_code == 200
+    assert next(row for row in accrued_balance.json() if row["leave_type_id"] == accrual_type_id)["accrued"] == 0.52
+
     balance = client.put(
         "/api/v1/hr/leave/balances",
         headers=admin_headers,
