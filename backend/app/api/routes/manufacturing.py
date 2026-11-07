@@ -223,6 +223,14 @@ def update_employee(employee_id: str, payload: schemas.EmployeeUpdate, db: Sessi
     return row
 
 
+def _employee_has_open_production_assignments(db: Session, employee_id: str) -> bool:
+    """Return whether the employee still owns any unfinished production operation."""
+    return db.query(models.ProductionOrderOperation.id).filter(
+        models.ProductionOrderOperation.assigned_employee_id == employee_id,
+        models.ProductionOrderOperation.completed_qty < models.ProductionOrderOperation.planned_qty,
+    ).first() is not None
+
+
 @router.patch("/employees/{employee_id}/status", response_model=schemas.EmployeeOut)
 def set_employee_status(employee_id: str, payload: schemas.EmployeeStatusUpdate, db: Session = Depends(get_db), user: models.User = hr_employee_access):
     row = db.get(models.Employee, employee_id)
@@ -232,6 +240,11 @@ def set_employee_status(employee_id: str, payload: schemas.EmployeeStatusUpdate,
         return row
     if payload.active:
         _validate_employee_type(db, row.employee_type)
+    elif _employee_has_open_production_assignments(db, row.id):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot deactivate an employee with unfinished production assignments. Reassign or complete those operations first.",
+        )
     row.active = payload.active
     action = "REACTIVATE" if row.active else "DEACTIVATE"
     log_audit(db, user.username, action, "employee", row.emp_code)
