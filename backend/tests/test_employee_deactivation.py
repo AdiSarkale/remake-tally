@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.routes.manufacturing import _employee_has_open_production_assignments
+from app.api.routes.hr import _employee_has_open_production_assignments
 
 
 def _session():
