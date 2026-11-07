@@ -641,7 +641,7 @@ def get_payroll_settings(db: Session = Depends(get_db), user: models.User = hr_a
 
 @router.put("/payroll/settings", response_model=schemas.PayrollSettingsOut)
 def update_payroll_settings(
-    payload: schemas.PayrollSettingsIn, db: Session = Depends(get_db), user: models.User = hr_access
+    payload: schemas.PayrollSettingsIn, db: Session = Depends(get_db), user: models.User = hr_access,
     permission: models.User = Depends(require_permission("hr", "payroll", "write", "tenant")),
 ):
     _ensure_no_pending_payroll_snapshot(db)
@@ -703,7 +703,7 @@ def update_hr_calendar_day(
 
 @router.delete("/calendar/{work_date}", status_code=204)
 def delete_hr_calendar_override(
-    work_date: date, db: Session = Depends(get_db), user: models.User = hr_access
+    work_date: date, db: Session = Depends(get_db), user: models.User = hr_access,
     permission: models.User = Depends(require_permission("hr", "payroll", "write", "tenant")),
 ):
     _ensure_period_not_prepared(db, work_date.year, work_date.month)
@@ -900,7 +900,7 @@ async def import_attendance_from_excel(
 
 @router.put("/attendance", response_model=schemas.EmployeeAttendanceOut)
 def upsert_daily_attendance(
-    payload: schemas.EmployeeAttendanceIn, db: Session = Depends(get_db), user: models.User = hr_access
+    payload: schemas.EmployeeAttendanceIn, db: Session = Depends(get_db), user: models.User = hr_access,
     permission: models.User = Depends(require_permission("hr", "payroll", "write", "tenant")),
 ):
     _ensure_period_not_prepared(db, payload.work_date.year, payload.work_date.month)
