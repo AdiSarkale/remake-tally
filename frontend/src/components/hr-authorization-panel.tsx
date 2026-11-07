@@ -11,7 +11,7 @@ interface Branch { id: string; code: string; name: string; timezone: string; act
 interface OrgAssignment { id: string; employee_id: string; branch_id: string | null; manager_employee_id: string | null; department: string; valid_from: string; valid_to: string | null; created_by: string; }
 interface RoleGrant {
   id: string; role: string; module: string; feature: string; action: string;
-  data_scope: "tenant" | "self" | "department"; allowed: boolean; updated_by: string;
+  data_scope: "tenant" | "self" | "department" | "branch" | "team"; allowed: boolean; updated_by: string;
 }
 const scopes = ["tenant", "department", "branch", "team", "self"] as const;
 
@@ -150,7 +150,7 @@ export function AuthorizationPanel() {
           </div>
         </div>
         <h3 className="font-semibold">Role permission grants</h3>
-        <p className="text-xs text-muted-foreground">A grant is defined by role → module → feature → action → data scope. Setting Allowed to off revokes that exact grant. Branch and team scopes are not available until those relationships exist in the data model.</p>
+        <p className="text-xs text-muted-foreground">A grant is defined by role → module → feature → action → data scope. Setting Allowed to off revokes that exact grant. Branch and team scopes are enforced against effective-dated branch and reporting-manager assignments. Missing relationships fail closed.</p>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <label className="space-y-1 text-sm"><span>Role</span><select className="h-9 w-full rounded-md border bg-background px-3" value={grantForm.role} onChange={(event) => setGrantForm({ ...grantForm, role: event.target.value })}>{["Admin", "HR", "Accountant", "Operator"].map((role) => <option key={role}>{role}</option>)}</select></label>
           <label className="space-y-1 text-sm"><span>Module</span><Input value={grantForm.module} onChange={(event) => setGrantForm({ ...grantForm, module: event.target.value.toLowerCase().replace(/\s+/g, "_") })} /></label>
