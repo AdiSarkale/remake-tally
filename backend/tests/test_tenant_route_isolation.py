@@ -126,7 +126,59 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
             amount=10 if suffix == "a" else 20,
             created_by="admin",
         )
-        db.add_all([user, customer, supplier, product, material, invoice, requisition, payment])
+        module_grants = [
+            models.RolePermissionGrant(
+                role=role.value, module=module, feature="*", action="*",
+                data_scope="tenant", allowed=True, updated_by="test",
+            )
+            for role, modules in deps.ROLE_PERMISSIONS.items()
+            for module in modules
+        ]
+        payroll_grants = [
+            models.RolePermissionGrant(
+                role=role, module="hr", feature="payroll", action=action,
+                data_scope="tenant", allowed=True, updated_by="test",
+            )
+            for role in ("Admin", "HR")
+            for action in ("read", "write", "prepare", "approve", "finalize", "lock", "reverse")
+        ]
+        finance_accounts = [
+            models.FinanceAccount(id=f"salary-expense-{suffix}", code="5100", name="Salary Expense", account_type="expense", active=True, system_account=True, created_by="test"),
+            models.FinanceAccount(id=f"salary-payable-{suffix}", code="2100", name="Salary Payable", account_type="liability", active=True, system_account=True, created_by="test"),
+            models.FinanceAccount(id=f"pf-payable-{suffix}", code="2110", name="PF Payable", account_type="liability", active=True, system_account=True, created_by="test"),
+            models.FinanceAccount(id=f"pt-payable-{suffix}", code="2120", name="PT Payable", account_type="liability", active=True, system_account=True, created_by="test"),
+            models.FinanceAccount(id=f"tds-payable-{suffix}", code="2130", name="TDS Payable", account_type="liability", active=True, system_account=True, created_by="test"),
+        ]
+        payroll_mapping = models.FinancePayrollAccountMapping(
+            id=1, salary_expense_account_id=f"salary-expense-{suffix}",
+            salary_payable_account_id=f"salary-payable-{suffix}",
+            employee_pf_payable_account_id=f"pf-payable-{suffix}",
+            professional_tax_payable_account_id=f"pt-payable-{suffix}",
+            tds_payable_account_id=f"tds-payable-{suffix}", updated_by="test",
+        )
+        leave_grants = []
+        for role in ("Admin", "HR"):
+            for feature, action, scope in (
+                ("leave_types", "read", "tenant"), ("leave_types", "write", "tenant"),
+                ("leave_balances", "read", "tenant"), ("leave_balances", "write", "tenant"),
+                ("leave_requests", "read", "tenant"), ("leave_requests", "approve", "tenant"),
+                ("leave_types", "read", "self"), ("leave_balances", "read", "self"),
+                ("leave_requests", "read", "self"), ("leave_requests", "create", "self"),
+            ):
+                leave_grants.append(models.RolePermissionGrant(
+                    role=role, module="hr", feature=feature, action=action,
+                    data_scope=scope, allowed=True, updated_by="test",
+                ))
+        for feature, action, scope in (
+            ("leave_types", "read", "self"), ("leave_balances", "read", "self"),
+            ("leave_requests", "read", "self"), ("leave_requests", "create", "self"),
+            ("leave_requests", "approve", "department"),
+        ):
+            leave_grants.append(models.RolePermissionGrant(
+                role="Operator", module="hr", feature=feature, action=action,
+                data_scope=scope, allowed=True, updated_by="test",
+            ))
+        db.add_all([user, customer, supplier, product, material, invoice, requisition, payment, *module_grants, *payroll_grants, *leave_grants, *finance_accounts, payroll_mapping])
         db.commit()
         db.close()
 
@@ -924,6 +976,21 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
     finally:
         tenant_a.close()
 
+    tenant_a = tenant_a_session()
+    approver = models.User(
+        username="hr-approver", full_name="HR Approver",
+        password_hash=hash_password("Password@123"), role=models.Role.hr,
+        active=True, must_change_password=False,
+    )
+    tenant_a.add(approver)
+    tenant_a.commit()
+    tenant_a.close()
+    approver_login = client.post(
+        "/api/v1/auth/login",
+        json={"company_code": "AA", "username": "hr-approver", "password": "Password@123"},
+    )
+    assert approver_login.status_code == 200, approver_login.text
+    approver_headers = {"Authorization": f"Bearer {approver_login.json()['access_token']}"}
     settings = client.put(
         "/api/v1/hr/payroll/settings",
         headers=headers,
@@ -999,13 +1066,48 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
     assert item["absence_deduction"] == 1923.08
     assert item["net_pay"] == 44376.92
 
+    prepared = client.post("/api/v1/hr/payroll/runs/2026/10/prepare", headers=headers)
+    assert prepared.status_code == 200, prepared.text
+    assert prepared.json()["status"] == "prepared"
+    frozen_run_id = prepared.json()["id"]
+    assert prepared.json()["items"][0]["monthly_gross"] == 50000
+
+    # The preparer cannot approve their own snapshot.
+    self_approval = client.post(f"/api/v1/hr/payroll/runs/{frozen_run_id}/approve", headers=headers)
+    assert self_approval.status_code == 403
+
+    changed_salary_while_prepared = client.put(
+        f"/api/v1/hr/employees/{employee_id}/salary",
+        headers=headers,
+        json={
+            "annual_salary": 1200000,
+            "basic_pct": 50,
+            "hra_pct": 40,
+            "da_pct": 0,
+            "conveyance_monthly": 1000,
+            "medical_allowance_monthly": 1000,
+            "pf_pct": 12,
+            "professional_tax_monthly": 200,
+            "tds_monthly": 500,
+        },
+    )
+    assert changed_salary_while_prepared.status_code == 409
+
+    approved = client.post(f"/api/v1/hr/payroll/runs/{frozen_run_id}/approve", headers=approver_headers)
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "approved"
+
     finalized = client.post("/api/v1/hr/payroll/runs/2026/10/finalize", headers=headers)
     assert finalized.status_code == 200, finalized.text
     assert finalized.json()["status"] == "finalized"
-    frozen_run_id = finalized.json()["id"]
-    assert finalized.json()["items"][0]["monthly_gross"] == 50000
+    payroll_journals = client.get("/api/v1/finance/journals", headers=headers, params={"source_type": "hr_payroll"})
+    assert payroll_journals.status_code == 200, payroll_journals.text
+    assert len(payroll_journals.json()) == 1
+    original_journal = payroll_journals.json()[0]
+    assert original_journal["journal_no"] == "PAY-202610-R1"
+    assert round(sum(line["debit"] for line in original_journal["lines"]), 2) == round(sum(line["credit"] for line in original_journal["lines"]), 2)
 
-    # A finalization is a snapshot: later salary-profile edits do not rewrite it.
+    # The finalized employee snapshot remains unchanged after later profile edits.
     changed_salary = client.put(
         f"/api/v1/hr/employees/{employee_id}/salary",
         headers=headers,
@@ -1027,10 +1129,35 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
     assert finalized_again.json()["id"] == frozen_run_id
     assert finalized_again.json()["items"][0]["monthly_gross"] == 50000
 
+    locked = client.post(f"/api/v1/hr/payroll/runs/{frozen_run_id}/lock", headers=headers)
+    assert locked.status_code == 200, locked.text
+    assert locked.json()["status"] == "locked"
+
     slip = client.get(f"/api/v1/hr/payroll/slips/{employee_id}/2026/10", headers=headers)
     assert slip.status_code == 200, slip.text
     assert slip.headers["content-type"].startswith("application/pdf")
     assert slip.content.startswith(b"%PDF-")
+
+    reversed_run = client.post(
+        f"/api/v1/hr/payroll/runs/{frozen_run_id}/reverse",
+        headers=headers,
+        json={"reason": "Approved payroll correction required"},
+    )
+    assert reversed_run.status_code == 200, reversed_run.text
+    assert reversed_run.json()["status"] == "reversed"
+    reversal_journals = client.get("/api/v1/finance/journals", headers=headers, params={"source_type": "hr_payroll_reversal"})
+    assert reversal_journals.status_code == 200, reversal_journals.text
+    assert len(reversal_journals.json()) == 1
+    reversal = reversal_journals.json()[0]
+    assert reversal["reversal_of_id"] == original_journal["id"]
+    assert round(sum(line["debit"] for line in reversal["lines"]), 2) == round(sum(line["credit"] for line in reversal["lines"]), 2)
+    slip_after_reversal = client.get(f"/api/v1/hr/payroll/slips/{employee_id}/2026/10", headers=headers)
+    assert slip_after_reversal.status_code == 404
+
+    next_revision = client.post("/api/v1/hr/payroll/runs/2026/10/prepare", headers=headers)
+    assert next_revision.status_code == 200, next_revision.text
+    assert next_revision.json()["revision"] == 2
+    assert next_revision.json()["status"] == "prepared"
 
     # Company B cannot see Company A's employees or salary profiles.
     token_b = _login(client, "BB")
@@ -1116,3 +1243,275 @@ def test_employee_api_reads_and_mutations_are_tenant_scoped(isolated_tenants):
         json={"active": False},
     )
     assert cross_tenant_deactivation.status_code == 404
+
+
+def test_hr_leave_request_approval_attendance_and_carry_forward(isolated_tenants):
+    from app.api.routes.approvals import Department
+
+    client = isolated_tenants["client"]
+    admin_login = _login(client, "AA")
+    admin_headers = {"Authorization": f"Bearer {admin_login['access_token']}"}
+    tenant_a_session, _ = isolated_tenants["sessions"]
+
+    employee_id = "leave-employee-a"
+    tenant = tenant_a_session()
+    try:
+        employee_user = models.User(
+            username="leave-employee", full_name="Leave Employee",
+            password_hash=hash_password("Password@123"), role=models.Role.operator,
+            active=True, must_change_password=False,
+        )
+        approver = models.User(
+            username="leave-approver", full_name="Leave Approver",
+            password_hash=hash_password("Password@123"), role=models.Role.hr,
+            active=True, must_change_password=False,
+        )
+        employee = models.Employee(
+            id=employee_id, emp_code="LEAVE-A-001", name="Leave Employee",
+            employee_type="staff", department="Operations", designation="Operator",
+            joining_date=date(2026, 1, 1), active=True,
+        )
+        department = Department(code="OPS", name="Operations", hod_username="leave-approver", active=True)
+        tenant.add_all([employee_user, approver, employee, department])
+        tenant.commit()
+        employee_user_id = employee_user.id
+    finally:
+        tenant.close()
+
+    link = client.post(
+        "/api/v1/authorization/employee-links",
+        headers=admin_headers,
+        json={"user_id": employee_user_id, "employee_id": employee_id},
+    )
+    assert link.status_code == 201, link.text
+    duplicate_link = client.post(
+        "/api/v1/authorization/employee-links",
+        headers=admin_headers,
+        json={"user_id": employee_user_id, "employee_id": employee_id},
+    )
+    assert duplicate_link.status_code == 409
+
+    leave_type = client.post(
+        "/api/v1/hr/leave/types",
+        headers=admin_headers,
+        json={
+            "code": "CL", "name": "Casual Leave", "is_paid": True,
+            "annual_entitlement": 12, "carry_forward_limit": 4,
+            "count_week_offs": False, "count_holidays": False,
+            "allow_half_day": True, "active": True,
+        },
+    )
+    assert leave_type.status_code == 201, leave_type.text
+    leave_type_id = leave_type.json()["id"]
+
+    accrual_type = client.post(
+        "/api/v1/hr/leave/types",
+        headers=admin_headers,
+        json={
+            "code": "AL", "name": "Accrued Leave", "is_paid": True,
+            "annual_entitlement": 12, "carry_forward_limit": 0,
+            "accrual_method": "monthly_prorated", "accrual_effective_from": "2026-10-16",
+            "count_week_offs": False, "count_holidays": False,
+            "allow_half_day": True, "active": True,
+        },
+    )
+    assert accrual_type.status_code == 201, accrual_type.text
+    accrual_type_id = accrual_type.json()["id"]
+    accrual = client.post("/api/v1/hr/leave/accruals/run/2026/10", headers=admin_headers)
+    assert accrual.status_code == 200, accrual.text
+    assert accrual.json()["created_count"] == 1
+    assert accrual.json()["total_accrued"] == 0.52
+    accrual_repeat = client.post("/api/v1/hr/leave/accruals/run/2026/10", headers=admin_headers)
+    assert accrual_repeat.status_code == 200, accrual_repeat.text
+    assert accrual_repeat.json()["created_count"] == 0
+    assert accrual_repeat.json()["skipped_existing"] == 1
+    accrued_balance = client.get("/api/v1/hr/leave/balances?year=2026", headers=admin_headers)
+    assert accrued_balance.status_code == 200
+    assert next(row for row in accrued_balance.json() if row["leave_type_id"] == accrual_type_id)["accrued"] == 0.52
+
+    balance = client.put(
+        "/api/v1/hr/leave/balances",
+        headers=admin_headers,
+        json={
+            "employee_id": employee_id, "leave_type_id": leave_type_id,
+            "year": 2026, "opening_balance": 5, "accrued": 0, "adjusted": 0,
+        },
+    )
+    assert balance.status_code == 200, balance.text
+
+    employee_login = client.post(
+        "/api/v1/auth/login",
+        json={"company_code": "AA", "username": "leave-employee", "password": "Password@123"},
+    )
+    approver_login = client.post(
+        "/api/v1/auth/login",
+        json={"company_code": "AA", "username": "leave-approver", "password": "Password@123"},
+    )
+    assert employee_login.status_code == 200, employee_login.text
+    assert approver_login.status_code == 200, approver_login.text
+    employee_headers = {"Authorization": f"Bearer {employee_login.json()['access_token']}"}
+    approver_headers = {"Authorization": f"Bearer {approver_login.json()['access_token']}"}
+
+    request = client.post(
+        "/api/v1/hr/leave/requests",
+        headers=employee_headers,
+        json={
+            "leave_type_id": leave_type_id, "start_date": "2026-10-07",
+            "end_date": "2026-10-08", "reason": "Personal work",
+            "approver_username": "forged-approver",
+        },
+    )
+    assert request.status_code == 201, request.text
+    request_id = request.json()["id"]
+    assert request.json()["approver_username"] == "leave-approver"
+    assert request.json()["total_days"] == 2
+
+    overlapping = client.post(
+        "/api/v1/hr/leave/requests",
+        headers=employee_headers,
+        json={
+            "leave_type_id": leave_type_id, "start_date": "2026-10-08",
+            "end_date": "2026-10-08", "reason": "Duplicate request",
+        },
+    )
+    assert overlapping.status_code == 409
+
+    self_decision = client.patch(
+        f"/api/v1/hr/leave/requests/{request_id}",
+        headers=employee_headers,
+        json={"status": "approved", "decision_note": "Self approval"},
+    )
+    assert self_decision.status_code == 403
+
+    decision = client.patch(
+        f"/api/v1/hr/leave/requests/{request_id}",
+        headers=approver_headers,
+        json={"status": "approved", "decision_note": "Approved by HOD"},
+    )
+    assert decision.status_code == 200, decision.text
+    assert decision.json()["status"] == "approved"
+
+    half_day = client.post(
+        "/api/v1/hr/leave/requests",
+        headers=employee_headers,
+        json={
+            "leave_type_id": leave_type_id, "start_date": "2026-10-09",
+            "end_date": "2026-10-09", "half_day": True, "reason": "Personal appointment",
+        },
+    )
+    assert half_day.status_code == 201, half_day.text
+    half_day_decision = client.patch(
+        f"/api/v1/hr/leave/requests/{half_day.json()['id']}",
+        headers=approver_headers,
+        json={"status": "approved", "decision_note": "Half-day approved"},
+    )
+    assert half_day_decision.status_code == 200, half_day_decision.text
+
+    tenant = tenant_a_session()
+    try:
+        attendance = tenant.query(models.EmployeeAttendance).filter(
+            models.EmployeeAttendance.employee_id == employee_id
+        ).order_by(models.EmployeeAttendance.work_date).all()
+        assert [row.status for row in attendance] == ["paid_leave", "paid_leave", "paid_half_day"]
+    finally:
+        tenant.close()
+
+    carried = client.post("/api/v1/hr/leave/balances/carry-forward/2026", headers=admin_headers)
+    assert carried.status_code == 200, carried.text
+    assert len(carried.json()) == 1
+    assert carried.json()[0]["year"] == 2027
+    assert carried.json()[0]["opening_balance"] == 2.5
+    carried_again = client.post("/api/v1/hr/leave/balances/carry-forward/2026", headers=admin_headers)
+    assert carried_again.status_code == 200
+    assert carried_again.json() == []
+
+    non_admin_grants = client.get("/api/v1/authorization/role-grants", headers=employee_headers)
+    assert non_admin_grants.status_code == 403
+    updated_grant = client.put(
+        "/api/v1/authorization/role-grants",
+        headers=admin_headers,
+        json={
+            "role": "Operator", "module": "hr", "feature": "leave_requests",
+            "action": "create", "data_scope": "self", "allowed": False,
+        },
+    )
+    assert updated_grant.status_code == 200, updated_grant.text
+    assert updated_grant.json()["allowed"] is False
+    assert updated_grant.json()["updated_by"] == "admin"
+    revoked_request = client.post(
+        "/api/v1/hr/leave/requests",
+        headers=employee_headers,
+        json={
+            "leave_type_id": leave_type_id, "start_date": "2026-10-12",
+            "end_date": "2026-10-12", "reason": "Permission revocation test",
+        },
+    )
+    assert revoked_request.status_code == 403
+
+
+def test_admin_branch_and_effective_dated_reporting_assignment_apis(isolated_tenants):
+    client = isolated_tenants["client"]
+    TenantASession = isolated_tenants["sessions"][0]
+    admin = _login(client, "AA")
+    headers = {"Authorization": f"Bearer {admin['access_token']}"}
+    db = TenantASession()
+    try:
+        manager = models.Employee(id="org-manager", emp_code="ORG-001", name="Manager", joining_date=date(2026, 1, 1), active=True)
+        report = models.Employee(id="org-report", emp_code="ORG-002", name="Report", joining_date=date(2026, 1, 1), active=True)
+        db.add_all([manager, report])
+        db.commit()
+    finally:
+        db.close()
+
+    branch = client.post("/api/v1/authorization/branches", headers=headers, json={
+        "code": "PUNE", "name": "Pune Branch", "timezone": "Asia/Kolkata", "address": "Pune",
+    })
+    assert branch.status_code == 201, branch.text
+    branch_id = branch.json()["id"]
+
+    manager_assignment = client.post("/api/v1/authorization/employee-org-assignments", headers=headers, json={
+        "employee_id": "org-manager", "branch_id": branch_id, "department": "Operations",
+        "valid_from": "2026-01-01",
+    })
+    assert manager_assignment.status_code == 201, manager_assignment.text
+
+    report_assignment = client.post("/api/v1/authorization/employee-org-assignments", headers=headers, json={
+        "employee_id": "org-report", "branch_id": branch_id, "manager_employee_id": "org-manager",
+        "department": "Operations", "valid_from": "2026-01-01",
+    })
+    assert report_assignment.status_code == 201, report_assignment.text
+
+    cycle = client.post("/api/v1/authorization/employee-org-assignments", headers=headers, json={
+        "employee_id": "org-manager", "branch_id": branch_id, "manager_employee_id": "org-report",
+        "department": "Operations", "valid_from": "2026-02-01",
+    })
+    assert cycle.status_code == 422, cycle.text
+
+    team_grant = client.put("/api/v1/authorization/role-grants", headers=headers, json={
+        "role": "HR", "module": "hr", "feature": "employees", "action": "read",
+        "data_scope": "team", "allowed": True,
+    })
+    assert team_grant.status_code == 200, team_grant.text
+    assert team_grant.json()["data_scope"] == "team"
+
+
+def test_feature_action_grant_can_restrict_one_route_without_revoking_module(isolated_tenants):
+    client = isolated_tenants["client"]
+    admin = _login(client, "AA")
+    headers = {"Authorization": f"Bearer {admin['access_token']}"}
+    revoked = client.put("/api/v1/authorization/role-grants", headers=headers, json={
+        "role": "Admin", "module": "finance", "feature": "customer_payments",
+        "action": "create", "data_scope": "tenant", "allowed": False,
+    })
+    assert revoked.status_code == 200, revoked.text
+
+    # Exact denial overrides the role's legacy-preserving module wildcard grant.
+    denied = client.post("/api/v1/finance/customer-payments", headers=headers, json={
+        "payment_date": "2026-11-07", "customer_id": "missing", "amount": 10,
+        "mode": "UPI", "reference": "", "remarks": "",
+    })
+    assert denied.status_code == 403, denied.text
+
+    # Read access remains granted by the module's baseline wildcard.
+    readable = client.get("/api/v1/finance/customer-payments", headers=headers)
+    assert readable.status_code == 200, readable.text
