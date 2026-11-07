@@ -27,6 +27,12 @@ def upgrade() -> None:
     )
     grants = []
     for role in ("Admin", "HR"):
+        for action in ("read", "write", "prepare", "approve", "finalize", "lock", "reverse"):
+            grants.append({
+                "id": str(uuid.uuid4()), "role": role, "module": "hr",
+                "feature": "payroll", "action": action, "data_scope": "tenant",
+                "allowed": True, "updated_by": "system",
+            })
         for feature, action in (
             ("leave_types", "read"), ("leave_types", "write"),
             ("leave_balances", "read"), ("leave_balances", "write"),
@@ -61,5 +67,5 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.execute(sa.text(
         "DELETE FROM role_permission_grants WHERE updated_by = 'system' "
-        "AND module = 'hr' AND feature IN ('leave_types', 'leave_balances', 'leave_requests')"
+        "AND module = 'hr' AND feature IN ('leave_types', 'leave_balances', 'leave_requests', 'payroll')"
     ))
