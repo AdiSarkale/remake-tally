@@ -1100,6 +1100,12 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
     finalized = client.post("/api/v1/hr/payroll/runs/2026/10/finalize", headers=headers)
     assert finalized.status_code == 200, finalized.text
     assert finalized.json()["status"] == "finalized"
+    payroll_journals = client.get("/api/v1/finance/journals", headers=headers, params={"source_type": "hr_payroll"})
+    assert payroll_journals.status_code == 200, payroll_journals.text
+    assert len(payroll_journals.json()) == 1
+    original_journal = payroll_journals.json()[0]
+    assert original_journal["journal_no"] == "PAY-202610-R1"
+    assert round(sum(line["debit"] for line in original_journal["lines"]), 2) == round(sum(line["credit"] for line in original_journal["lines"]), 2)
 
     # The finalized employee snapshot remains unchanged after later profile edits.
     changed_salary = client.put(
@@ -1139,6 +1145,12 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
     )
     assert reversed_run.status_code == 200, reversed_run.text
     assert reversed_run.json()["status"] == "reversed"
+    reversal_journals = client.get("/api/v1/finance/journals", headers=headers, params={"source_type": "hr_payroll_reversal"})
+    assert reversal_journals.status_code == 200, reversal_journals.text
+    assert len(reversal_journals.json()) == 1
+    reversal = reversal_journals.json()[0]
+    assert reversal["reversal_of_id"] == original_journal["id"]
+    assert round(sum(line["debit"] for line in reversal["lines"]), 2) == round(sum(line["credit"] for line in reversal["lines"]), 2)
     slip_after_reversal = client.get(f"/api/v1/hr/payroll/slips/{employee_id}/2026/10", headers=headers)
     assert slip_after_reversal.status_code == 404
 
