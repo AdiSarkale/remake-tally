@@ -26,6 +26,7 @@ from app import models, schemas
 from app.api.deps import current_user, require_area, require_permission
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
+from app.modules.finance.payroll_posting import post_payroll_journal, reverse_payroll_journal
 
 router = APIRouter(prefix="/hr", tags=["hr", "payroll"])
 hr_access = Depends(require_permission("hr", "payroll", "read", "tenant"))
@@ -1153,9 +1154,15 @@ def finalize_monthly_payroll(
     if run.status != "approved":
         raise HTTPException(409, "Payroll must be prepared and approved by a different authorized user before finalization")
     now = datetime.now(timezone.utc)
+    try:
+        journal = post_payroll_journal(db, run, user.username)
+        db.flush()
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
     run.status = "finalized"
     run.finalized_at = now
-    log_audit(db, user.username, "FINALIZE", "hr_payroll_run", f"{year}-{month:02d}; revision={run.revision}")
+    log_audit(db, user.username, "FINALIZE", "hr_payroll_run", f"{year}-{month:02d}; revision={run.revision}; finance_journal={journal.journal_no}")
     db.commit()
     db.refresh(run)
     return _run_output(db, run)
@@ -1197,10 +1204,16 @@ def reverse_monthly_payroll(
         raise HTTPException(404, "Payroll run not found")
     if run.status not in {"finalized", "locked"}:
         raise HTTPException(409, "Only finalized or locked payroll can be reversed")
+    try:
+        reversal_journal = reverse_payroll_journal(db, run, user.username, reason)
+        db.flush()
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
     run.status = "reversed"
     run.reversed_at = datetime.now(timezone.utc)
     run.reversal_reason = reason
-    log_audit(db, user.username, "REVERSE", "hr_payroll_run", f"{run.year}-{run.month:02d}; revision={run.revision}; reason={reason}")
+    log_audit(db, user.username, "REVERSE", "hr_payroll_run", f"{run.year}-{run.month:02d}; revision={run.revision}; reason={reason}; finance_reversal={reversal_journal.journal_no}")
     db.commit()
     db.refresh(run)
     return _run_output(db, run)
