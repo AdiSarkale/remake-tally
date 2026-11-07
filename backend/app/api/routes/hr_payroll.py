@@ -759,6 +759,7 @@ def upsert_employee_salary(
     employee = db.get(models.Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
+    _ensure_no_pending_payroll_snapshot(db)
     annual = _dec(payload.annual_salary)
     gross = annual / Decimal("12")
     basic = gross * _dec(payload.basic_pct) / Decimal("100")
