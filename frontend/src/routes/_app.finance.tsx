@@ -10,6 +10,7 @@ import { BackendGap, ModuleTabs, NumInput, QueryTable, SelectField, runMutation 
 import * as H from "@/lib/api/hooks";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency, formatDate, todayIso } from "@/lib/format";
+import { FinanceLedgerPanel } from "@/components/finance-ledger-panel";
 
 export const Route = createFileRoute("/_app/finance")({
   head: () => ({
@@ -38,9 +39,10 @@ function FinancePage() {
           { value: "ap", label: "Payables", content: <Payables /> },
           { value: "rcpt", label: "Receipts", content: <Receipts canEdit={canEdit} /> },
           { value: "pay", label: "Payments", content: <Payments canEdit={canEdit} /> },
+          { value: "ledger", label: "Ledger & Payroll", content: <FinanceLedgerPanel canEdit={canEdit} /> },
         ]}
       />
-      <BackendGap>chart of accounts and general-ledger transactions are not exposed by the backend; finance here covers AR/AP and payments.</BackendGap>
+      <p className="text-xs text-muted-foreground">Payroll journals are posted automatically at payroll finalization and reversed through the controlled payroll reversal workflow.</p>
     </div>
   );
 }
