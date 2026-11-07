@@ -14,6 +14,8 @@ from app.services.inventory import next_batch_no
 
 router = APIRouter(prefix="/manufacturing", tags=["manufacturing"])
 guard = Depends(require_area("production"))
+employee_access = Depends(require_any_area("production", "hr"))
+hr_employee_access = Depends(require_area("hr"))
 
 
 def _auto_employee(db: Session, operation: models.RoutingOperation) -> models.Employee | None:
