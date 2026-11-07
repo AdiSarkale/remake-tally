@@ -128,7 +128,7 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
         )
         module_grants = [
             models.RolePermissionGrant(
-                role=role.value, module=module, feature="access", action="read",
+                role=role.value, module=module, feature="*", action="*",
                 data_scope="tenant", allowed=True, updated_by="test",
             )
             for role, modules in deps.ROLE_PERMISSIONS.items()
