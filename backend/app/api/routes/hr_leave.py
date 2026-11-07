@@ -322,6 +322,13 @@ def decide_leave_request(
     if employee is None or leave_type is None:
         raise HTTPException(409, "Leave request references missing employee or leave type")
     if payload.status == "approved":
+        frozen_payroll = db.query(models.HRPayrollRun).filter(
+            models.HRPayrollRun.year == row.start_date.year,
+            models.HRPayrollRun.month == row.start_date.month,
+            models.HRPayrollRun.status.in_(["prepared", "approved", "finalized", "locked"]),
+        ).first()
+        if frozen_payroll is not None:
+            raise HTTPException(409, "Payroll snapshot exists for this period; leave cannot be approved after payroll preparation")
         balance = db.query(HRLeaveBalance).filter_by(
             employee_id=row.employee_id, leave_type_id=row.leave_type_id, year=row.start_date.year
         ).with_for_update().first()
