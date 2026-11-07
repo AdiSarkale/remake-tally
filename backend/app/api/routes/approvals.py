@@ -11,7 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, Session
 from app import models
 from app.api.deps import current_user, require_area
 from app.db.session import Base, get_db
-from app.services.inventory import log_audit
+from app.modules.core.audit import log_audit
 
 
 class Department(Base):
