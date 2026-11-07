@@ -126,7 +126,14 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
             amount=10 if suffix == "a" else 20,
             created_by="admin",
         )
-        db.add_all([user, customer, supplier, product, material, invoice, requisition, payment])
+        payroll_grants = [
+            models.RolePermissionGrant(
+                role="Admin", module="hr", feature="payroll", action=action,
+                data_scope="tenant", allowed=True, updated_by="test",
+            )
+            for action in ("read", "write", "prepare", "approve", "finalize", "lock", "reverse")
+        ]
+        db.add_all([user, customer, supplier, product, material, invoice, requisition, payment, *payroll_grants])
         db.commit()
         db.close()
 
