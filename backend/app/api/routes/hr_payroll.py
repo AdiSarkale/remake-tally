@@ -1207,11 +1207,8 @@ def download_salary_slip(
     employee_id: str, year: int, month: int, db: Session = Depends(get_db), user: models.User = Depends(current_user)
 ):
     _validate_period(year, month)
-    run = db.query(models.HRPayrollRun).filter(
-        models.HRPayrollRun.year == year, models.HRPayrollRun.month == month,
-        models.HRPayrollRun.status.in_(["finalized", "locked"]),
-    ).order_by(models.HRPayrollRun.revision.desc()).first()
-    if run is None:
+    run = _latest_payroll_run(db, year, month)
+    if run is None or run.status not in {"finalized", "locked"}:
         raise HTTPException(status_code=404, detail="Finalize payroll for this month before downloading salary slips")
     if user.role not in (models.Role.admin, models.Role.hr):
         link = db.query(models.EmployeeUserLink).filter_by(user_id=user.id).first()
