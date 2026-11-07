@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api.deps import require_any_area, require_area
+from app.api.deps import apply_employee_scope, require_any_area, require_area
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
 
@@ -144,6 +144,8 @@ def list_employees(include_inactive: bool = False, db: Session = Depends(get_db)
             raise HTTPException(403, "Historical employee access requires Admin or HR authorization")
     else:
         query = query.filter(models.Employee.active.is_(True))
+    module = "hr" if user.role in (models.Role.admin, models.Role.hr) else "production"
+    query = apply_employee_scope(query, db, user, module, "employees", "read")
     return query.order_by(models.Employee.emp_code).all()
 
 
