@@ -181,7 +181,16 @@ def _calculate_employee_monthly_payroll(
     elif salary_count_mode == "calendar_days":
         employment_fraction = Decimal(eligible_calendar_days) / Decimal(month_end.day)
     elif salary_count_mode == "fixed_days":
-        employment_fraction = min(Decimal("1"), Decimal(len(eligible_working_days)) / Decimal(divisor))
+        # The fixed divisor is a daily-rate basis, not a proxy for how much
+        # of the month the employee was employed. Compare eligible scheduled
+        # days with the month's full scheduled days so a full-month employee
+        # receives a full monthly gross even when the month has fewer than 26
+        # scheduled days (for example, because of holidays).
+        full_month_working_days = len(scheduled_days)
+        employment_fraction = (
+            Decimal(len(eligible_working_days)) / Decimal(full_month_working_days)
+            if full_month_working_days else Decimal("0")
+        )
     else:
         full_month_working_days = len(scheduled_days)
         employment_fraction = (
