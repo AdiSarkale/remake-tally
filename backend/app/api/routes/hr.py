@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api.deps import apply_employee_scope, require_any_area, require_area
+from app.api.deps import apply_employee_scope, employee_scope_ids, require_any_area, require_area
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
 
@@ -93,9 +93,20 @@ def find_possible_employee_duplicates(name: str, db: Session = Depends(get_db), 
     normalized = " ".join(name.split()).casefold()
     if len(normalized) < 3:
         return []
-    return db.query(models.Employee).filter(
+    query = db.query(models.Employee).filter(
         func.lower(func.trim(models.Employee.name)) == normalized,
-    ).order_by(models.Employee.emp_code).limit(20).all()
+    )
+    module = "hr" if user.role in (models.Role.admin, models.Role.hr) else "production"
+    query = apply_employee_scope(query, db, user, module, "employees", "read")
+    return query.order_by(models.Employee.emp_code).limit(20).all()
+
+
+def _enforce_employee_scope(db: Session, user: models.User, employee_id: str, action: str) -> None:
+    """Fail closed when a role's employee permission is scoped below tenant level."""
+    module = "hr" if user.role in (models.Role.admin, models.Role.hr) else "production"
+    scoped_ids = employee_scope_ids(db, user, module, "employees", action)
+    if scoped_ids is not None and employee_id not in scoped_ids:
+        raise HTTPException(403, "Employee is outside your configured access scope")
 
 
 def _validate_employee_type(db: Session, code: str, *, allow_inactive_existing: bool = False) -> models.EmployeeTypeDefinition:
@@ -183,6 +194,7 @@ def update_employee(employee_id: str, payload: schemas.EmployeeUpdate, db: Sessi
     row = db.get(models.Employee, employee_id)
     if row is None:
         raise HTTPException(404, "Employee not found")
+    _enforce_employee_scope(db, user, row.id, "update")
     name = payload.name.strip()
     if not name:
         raise HTTPException(422, "Employee name is required")
@@ -222,6 +234,7 @@ def set_employee_status(employee_id: str, payload: schemas.EmployeeStatusUpdate,
     row = db.get(models.Employee, employee_id)
     if row is None:
         raise HTTPException(404, "Employee not found")
+    _enforce_employee_scope(db, user, row.id, "update")
     if row.active == payload.active:
         return row
     if payload.active:
@@ -239,6 +252,7 @@ def set_employee_status(employee_id: str, payload: schemas.EmployeeStatusUpdate,
 def list_employee_skills(employee_id: str, db: Session = Depends(get_db), user: models.User = employee_access):
     if not db.get(models.Employee, employee_id):
         raise HTTPException(404, "Employee not found")
+    _enforce_employee_scope(db, user, employee_id, "read")
     return db.query(models.EmployeeSkill).filter_by(employee_id=employee_id).order_by(models.EmployeeSkill.skill).all()
 
 
@@ -246,6 +260,7 @@ def list_employee_skills(employee_id: str, db: Session = Depends(get_db), user: 
 def add_employee_skill(employee_id: str, payload: schemas.EmployeeSkillIn, db: Session = Depends(get_db), user: models.User = hr_employee_access):
     if not db.get(models.Employee, employee_id):
         raise HTTPException(404, "Employee not found")
+    _enforce_employee_scope(db, user, employee_id, "create")
     if db.query(models.EmployeeSkill).filter_by(employee_id=employee_id, skill=payload.skill).first():
         raise HTTPException(400, "Employee already has this skill")
     row = models.EmployeeSkill(employee_id=employee_id, **payload.model_dump())
