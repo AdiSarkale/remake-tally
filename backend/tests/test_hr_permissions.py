@@ -164,3 +164,107 @@ def test_employee_branch_and_hierarchical_team_scopes_are_relationship_backed():
     finally:
         db.close()
         engine.dispose()
+
+
+
+def test_attendance_delete_route_has_explicit_payroll_write_permission():
+    import inspect
+    from fastapi import HTTPException
+    from fastapi.params import Depends as DependsParam
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.api.routes.hr_payroll import clear_daily_attendance
+
+    permission_parameter = inspect.signature(clear_daily_attendance).parameters["permission"]
+    dependency = permission_parameter.default
+    assert isinstance(dependency, DependsParam)
+    assert dependency.dependency is not None
+    assert inspect.getclosurevars(dependency.dependency).nonlocals == {
+        "module": "hr", "feature": "payroll", "action": "write", "data_scope": "tenant",
+    }
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        user = models.User(
+            id="delete-user", username="delete-user", full_name="HR User",
+            password_hash="test", role=models.Role.hr, active=True,
+            must_change_password=False,
+        )
+        db.add(user)
+        db.commit()
+
+        with pytest.raises(HTTPException) as denied:
+            dependency.dependency(user=user, db=db)
+        assert denied.value.status_code == 403
+
+        db.add(models.RolePermissionGrant(
+            role="HR", module="hr", feature="payroll", action="write",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ))
+        db.commit()
+        assert dependency.dependency(user=user, db=db) is user
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_employee_scope_resolution_uses_assignment_effective_on_requested_work_date():
+    from datetime import date
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.api.deps import employee_scope_ids
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        branch_a = models.HRBranch(code="A", name="Branch A")
+        branch_b = models.HRBranch(code="B", name="Branch B")
+        actor = models.Employee(id="scope-actor", emp_code="S001", name="Manager")
+        target = models.Employee(id="scope-target", emp_code="S002", name="Transferred employee")
+        user = models.User(
+            id="scope-user", username="scope-user", full_name="Manager",
+            password_hash="test", role=models.Role.hr, active=True,
+            must_change_password=False,
+        )
+        db.add_all([branch_a, branch_b, actor, target, user])
+        db.flush()
+        db.add(models.EmployeeUserLink(
+            user_id=user.id, employee_id=actor.id, created_by="admin",
+        ))
+        db.add(models.RolePermissionGrant(
+            role="HR", module="hr", feature="employees", action="read",
+            data_scope="branch", allowed=True, updated_by="test",
+        ))
+        db.add_all([
+            models.EmployeeOrgAssignment(
+                employee_id=actor.id, branch_id=branch_a.id, department="Ops",
+                valid_from=date(2026, 1, 1), created_by="admin",
+            ),
+            models.EmployeeOrgAssignment(
+                employee_id=target.id, branch_id=branch_a.id, department="Ops",
+                valid_from=date(2026, 1, 1), valid_to=date(2026, 6, 30), created_by="admin",
+            ),
+            models.EmployeeOrgAssignment(
+                employee_id=target.id, branch_id=branch_b.id, department="Ops",
+                valid_from=date(2026, 7, 1), created_by="admin",
+            ),
+        ])
+        db.commit()
+
+        historical_ids = set(employee_scope_ids(
+            db, user, "hr", "employees", "read", as_of_date=date(2026, 6, 30),
+        ) or [])
+        current_ids = set(employee_scope_ids(
+            db, user, "hr", "employees", "read", as_of_date=date(2026, 7, 1),
+        ) or [])
+
+        assert historical_ids == {actor.id, target.id}
+        assert current_ids == {actor.id}
+    finally:
+        db.close()
+        engine.dispose()
