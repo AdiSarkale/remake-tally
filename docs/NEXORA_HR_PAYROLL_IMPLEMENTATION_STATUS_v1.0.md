@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.5  
+**Version:** 1.6  
 **Status:** Active implementation tracker  
 **Baseline:** 8 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -345,6 +345,25 @@ A workstream may be marked **Implemented** only when all applicable items are co
 
 ---
 
+## 10. High-value implementation roadmap
+
+The prioritized forward-looking HR implementation plan is maintained as a separate document so that the active status tracker remains focused on current implementation state.
+
+**Primary roadmap:** [Nexora HR — High-Value Implementation Roadmap v1.0](NEXORA_HR_HIGH_VALUE_IMPLEMENTATION_ROADMAP_v1.0.md)
+
+The roadmap prioritizes work in four phases:
+
+1. **P0 — Workforce foundations:** baseline verification, shift and roster management, attendance corrections, effective-dated salary revisions, additional earnings/deductions, leave and holiday improvements, and payroll validation/reconciliation.
+2. **P1 — Employee lifecycle:** onboarding, employee documents, transfers, promotions, separation and full-and-final settlement.
+3. **P1 — Manufacturing workforce intelligence:** training, certifications, skill matrix, workforce qualification and shift/overtime reporting.
+4. **P2 — Advanced HR and compliance:** statutory payroll, tax declarations, recruitment, performance, advances, expenses, loans, benefits and grievances.
+
+The roadmap is a proposed implementation sequence, not evidence that these features are already implemented or an authorization to modify locked specifications. Each package requires a baseline review, approved change request, detailed feature specification, acceptance criteria, and the Definition of Done before it is marked complete.
+
+**Immediate next deliverable:** Nexora HR Enhancement Specification v1.1 — Phase P0.1: Shift & Roster Management. First audit the existing attendance model and confirm shift-based calculation compatibility before implementation.
+
+---
+
 ## 10. Change log
 
 | Version | Date | Change |
@@ -355,6 +374,7 @@ A workstream may be marked **Implemented** only when all applicable items are co
 | 1.3 | 8 November 2026 | Records the final Payroll smoke navigation fix integrated through PR #30 and the latest CI rerun status. |
 | 1.4 | 8 November 2026 | Records successful latest integrated CI: backend, tenant isolation, PostgreSQL migrations/provisioning, frontend typecheck/build and Playwright smoke suite passed. |
 | 1.5 | 8 November 2026 | Retires module wildcard authorization fallback with exact route grants; adds payroll-to-Finance reversal regression coverage, HOD Playwright approval smoke coverage and explicit PF/PT/TDS non-certification notice; records CI run 42483216968 passing and remaining manual staging verification. |
+| 1.6 | 8 November 2026 | Adds a dedicated high-value HR implementation roadmap and links it from this tracker; records the phased P0/P1/P2 sequence and the immediate P0.1 shift-and-roster specification deliverable. |
 
 ## 11. Integration and verification record
 
