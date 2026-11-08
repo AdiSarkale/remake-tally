@@ -28,7 +28,7 @@ ROLE_MODULES = {
 # require_any_area. Only actual route actions are seeded.
 MODULE_FEATURE_ACTIONS = {
     "masters": {
-        "overview": {"read", "create", "update", "delete"},  # BOM collection/detail
+        "bom": {"read", "create", "update", "delete"},
         "customers": {"read", "create", "update", "delete"},
         "suppliers": {"read", "create", "update", "delete"},
         "products": {"read", "create", "update"},
@@ -55,13 +55,15 @@ MODULE_FEATURE_ACTIONS = {
         "production": {"update"},
         "reports": {"read"},
     },
-    "scrap": {"overview": {"read", "create"}},
+    "scrap": {"scrap": {"read", "create"}},
     "sales": {
-        "overview": {"read", "create", "update", "delete"},
-        "lookup": {"read"},
-        "next_number": {"read"},
+        "customer_pos": {"read", "create", "update", "delete"},
+        "delivery": {"read"},
+        "deliveries": {"read"},
+        "dispatches": {"read", "create", "update"},
+        "quotations": {"read", "update"},
+        "sales_orders": {"read", "create", "update"},
         "invoices": {"read", "create", "update"},
-        "from_quotation": {"create"},
     },
     "finance": {
         "customer_payments": {"read", "create"},
@@ -73,8 +75,9 @@ MODULE_FEATURE_ACTIONS = {
         "journals": {"read"},
     },
     "settings": {
-        "overview": {"read", "update", "create"},
-        "me": {"create"},
+        "settings": {"read", "update"},
+        "audit": {"read"},
+        "users": {"update", "create"},
     },
     "hr": {
         "employee_code_config": {"read", "update"},
