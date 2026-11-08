@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.4  
+**Version:** 1.5  
 **Status:** Active implementation tracker  
 **Baseline:** 8 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -21,11 +21,11 @@ The existing HR foundation and payroll workspace are in place. The next phase is
 |---|---|---|
 | Employee master and lifecycle | Implemented in the current baseline | Maintain regression coverage |
 | Employee skills and production linkage | Implemented | Preserve cross-module ownership |
-| Payroll, attendance, calendar, payslips and leave workflows | Implemented as the current payroll foundation | Add Maharashtra statutory configuration after compliance review |
+| Payroll, attendance, calendar, payslips and leave workflows | Implemented as the current payroll foundation; PF/PT/TDS remain manual/configured and non-certified | Add effective-dated statutory rules only after qualified compliance review |\n| Payroll-to-Finance reversal | **Implemented** — linked opposite journal is posted atomically with payroll reversal | Preserve journal linkage and regression coverage |
 | Tenant timezone | Implemented; defaults to `Asia/Kolkata`; branch records also store IANA timezones | Payroll still uses the tenant timezone; branch-specific payroll timezone behavior remains future work |
 | Audit service integration | Implemented for the covered HR/P1 events | Expand the event catalogue as new capabilities are added |
 | Branch/team data scopes | **Implemented in the P0 branch** | Admin must configure verified employee assignments; no legacy auto-backfill |
-| Granular feature/action authorization | **Implemented as an override-capable framework; compatibility fallback remains** | Complete role-by-role least-privilege matrix and remove legacy wildcard fallback when approved |
+| Granular feature/action authorization | **Exact route grants enforced; legacy wildcard fallback retired in migration 015** | Review and approve narrower role-specific access profiles; add explicit grants for every new protected route |
 | Automatic leave accrual | **Implemented for monthly and monthly-prorated policies** | HR triggers each accrual period; background scheduling and annual-upfront automation remain out of scope |
 | Statutory payroll jurisdiction | **Not implemented as a jurisdiction-aware ruleset** | Introduce Maharashtra as configuration 1, with an extensible jurisdiction model |
 
@@ -134,7 +134,7 @@ Scope filtering is applied to employee lists and leave balance/request collectio
 
 ## 4. Workstream B — Granular authorization
 
-**Status: Implemented with backward-compatible migration**
+**Status: Implemented — exact route grants enforced and legacy wildcard fallback retired**
 
 The P0 implementation adds persisted role grants at module, feature, action and data-scope level.
 
@@ -164,21 +164,20 @@ Persisted grant fields:
 - Admin UI to manage role grants and their data scopes.
 - Tenant isolation and regression tests for denial, role boundaries, route action mapping and grant revocation.
 
-### Migration behavior and honest limitation
+### Migration behavior and current boundary
 
-The migration seeds compatibility wildcard grants from the existing role/module matrix so existing users do not unexpectedly lose access during the transition. Exact feature/action grants can then narrow or deny individual capabilities.
+Migration `p0_authz_exact_015` seeds exact feature/action grants for the module-guarded route inventory using the existing role-to-module access matrix, then removes legacy `feature='*' / action='*'` grants. The backend route guard no longer falls back to wildcard access: an unregistered route/action fails closed. Existing explicit grants (including HR payroll and leave scopes) are preserved.
 
-**This means the framework is implemented, but the full least-privilege conversion is not yet complete.** The old module-level wildcard fallback remains active for routes without an exact grant. A role-by-role feature/action matrix must be reviewed and approved before wildcard defaults are removed; removing them prematurely could break existing ERP workflows.
+**The technical wildcard migration is complete, but the business-level least-privilege review is not.** This migration preserves the legacy role/module boundary at route level; it does not invent job-specific restrictions that have not been approved. Admin should review the explicit role/feature/action matrix and narrow it where required.
 
 ### Remaining authorization work
 
-1. Approve the complete role-by-role feature/action matrix for every ERP module.
-2. Replace remaining compatibility wildcard grants with explicit grants after route inventory and regression testing.
-3. Review routes that use bespoke role checks or do not use the common module guard.
-4. Extend feature/action checks to new background jobs, exports and integration endpoints as they are introduced.
-5. Add permission administration UX for bulk profile management only after the permission registry is stable.
+1. Review and approve narrower role-specific feature/action grants; the wildcard fallback is already retired.
+2. Review routes that use bespoke role checks or do not use the common module guard.
+3. Extend explicit feature/action checks to new background jobs, exports and integration endpoints as they are introduced.
+4. Add permission administration UX for bulk profile management only after the permission registry is stable.
 
-**Status:** Persisted granular grant framework, route enforcement, scoped grants, migration compatibility and Admin management UI implemented. Full removal of legacy wildcard access remains a controlled follow-up, not a completed claim.
+**Status:** Exact feature/action grants, route enforcement, scoped grants and Admin management UI implemented. Legacy wildcard grants have been removed. Role-specific least-privilege tuning and routes using bespoke guards remain review items.
 
 ---
 
@@ -231,7 +230,7 @@ The current v1 leave year is calendar-year based. A leave request cannot span tw
 
 ## 6. Workstream D — Statutory payroll jurisdiction
 
-**Status: NOT IMPLEMENTED as a jurisdiction-aware statutory ruleset.**
+**Status: NOT IMPLEMENTED as a certified jurisdiction-aware statutory ruleset.**\n\nCurrent PF, Professional Tax (PT) and TDS values remain configured/manual deductions. The payroll UI now labels them as non-certified and instructs users to verify jurisdiction, eligibility, effective dates and current rules before live finalization. No statutory-compliance claim is made.
 
 **Confirmed product decision:** Maharashtra is the first statutory payroll jurisdiction and will be **Configuration 1**. The design must support additional jurisdictions later without changing the core payroll calculation engine.
 
@@ -286,10 +285,10 @@ Before production use, every statutory rule, threshold, slab, contribution rate,
 |---:|---|---|
 | 1 | Verify P0 branch integration and run full CI | Confirm migrations, tenant isolation, backend and frontend behavior |
 | 2 | Configure real branch and reporting-manager assignments | Existing employees are not auto-assigned |
-| 3 | Approve role-by-role feature/action matrix | Required before removing compatibility wildcard grants |
+| 3 | Review and approve role-by-role feature/action matrix | Technical wildcard retirement is complete; business-level least-privilege tuning remains |
 | 4 | Reconcile legacy leave balances and run first monthly accrual | Prevent duplicate opening credits |
 | 5 | Decide whether monthly accrual should be scheduled | Current implementation is HR-triggered |
-| 6 | Specify Maharashtra statutory rule model and obtain compliance validation | Statutory values must not be guessed |
+| 6 | Specify Maharashtra statutory rule model and obtain compliance validation | PF/PT/TDS remain manual until qualified validation is complete |
 | 7 | Implement jurisdiction configuration and Maharashtra Configuration 1 | Make payroll jurisdiction-aware |
 | 8 | Extend branch/team scopes to future employee-backed exports and reports | Maintain consistent server-side scope enforcement |
 
@@ -351,7 +350,7 @@ A workstream may be marked **Implemented** only when all applicable items are co
 | 1.1 | 8 November 2026 | Updated after P0 integration into the PR #27 head branch: records branch/team scopes, granular authorization framework and monthly/pro-rata leave accrual as implemented, with operational and migration limitations explicitly retained. |
 | 1.2 | 8 November 2026 | Records follow-up branch-scope regression coverage, Playwright smoke selector corrections and actual CI outcomes. |
 | 1.3 | 8 November 2026 | Records the final Payroll smoke navigation fix integrated through PR #30 and the latest CI rerun status. |
-| 1.4 | 8 November 2026 | Records successful latest integrated CI: backend, tenant isolation, PostgreSQL migrations/provisioning, frontend typecheck/build and Playwright smoke suite passed. |
+| 1.4 | 8 November 2026 | Records successful latest integrated CI: backend, tenant isolation, PostgreSQL migrations/provisioning, frontend typecheck/build and Playwright smoke suite passed. |\n| 1.5 | 8 November 2026 | Retires module wildcard authorization fallback with exact route grants; adds payroll-to-Finance reversal regression coverage, HOD Playwright approval smoke coverage and explicit PF/PT/TDS non-certification notice; records remaining manual staging verification. |
 
 ## 11. Integration and verification record
 
