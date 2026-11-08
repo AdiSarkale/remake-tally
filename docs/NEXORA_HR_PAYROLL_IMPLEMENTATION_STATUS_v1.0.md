@@ -8,7 +8,8 @@
 **Integration PR:** [#27](https://github.com/AdiSarkale/remake-tally/pull/27) — open, not merged into `main`  
 **Audience:** GodlyKO and Adi Sarkale  
 **Purpose:** One shared reference for completed HR/Payroll work, remaining gaps, implementation decisions, ownership, and verification. Both project contributors should read this before changing HR, Payroll, authorization, or related data models.
-**Approved product decisions:** [Nexora HR — Final Product Decision Register v1.0](NEXORA_HR_DECISION_REGISTER_v1.0.md) — records 39 initial decisions, 8 follow-up clarifications, accepted dependencies and post-MVP deferrals.  \n**P0.1 architecture:** [Nexora HR — P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md) — complete architecture baseline for contributor review; implementation and verification remain pending.
+**Approved product decisions:** [Nexora HR — Final Product Decision Register v1.0](NEXORA_HR_DECISION_REGISTER_v1.0.md) — records 39 initial decisions, 8 follow-up clarifications, accepted dependencies and post-MVP deferrals.  
+**P0.1 architecture:** [Nexora HR — P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md) — complete architecture baseline for contributor review; implementation and verification remain pending.
 
 > This is an implementation tracker, not a claim that every planned capability is complete. “Merged” means present in the repository baseline; it does not mean this document independently reran every test or verified production deployment.
 
@@ -394,7 +395,9 @@ The specification records the static audit of the existing attendance model, API
 | 1.6 | 8 November 2026 | Adds a dedicated high-value HR implementation roadmap and links it from this tracker; records the phased P0/P1/P2 sequence and the immediate P0.1 shift-and-roster specification deliverable. |
 | 1.7 | 8 November 2026 | Links the P0.1 Shift & Roster Enhancement Specification; records the attendance/payroll source audit, identified risks, draft design, test matrix and joint decisions required before implementation. |
 | 1.8 | 8 November 2026 | Records the first two P0 audit remediations: Excel punch-out timezone conversion and attendance DELETE write authorization; updates the regression expectation and explicitly records that CI has not yet been run. |
-| 1.9 | 8 November 2026 | Adds a per-import IANA timezone selector, tenant-timezone default, API validation and audit provenance; adds selected-timezone conversion regression coverage. CI remains pending. |\n| 1.10 | 9 November 2026 | Links the approved HR Decision Register v1.0 and records the 39 product decisions, eight follow-up clarifications, accepted dependencies and post-MVP deferrals. |\n| 1.11 | 9 November 2026 | Adds the complete P0.1 Architecture & MVP Implementation Specification v1.0; updates the next gate to contributor review and baseline verification. Architecture is documented; implementation and CI remain pending. |
+| 1.9 | 8 November 2026 | Adds a per-import IANA timezone selector, tenant-timezone default, API validation and audit provenance; adds selected-timezone conversion regression coverage. CI remains pending. |
+| 1.10 | 9 November 2026 | Links the approved HR Decision Register v1.0 and records the 39 product decisions, eight follow-up clarifications, accepted dependencies and post-MVP deferrals. |
+| 1.11 | 9 November 2026 | Adds the complete P0.1 Architecture & MVP Implementation Specification v1.0; updates the next gate to contributor review and baseline verification. Architecture is documented; implementation and CI remain pending. |
 
 ## 11. Integration and verification record
 
