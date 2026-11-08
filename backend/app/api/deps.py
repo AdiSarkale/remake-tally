@@ -82,10 +82,17 @@ def _route_feature_action(request: Request) -> tuple[str, str]:
     else:
         module_resource = parts[0].replace("-", "_")
         child_resource = parts[1] if len(parts) > 1 else ""
-        # These are utility/action paths within their parent feature, not
-        # separate permission domains. Dynamic IDs likewise retain the parent.
+        # These routers represent a single feature at their root. Their
+        # remaining path components are IDs or utility endpoints.
+        root_features = {
+            "bom", "customer_pos", "delivery", "deliveries", "dispatches",
+            "quotations", "sales_orders", "scrap", "users", "settings",
+            "audit", "dashboard", "approvals",
+        }
         utility_segments = {"lookup", "next-number", "from-quotation", "me"}
-        if not child_resource or child_resource.startswith("{") or child_resource in utility_segments:
+        if module_resource in root_features or not child_resource:
+            feature = module_resource
+        elif child_resource.startswith("{") or child_resource in utility_segments:
             feature = module_resource
         else:
             feature = child_resource.replace("-", "_")
