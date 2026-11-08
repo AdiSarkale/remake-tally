@@ -832,6 +832,7 @@ def download_attendance_template(
 async def import_attendance_from_excel(
     year: int = Query(ge=2000, le=2100),
     month: int = Query(ge=1, le=12),
+    import_timezone: str | None = Query(default=None, min_length=1, max_length=64),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: models.User = hr_access,
@@ -839,6 +840,11 @@ async def import_attendance_from_excel(
 ):
     _validate_period(year, month)
     _ensure_period_not_prepared(db, year, month)
+    selected_timezone = import_timezone or _ensure_settings(db).timezone or "Asia/Kolkata"
+    try:
+        import_tz = ZoneInfo(selected_timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(status_code=422, detail="Import timezone must be a valid IANA timezone identifier") from exc
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=415, detail="Upload an .xlsx Excel workbook using the MiniTally attendance template.")
     content = await file.read(_MAX_ATTENDANCE_IMPORT_BYTES + 1)
@@ -855,7 +861,7 @@ async def import_attendance_from_excel(
         ).all()
     }
     try:
-        rows = _parse_attendance_workbook(content, year, month, employees_by_code, _tenant_timezone(db))
+        rows = _parse_attendance_workbook(content, year, month, employees_by_code, import_tz)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -887,7 +893,7 @@ async def import_attendance_from_excel(
                 updated += 1
         log_audit(
             db, user.username, "IMPORT", "employee_attendance",
-            f"{year}-{month:02d}: rows={len(rows)}, created={created}, updated={updated}, cleared={cleared}",
+            f"{year}-{month:02d}: timezone={selected_timezone}, rows={len(rows)}, created={created}, updated={updated}, cleared={cleared}",
         )
         db.commit()
     except IntegrityError as exc:
