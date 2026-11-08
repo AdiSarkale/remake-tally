@@ -596,7 +596,7 @@ def _parse_attendance_workbook(
             try:
                 parsed_time = _parse_attendance_excel_time(raw_punch_out)
                 if parsed_time is not None and work_date is not None:
-                    punch_out = datetime.combine(work_date, parsed_time).replace(tzinfo=timezone.utc)
+                    punch_out = datetime.combine(work_date, parsed_time, tzinfo=tenant_tz).astimezone(timezone.utc)
             except ValueError as exc:
                 errors.append(f"Row {row_number}: Punch Out {exc}.")
             if punch_in is not None and punch_out is not None and punch_out <= punch_in:
@@ -941,7 +941,8 @@ def upsert_daily_attendance(
 
 @router.delete("/attendance/{employee_id}/{work_date}", status_code=204)
 def clear_daily_attendance(
-    employee_id: str, work_date: date, db: Session = Depends(get_db), user: models.User = hr_access
+    employee_id: str, work_date: date, db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "write", "tenant")),
 ):
     employee = db.get(models.Employee, employee_id)
     if employee is None:
