@@ -17,8 +17,9 @@ not a release sign-off.
 - Employee data scope enforcement supports `tenant`, `self`, `department`, `branch` and hierarchical `team` scopes. Self requires an account-to-employee link; branch/team require effective-dated organisation assignments.
 - `hr_branches` stores tenant-local branches. `employee_org_assignments` stores effective-dated branch, department and manager relationships. New assignments close the prior active assignment and reject reporting cycles.
 - Admin APIs manage branches and employee organisation assignments. Existing employees are intentionally not auto-assigned; HR/Admin must configure their real relationships.
-- Route-level authorization derives a feature from the resource path and an action from the HTTP method or explicit workflow transition. Exact feature/action grants override a compatibility wildcard grant seeded from the old role matrix.
-- This is a safe migration path, not yet a fully least-privilege redesign: legacy module roles still receive wildcard defaults until the business approves a role-by-role feature matrix. Admin can explicitly deny individual feature/action grants.
+- Route-level authorization derives a feature from the resource path and an action from the HTTP method or explicit workflow transition.
+- Migration `p0_authz_exact_015` seeds exact feature/action grants for the module-guarded route inventory using the legacy role-to-module boundary, then removes module wildcard grants. The backend now fails closed when an exact grant is missing.
+- Existing explicit grants are preserved; Admin can explicitly deny individual feature/action grants. The technical wildcard migration is complete. Business owners must still review whether the preserved route-level access is least-privilege for each job role.
 
 ## Leave management
 
@@ -66,11 +67,11 @@ Additional controls:
 
 Payroll limitations:
 - Existing legacy finalized runs remain legacy-finalized and are not retroactively assigned an approver.
-- Payroll finalization posts a balanced Finance journal using tenant payroll account mappings. Payroll reversal posts a linked opposite journal in the same transaction; legacy finalized payroll without an original journal cannot be reversed through this integrated path.
-- PF/PT/TDS calculations remain configured/manual and are not represented as statutory-compliance certified.
+- Payroll finalization posts a balanced Finance journal using tenant payroll account mappings. Payroll reversal already posts a linked opposite journal in the same transaction; the endpoint rejects missing/unposted original journals and the original payroll snapshot remains preserved. New regression tests verify opposite debit/credit lines, linkage, idempotency and fail-closed behavior for missing journals.
+- PF/PT/TDS calculations remain configured/manual and are not represented as statutory-compliance certified. The Payroll UI now displays an explicit non-certification warning; no statutory auto-calculation is enabled.
 - No automatic bank payment, payslip email delivery or statutory filing is included.
 
-## Frontend implementation\n\nThe HR workspace includes Leave, Admin Access Control (branch, reporting assignments and role grants), and payroll state-transition controls. Finance includes chart-of-accounts, payroll account mapping and journal history. Frontend typecheck and production build have passed on earlier commits; the latest changes are under CI verification. Manual browser verification across employee, HOD, HR, Admin and Finance personas remains outstanding.\n\n## Required verification before P0 sign-off
+## Frontend implementation\n\nThe HR workspace includes Leave, Admin Access Control (branch, reporting assignments and role grants), and payroll state-transition controls. Finance includes chart-of-accounts, payroll account mapping and journal history. The Playwright smoke suite now covers employee self-service, HOD leave approval, HR leave/payroll administration, Admin access control and Finance journal history. These browser tests use API mocks; a manual staging walkthrough with real tenant data and authenticated accounts remains outstanding.\n\n## Required verification before P0 sign-off
 
 - Run full backend unit and integration tests.
 - Run tenant PostgreSQL migration tests against a real disposable PostgreSQL instance.
@@ -111,8 +112,9 @@ Before statutory auto-calculation can be enabled, each tenant must specify its o
 ## Browser workflow verification
 
 A Playwright smoke suite runs in CI against the frontend with isolated API mocks. It checks:
-- Operator/employee can open Leave self-service but cannot see policy administration or Access Control.
+- Employee/operator can open Leave self-service but cannot see policy administration or Access Control.
+- HOD/operator can approve a pending request assigned to their login; the test verifies the decision API call and updated status.
 - HR can open Leave policy administration and Payroll but cannot see Access Control.
 - Admin can open branch/reporting assignment controls and Finance ledger/journal history.
 
-These are browser-level UI smoke tests, not end-to-end backend integration. The final release still requires a manual staging walkthrough with real tenant data and authenticated Employee, HOD, HR, Admin and Finance accounts, including leave submission/decision, account mapping, payroll approval/finalization/reversal, and journal reconciliation.
+These are browser-level UI smoke tests, not end-to-end backend integration or manual staging sign-off. The final release still requires a manual walkthrough with real tenant data and authenticated Employee, HOD, HR, Admin and Finance accounts, including leave submission/decision, account mapping, payroll approval/finalization/reversal, and journal reconciliation.
