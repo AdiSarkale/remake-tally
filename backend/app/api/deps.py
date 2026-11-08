@@ -182,6 +182,7 @@ def enforce_employee_data_scope(
     user: models.User,
     employee_id: str,
     data_scope: str,
+    as_of_date: date | None = None,
 ) -> None:
     """Enforce only scopes backed by persisted employee relationships."""
     if data_scope == "tenant":
@@ -197,14 +198,15 @@ def enforce_employee_data_scope(
     target = db.get(models.Employee, employee_id)
     if actor is None or target is None:
         raise HTTPException(status_code=403, detail="Employee relationship is unavailable")
-    settings = db.get(models.HRPayrollSettings, 1)
-    try:
-        today = datetime.now(ZoneInfo(settings.timezone if settings else "Asia/Kolkata")).date()
-    except ZoneInfoNotFoundError as exc:
-        raise HTTPException(status_code=500, detail="Tenant timezone is invalid") from exc
+    if as_of_date is None:
+        settings = db.get(models.HRPayrollSettings, 1)
+        try:
+            as_of_date = datetime.now(ZoneInfo(settings.timezone if settings else "Asia/Kolkata")).date()
+        except ZoneInfoNotFoundError as exc:
+            raise HTTPException(status_code=500, detail="Tenant timezone is invalid") from exc
     assignments = db.query(EmployeeOrgAssignment).filter(
-        EmployeeOrgAssignment.valid_from <= today,
-        (EmployeeOrgAssignment.valid_to.is_(None) | (EmployeeOrgAssignment.valid_to >= today)),
+        EmployeeOrgAssignment.valid_from <= as_of_date,
+        (EmployeeOrgAssignment.valid_to.is_(None) | (EmployeeOrgAssignment.valid_to >= as_of_date)),
     ).all()
     current = {row.employee_id: row for row in assignments}
     actor_assignment = current.get(actor_link.employee_id)
@@ -239,6 +241,7 @@ def enforce_employee_data_scope(
 
 def employee_scope_ids(
     db: Session, user: models.User, module: str, feature: str, action: str,
+    as_of_date: date | None = None,
 ) -> list[str] | None:
     """Return employee IDs for exact scoped grants; None means tenant-wide."""
     exact_grants = db.query(RolePermissionGrant).filter_by(
@@ -262,14 +265,15 @@ def employee_scope_ids(
         return []
     employees = db.query(models.Employee).all()
     employee_by_id = {employee.id: employee for employee in employees}
-    settings = db.get(models.HRPayrollSettings, 1)
-    try:
-        today = datetime.now(ZoneInfo(settings.timezone if settings else "Asia/Kolkata")).date()
-    except ZoneInfoNotFoundError as exc:
-        raise HTTPException(status_code=500, detail="Tenant timezone is invalid") from exc
+    if as_of_date is None:
+        settings = db.get(models.HRPayrollSettings, 1)
+        try:
+            as_of_date = datetime.now(ZoneInfo(settings.timezone if settings else "Asia/Kolkata")).date()
+        except ZoneInfoNotFoundError as exc:
+            raise HTTPException(status_code=500, detail="Tenant timezone is invalid") from exc
     assignments = db.query(EmployeeOrgAssignment).filter(
-        EmployeeOrgAssignment.valid_from <= today,
-        (EmployeeOrgAssignment.valid_to.is_(None) | (EmployeeOrgAssignment.valid_to >= today)),
+        EmployeeOrgAssignment.valid_from <= as_of_date,
+        (EmployeeOrgAssignment.valid_to.is_(None) | (EmployeeOrgAssignment.valid_to >= as_of_date)),
     ).all()
     current = {row.employee_id: row for row in assignments}
     actor = employee_by_id.get(link.employee_id)
