@@ -109,10 +109,10 @@ Track separately from feature delivery:
 
 | ID | Required action | Status recorded in tracker |
 |---|---|---|
-| AUD-05 | Verify punch-in and punch-out use the selected import timezone consistently | Code correction committed; CI/test verification pending. |
-| AUD-06 | Verify attendance DELETE requires write authorization | Code correction committed; CI/test verification pending. |
-| AUD-07 | Extend employee branch/team scope checks to all attendance-backed endpoints, imports, exports and new P0.1 routes | Core branch/team scope exists; attendance/new-route coverage must be explicitly verified. |
-| AUD-08 | Ensure payroll day counters exclude attendance outside the employee employment period | Verify/fix in payroll regression work. |
+| AUD-05 | Verify punch-in and punch-out use the selected import timezone consistently | **Verified** — both fields use selected IANA timezone; regression tests passed. |
+| AUD-06 | Verify attendance DELETE requires write authorization | **Verified** — exact payroll write dependency and denial/allow regression test passed. |
+| AUD-07 | Extend employee branch/team scope checks to all attendance-backed endpoints, imports, exports and new P0.1 routes | **Existing attendance routes verified** — monthly read, manual upsert, DELETE and Excel import enforce effective-date employee scopes. Blank template contains no employee data. New P0.1 routes must apply the same backend scope checks. |
+| AUD-08 | Ensure payroll day counters exclude attendance outside the employee employment period | **Verified** — counters and overtime exclude pre-joining/post-exit attendance; regression test passed. |
 
 Do not describe these as verified until actual test and CI evidence is recorded.
 
