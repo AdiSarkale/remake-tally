@@ -855,7 +855,7 @@ Rules:
 
 ### 11.4 Suggested exact feature grants
 
-- `hr.shifts.read/write` (the implemented shift catalog API uses exact tenant grants; do not add a wildcard fallback)
+- `hr.shifts.read/write` (implemented; exact tenant grants required for catalog read and mutation; no wildcard fallback)
 - `hr.shift_assignments.view/create/edit/close`
 - `hr.rosters.view/generate/override/cancel`
 - `hr.attendance.view/event_create/summary_edit/correct/delete/import/export`
@@ -1340,7 +1340,7 @@ A test plan is not a test result. Do not mark CI passed until the run exists and
 |---|---|---|
 | P0.1-00 Baseline verification | Re-run current tests/CI for existing timezone and DELETE fixes; verify branch/team scope on attendance routes; verify AUD-08 | **Complete** — AUD-05–AUD-08 verified; integrated CI and tenant-isolation checks passed. |
 | P0.1-01 Schema/migrations | Initial slice delivered: shift types, break rules, assignments, roster entries and workforce policy versions. Attendance event, import batch, anomaly, correction, overtime, comp-leave credit and payroll daily snapshot tables remain subsequent migrations. | **In progress** — migration `p0_hr_shift_roster_016` and PostgreSQL migration/provisioning CI passed. |
-| P0.1-02 Shift catalog | Shift type and break configuration APIs/UI | Permission and audit tests pass. |
+| P0.1-02 Shift catalog | Backend shift type and break-rule APIs delivered; catalog UI remains pending | **Backend complete and CI-verified** — exact `hr.shifts.read/write` grants, audit events, duplicate handling, immutable identifiers and schedule-lock safeguards. 132 backend tests passed, 5 skipped; tenant isolation, PostgreSQL migrations and integrated CI passed. |
 | P0.1-03 Assignment engine | Department defaults, employee overrides, effective dates and conflict validation | **Core resolver implemented and unit-tested** — APIs, audit integration and authorization wiring remain pending. |
 | P0.1-04 Roster engine | Idempotent generation, date overrides, weekly-off/holiday states | Roster constraints and scope tests pass. |
 | P0.1-05 Timezone engine | Branch timezone with tenant fallback, overnight boundaries, branch-scoped import context | **Shift-window core implemented** — UTC boundary and DST rejection tests pass; branch-aware attendance/import context remains pending. |
