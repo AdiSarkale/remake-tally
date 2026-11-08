@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.8  
+**Version:** 1.9  
 **Status:** Active implementation tracker  
 **Baseline:** 8 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -372,6 +372,10 @@ The specification records the static audit of the existing attendance model, API
 - Commits: `30958a60b09c2ab57b625c9a6b9b00901a33aab1` (backend fixes) and `11ea3c2923068ff0cc694b4ec756c0e85c4030e5` (regression assertion).
 - **Verification limitation:** These commits were made through the repository file API. The test suite and CI have not yet been run for these changes; do not treat them as verified until CI passes.
 
+**Import timezone selection requirement (8 November 2026):** Attendance Excel import now accepts an explicit IANA timezone via the `import_timezone` query parameter. The UI presents a timezone selector for each import, preselected from the tenant's configured timezone; the API retains tenant-timezone fallback for older clients. Both punch-in and punch-out are interpreted in the selected import timezone, converted to UTC for storage, and the selected timezone is included in the import audit event. Attendance display remains governed by the configured tenant timezone; this is not a per-row display-timezone feature.
+- Commits: `5bb6098f0fc491d09f3dc4e653ef773ea1868b64` (API), `e1aeb0b9d068f4b4103b753d895e26c0ba3c4d8d` and `99ac198212957b4b2935ff0187cb5d3d95784f83` (UI), `54a0a53d634e0ab50ffd43041e54b511115efaf7` (selected-timezone regression test).
+- **Verification limitation:** No test suite or CI run has yet verified this feature.
+
 **Next action:** Jointly resolve the seven decisions in Section 19 of the P0.1 specification, then approve the detailed design and begin the corrective tasks before shift/roster implementation.
 
 ---
@@ -389,6 +393,7 @@ The specification records the static audit of the existing attendance model, API
 | 1.6 | 8 November 2026 | Adds a dedicated high-value HR implementation roadmap and links it from this tracker; records the phased P0/P1/P2 sequence and the immediate P0.1 shift-and-roster specification deliverable. |
 | 1.7 | 8 November 2026 | Links the P0.1 Shift & Roster Enhancement Specification; records the attendance/payroll source audit, identified risks, draft design, test matrix and joint decisions required before implementation. |
 | 1.8 | 8 November 2026 | Records the first two P0 audit remediations: Excel punch-out timezone conversion and attendance DELETE write authorization; updates the regression expectation and explicitly records that CI has not yet been run. |
+| 1.9 | 8 November 2026 | Adds a per-import IANA timezone selector, tenant-timezone default, API validation and audit provenance; adds selected-timezone conversion regression coverage. CI remains pending. |
 
 ## 11. Integration and verification record
 
