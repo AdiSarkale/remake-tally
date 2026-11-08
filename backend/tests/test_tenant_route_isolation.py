@@ -165,6 +165,28 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
             professional_tax_payable_account_id=f"pt-payable-{suffix}",
             tds_payable_account_id=f"tds-payable-{suffix}", updated_by="test",
         )
+        shift_employee = models.Employee(
+            id=f"shift-employee-{suffix}", emp_code=f"SHIFT-{suffix.upper()}",
+            name=f"{company_label} Shift Employee", joining_date=date(2026, 1, 1), active=True,
+        )
+        shift_type = models.HRShiftType(
+            id=f"shift-type-{suffix}", code="DAY", name="Day Shift",
+            start_time=__import__("datetime").time(9), end_time=__import__("datetime").time(17),
+            end_day_offset=0, active=True, created_by="admin",
+        )
+        shift_assignment = models.HRShiftAssignment(
+            id=f"shift-assignment-{suffix}", scope_type="employee",
+            employee_id=shift_employee.id, branch_id=None, department=None,
+            shift_type_id=shift_type.id, weekdays=[0, 1, 2, 3, 4],
+            valid_from=date(2026, 1, 1), valid_to=None, created_by="admin",
+        )
+        shift_assignment_grants = [
+            models.RolePermissionGrant(
+                role="Admin", module="hr", feature="shift_assignments",
+                action=action, data_scope="tenant", allowed=True, updated_by="test",
+            )
+            for action in ("read", "write")
+        ]
         leave_grants = []
         for role in ("Admin", "HR"):
             for feature, action, scope in (
@@ -187,7 +209,7 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
                 role="Operator", module="hr", feature=feature, action=action,
                 data_scope=scope, allowed=True, updated_by="test",
             ))
-        db.add_all([user, customer, supplier, product, material, invoice, requisition, payment, *module_grants, *payroll_grants, *leave_grants, *finance_accounts, payroll_mapping])
+        db.add_all([user, customer, supplier, product, material, invoice, requisition, payment, *module_grants, *payroll_grants, *leave_grants, *finance_accounts, payroll_mapping, shift_employee, shift_type, shift_assignment, *shift_assignment_grants])
         db.commit()
         db.close()
 
@@ -251,6 +273,7 @@ def test_route_db_dependency_is_tenant_scoped(isolated_tenants):
         ("/api/v1/sales/invoices", lambda rows: [r["invoice_no"] for r in rows], "INV-A", "INV-B"),
         ("/api/v1/purchasing/requisitions", lambda rows: [r["pr_no"] for r in rows], "PR-A", "PR-B"),
         ("/api/v1/finance/customer-payments", lambda rows: [r["payment_no"] for r in rows], "CPAY-A", "CPAY-B"),
+        ("/api/v1/hr/shift-assignments", lambda rows: [r["id"] for r in rows], "shift-assignment-a", "shift-assignment-b"),
     ]
 
     for path, extract, expected_a, expected_b in checks:
