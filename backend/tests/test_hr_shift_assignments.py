@@ -201,7 +201,7 @@ def test_assignment_creation_rejects_overlapping_future_or_ambiguous_periods(db)
     create_shift_assignment(
         db, scope_type="employee", employee_id=employee.id, branch_id=branch.id,
         shift_type_id=first_shift.id, weekdays=[0, 1, 2, 3, 4],
-        valid_from=date(2026, 1, 1), valid_to=None, created_by="admin",
+        valid_from=date(2026, 2, 1), valid_to=None, created_by="admin",
     )
     db.flush()
 
@@ -209,7 +209,7 @@ def test_assignment_creation_rejects_overlapping_future_or_ambiguous_periods(db)
         create_shift_assignment(
             db, scope_type="employee", employee_id=employee.id, branch_id=branch.id,
             shift_type_id=second_shift.id, weekdays=[0, 1, 2, 3, 4],
-            valid_from=date(2025, 12, 1), valid_to=None, created_by="admin",
+            valid_from=date(2026, 1, 15), valid_to=None, created_by="admin",
         )
 
 
