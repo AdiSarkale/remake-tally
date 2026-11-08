@@ -3,7 +3,7 @@
 
 **Document ID:** NEX-HR-ENH-001  
 **Version:** 1.1 — P0.1  
-**Status:** Draft for joint review  
+**Status:** Historical audit and design draft — superseded for approved MVP architecture by [P0.1 Architecture Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md)  
 **Date:** 8 November 2026  
 **Module:** HR & Payroll  
 **Priority:** P0.1  
@@ -13,6 +13,8 @@
 **Repository branch audited:** `docs/hr-phase-2-implementation-status`
 
 > This is an enhancement specification for review. It does not replace or silently modify the locked HR baseline specification. Implementation must begin only after the scope, decisions, migrations and acceptance criteria are approved by both project contributors.
+
+> **Document status note (9 November 2026):** Retained for its existing attendance/payroll source audit and design history. Its proposed defaults and Section 19 decision questions are superseded by the approved [HR Decision Register v1.0](NEXORA_HR_DECISION_REGISTER_v1.0.md) and the completed [P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md). Use the architecture specification for current MVP design. No implementation or test completion is implied.
 
 ---
 
@@ -761,6 +763,6 @@ No implementation should infer these decisions silently.
 
 | Version | Date | Change |
 |---|---|---|
-| 1.1 — P0.1 | 8 November 2026 | Initial draft. Includes audit of current attendance/payroll implementation, risk register, proposed shift/roster model, payroll integration contract, migration plan, test matrix and decisions requiring joint approval. |
+| 1.1 — P0.1 | 8 November 2026 | Initial draft. Includes audit of current attendance/payroll implementation, risk register, proposed shift/roster model, payroll integration contract, migration plan, test matrix and decisions requiring joint approval. |\n| 1.1 status note | 9 November 2026 | Retained as historical audit/design draft. Approved decisions and MVP architecture are now maintained in Decision Register v1.0 and P0.1 Architecture Specification v1.0. |
 
 **End of specification.**
