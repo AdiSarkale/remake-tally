@@ -855,7 +855,7 @@ Rules:
 
 ### 11.4 Suggested exact feature grants
 
-- `hr.shifts.view/create/edit/deactivate`
+- `hr.shifts.read/write` (the implemented shift catalog API uses exact tenant grants; do not add a wildcard fallback)
 - `hr.shift_assignments.view/create/edit/close`
 - `hr.rosters.view/generate/override/cancel`
 - `hr.attendance.view/event_create/summary_edit/correct/delete/import/export`
@@ -865,7 +865,7 @@ Rules:
 - `hr.workforce_settings.view/edit`
 - `hr.payroll.view/prepare/approve/finalize/lock/reverse`
 
-The exact registry naming must match existing repository conventions. Do not add a wildcard permission fallback.
+The implemented shift catalog endpoints require exact `hr.shifts.read` or `hr.shifts.write` grants with `tenant` scope. Role grants are configured explicitly by Admin in Authorization; no role receives access implicitly. Do not add a wildcard permission fallback.
 
 ---
 
@@ -877,13 +877,16 @@ All endpoints are proposed under the existing `/api/v1/hr` route prefix. Exact n
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| GET | `/shifts` | List active/inactive shifts within scope. |
-| POST | `/shifts` | Create shift and break definitions. |
-| GET | `/shifts/{shift_id}` | Read shift detail and version history. |
-| PATCH | `/shifts/{shift_id}` | Update through versioned configuration. |
-| POST | `/shifts/{shift_id}/deactivate` | Deactivate; no hard delete. |
+| GET | `/shifts` | List active shifts; optionally include inactive definitions. |
+| POST | `/shifts` | Create a shift definition. |
+| GET | `/shifts/{shift_id}` | Read shift detail including its break rules. |
+| PUT | `/shifts/{shift_id}` | Update name/timing before the shift is referenced; code is immutable. |
+| PATCH | `/shifts/{shift_id}/active` | Activate/deactivate without hard delete. |
+| GET/POST | `/shifts/{shift_id}/break-rules` | List or create paid/unpaid break rules. |
+| PUT | `/shifts/{shift_id}/break-rules/{rule_id}` | Update a break rule; code is immutable. |
+| PATCH | `/shifts/{shift_id}/break-rules/{rule_id}/active` | Activate/deactivate a break rule without hard delete. |
 
-Create payload concept:
+Create shift payload concept (break rules are managed through the nested break-rule endpoints):
 
 ```json
 {
