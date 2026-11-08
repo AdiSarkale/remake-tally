@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.13  
+**Version:** 1.14  
 **Status:** Active implementation tracker  
 **Baseline:** 9 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -384,15 +384,15 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - Added tenant-scoped shift catalog endpoints under `/api/v1/hr/shifts`: list/detail/create/update, soft activation/deactivation, and nested break-rule list/create/update/soft-deactivation. Protected with exact `hr.shifts.read` and `hr.shifts.write` tenant grants; all mutations write audit events.
 - Shift code and break-rule code are immutable identifiers. Shift schedule changes are rejected once assignments or rosters reference the shift; create a new shift code for revised hours. Break schedules must fit within the shift's local-time window.
 - Added shift catalog API tests for authorization, CRUD, duplicate handling, soft deactivation, immutable identifiers, schedule locking, overnight break validation and invalid shift durations.
-- **Not yet implemented:** shift CRUD/assignment APIs and UI, roster generation/persistence workflows, date-specific roster management, raw attendance events/import batches/anomalies/corrections/overtime/comp-leave/payroll daily snapshots, and branch-aware attendance import. The new schema is the first P0.1 slice, not the entire P0.1 scope.
+- **Not yet implemented:** shift catalog UI, employee/department assignment APIs and UI, roster generation/persistence workflows, date-specific roster management, raw attendance events/import batches/anomalies/corrections/overtime/comp-leave/payroll daily snapshots, and branch-aware attendance import. The catalog APIs are backend-only and do not yet provide a usable HR screen.
 
 **Verification evidence:**
 
-- Integrated [Minitally CI #42519334843](https://github.com/AdiSarkale/remake-tally/actions/runs/42519334843) passed backend tests/compilation, PostgreSQL control-plane and tenant migrations, tenant provisioning lifecycle, frontend typecheck/build and Playwright smoke.
-- [Backend Tests #42519334777](https://github.com/AdiSarkale/remake-tally/actions/runs/42519334777) and [Backend tenant isolation #42519334849](https://github.com/AdiSarkale/remake-tally/actions/runs/42519334849) passed. Both backend suites reported **123 passed, 5 skipped and 7 warnings**.
-- The initial integration test run exposed one test-fixture date mismatch; the fixture was corrected to test an actual overlap within the employee's employment dates, and the final CI runs above passed.
+- For the shift catalog API slice, integrated [Minitally CI #42521044228](https://github.com/AdiSarkale/remake-tally/actions/runs/42521044228) passed backend, PostgreSQL migration and frontend jobs.
+- [Backend Tests #42521044237](https://github.com/AdiSarkale/remake-tally/actions/runs/42521044237) and [Backend tenant isolation #42521044351](https://github.com/AdiSarkale/remake-tally/actions/runs/42521044351) passed. Both backend suites reported **132 passed, 5 skipped and 7 warnings**.
+- The first tenant-isolation run exposed a test assertion that incorrectly expected every write endpoint to remain denied after the write grant had already been added. The test was corrected to verify denial before grants and success after both exact grants; all final workflows passed.
 
-**Next action:** Build shift assignment APIs with employee/branch/team scope enforcement and audit logging. Then implement idempotent roster generation and date-specific overrides before integrating raw attendance events. Shift catalog UI and integrated CI verification of the new API slice remain pending. Preserve approved decisions and do not implement deferred T-01 to T-14 by assumption.
+**Next action:** Build shift assignment APIs with employee/branch/team scope enforcement and audit logging. Then implement idempotent roster generation and date-specific overrides before integrating raw attendance events. Shift catalog UI remains pending. Preserve approved decisions and do not implement deferred T-01 to T-14 by assumption.
 
 ---
 
@@ -414,6 +414,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 | 1.11 | 9 November 2026 | Adds the complete P0.1 Architecture & MVP Implementation Specification v1.0; updates the next gate to contributor review and baseline verification. Architecture is documented; implementation and CI remain pending. |
 | 1.12 | 9 November 2026 | Records owner authorization, AUD-05–AUD-08 verification, effective-dated attendance scopes, initial P0.1 shift schema and assignment resolver, and passing integrated CI. Shift APIs, roster generation and attendance-event integration remain pending. |
 | 1.13 | 9 November 2026 | Adds the P0.1 shift catalog and break-rule API slice, exact permission requirements, audit behavior, immutable identifiers and assignment/roster schedule-lock safeguards. CI for this slice is pending. |
+| 1.14 | 9 November 2026 | Records passing integrated CI, PostgreSQL migration checks, backend and tenant-isolation tests (132 passed, 5 skipped each), and clarifies that shift catalog UI and assignment/roster workflows remain pending. |
 
 ## 11. Integration and verification record
 
