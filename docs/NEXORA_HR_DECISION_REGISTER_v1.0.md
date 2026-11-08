@@ -5,7 +5,8 @@
 **Status:** Product decisions approved; technical specification and implementation pending  
 **Decision baseline:** 9 November 2026  
 **Module:** HR & Payroll  
-**P0.1 architecture:** [Nexora HR P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md)  \n**Historical audit/design draft:** [P0.1 Shift & Roster Enhancement Specification v1.1](NEXORA_HR_ENHANCEMENT_SPECIFICATION_v1.1_P0.1_SHIFT_ROSTER.md)  
+**P0.1 architecture:** [Nexora HR P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md)  
+**Historical audit/design draft:** [P0.1 Shift & Roster Enhancement Specification v1.1](NEXORA_HR_ENHANCEMENT_SPECIFICATION_v1.1_P0.1_SHIFT_ROSTER.md)  
 **Related tracker:** [Nexora HR & Payroll Implementation Status](NEXORA_HR_PAYROLL_IMPLEMENTATION_STATUS_v1.0.md)  
 **Integration branch:** `docs/hr-phase-2-implementation-status`
 
