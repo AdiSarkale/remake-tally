@@ -130,6 +130,34 @@ def test_employment_period_outside_payroll_month_has_zero_payable_gross():
     assert result["net_pay"] == Decimal("0.00")
 
 
+def test_attendance_counters_ignore_records_outside_employment_period():
+    employee = SimpleNamespace(
+        id="emp-lifecycle", emp_code="EMP-LIFE", name="Employment Window",
+        department="Production", joining_date=date(2026, 10, 15), end_date=date(2026, 10, 20),
+    )
+    attendance = [
+        SimpleNamespace(status="present", work_date=date(2026, 10, 1), overtime_minutes=100),
+        SimpleNamespace(status="present", work_date=date(2026, 10, 16), overtime_minutes=30),
+        SimpleNamespace(status="half_day", work_date=date(2026, 10, 17), overtime_minutes=60),
+        SimpleNamespace(status="absent", work_date=date(2026, 10, 18), overtime_minutes=0),
+        SimpleNamespace(status="paid_leave", work_date=date(2026, 10, 19), overtime_minutes=0),
+        SimpleNamespace(status="unpaid_leave", work_date=date(2026, 10, 20), overtime_minutes=0),
+        SimpleNamespace(status="paid_half_day", work_date=date(2026, 10, 21), overtime_minutes=0),
+        SimpleNamespace(status="present", work_date=date(2026, 10, 25), overtime_minutes=200),
+    ]
+
+    result = _calculate_employee_monthly_payroll(
+        employee, _profile(), attendance, 2026, 10, "fixed_days", 26, [5, 6], {}
+    )
+
+    assert result["present_days"] == Decimal("1.00")
+    assert result["half_days"] == Decimal("1.00")
+    assert result["absent_days"] == Decimal("1.00")
+    assert result["paid_leave_days"] == Decimal("1.00")
+    assert result["unpaid_leave_days"] == Decimal("1.00")
+    assert result["overtime_minutes"] == 90
+
+
 def test_unconfigured_employee_does_not_get_configured_salary():
     result = _calculate_employee_monthly_payroll(
         _employee(), None, [], 2026, 10, "fixed_days", 26, [5, 6], {}
