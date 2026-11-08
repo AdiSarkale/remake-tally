@@ -92,3 +92,10 @@ def test_explicit_deny_overrides_an_existing_allow_for_same_route():
             assert exc.status_code == 403
         else:
             raise AssertionError("An explicit deny must block the route")
+
+def test_route_feature_action_uses_parent_feature_for_nested_utility_and_id_routes():
+    from app.api.deps import _route_feature_action
+
+    assert _route_feature_action(_request("/api/v1/customer-pos/lookup/PO-001")) == ("customer_pos", "read")
+    assert _route_feature_action(_request("/api/v1/bom/bom-001")) == ("bom", "read")
+    assert _route_feature_action(_request("/api/v1/sales-orders/from-quotation/quote-001", "POST")) == ("sales_orders", "create")
