@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.12  
+**Version:** 1.13  
 **Status:** Active implementation tracker  
 **Baseline:** 9 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -26,7 +26,7 @@ The existing HR foundation and payroll workspace are in place. The next phase is
 | Payroll, attendance, calendar, payslips and leave workflows | Implemented as the current payroll foundation; PF/PT/TDS remain manual/configured and non-certified | Add effective-dated statutory rules only after qualified compliance review |
 | Payroll-to-Finance reversal | **Implemented** — linked opposite journal is posted atomically with payroll reversal | Preserve journal linkage and regression coverage |
 | Timezone baseline | Tenant timezone is implemented; branch records store IANA timezones | P0.1 specifies branch timezone with tenant fallback; branch-aware shift/attendance behavior is not yet implemented |
-| P0.1 shift foundation | **Initial schema and assignment resolver implemented** — migration 016, shift types, break rules, effective-dated assignments, roster entries and policy-version table | Add shift catalog/assignment APIs, roster generation and date overrides |
+| P0.1 shift foundation | **Schema, assignment resolver and shift catalog APIs implemented** — migration 016, shift types, break rules, effective-dated assignments, roster entries and policy-version table | Build assignment APIs, roster generation and date overrides; shift catalog UI remains pending |
 | Audit service integration | Implemented for the covered HR/P1 events | Expand the event catalogue as new capabilities are added |
 | Branch/team data scopes | **Implemented and extended to attendance read/write/import with historical effective-date checks** | Continue applying scope checks to every new HR/attendance endpoint; no legacy auto-backfill |
 | Granular feature/action authorization | **Exact route grants enforced; legacy wildcard fallback retired in migration 015** | Review and approve narrower role-specific access profiles; add explicit grants for every new protected route |
@@ -374,13 +374,16 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 | AUD-07 — attendance employee scope | Monthly attendance is filtered by employee scope on each work date; manual upsert, DELETE and Excel import enforce the `hr/employees/update` scope. Scope resolution now accepts an effective date so historical branch/team assignments are respected. The blank template contains no employee records. | <strong>Verified for current attendance routes</strong> — branch-history and write-scope regression tests passed. New P0.1 routes must use the same scope guard. |
 | AUD-08 — employment-period payroll counters | Attendance rows outside the employee's employment period are skipped before present/absence/leave counters and overtime are accumulated. A regression test covers pre-joining and post-exit records. | <strong>Verified</strong> — backend suite and integrated CI passed. |
 
-**P0.1 implementation started — initial database schema and shift assignment engine:**
+**P0.1 implementation — database schema, shift assignment engine and shift catalog API slice:**
 
 - Added SQLAlchemy models and tenant migration `p0_hr_shift_roster_016` for workforce policy versions, shift types, break rules, effective-dated shift assignments and daily roster entries.
 - Added `backend/app/modules/hr/shift_assignment.py`: resolves date-specific roster entry > employee-specific assignment > department default > legacy calendar fallback. Conflicting department defaults and overlapping assignments fail closed.
 - The resolver uses branch IANA timezone with tenant fallback, treats overnight shifts as belonging to their local shift-start work date, stores resolved boundaries as UTC, and rejects ambiguous/nonexistent daylight-saving boundaries.
 - Assignment changes supersede a prior effective period without silently truncating an open-ended schedule for a temporary assignment. Resolution respects employee joining and end dates.
 - Added focused tests for precedence, branch/global default conflicts, recurring weekday patterns, supersession, employment dates, overnight boundaries and daylight-saving edge cases.
+- Added tenant-scoped shift catalog endpoints under `/api/v1/hr/shifts`: list/detail/create/update, soft activation/deactivation, and nested break-rule list/create/update/soft-deactivation. Protected with exact `hr.shifts.read` and `hr.shifts.write` tenant grants; all mutations write audit events.
+- Shift code and break-rule code are immutable identifiers. Shift schedule changes are rejected once assignments or rosters reference the shift; create a new shift code for revised hours. Break schedules must fit within the shift's local-time window.
+- Added shift catalog API tests for authorization, CRUD, duplicate handling, soft deactivation, immutable identifiers, schedule locking, overnight break validation and invalid shift durations.
 - **Not yet implemented:** shift CRUD/assignment APIs and UI, roster generation/persistence workflows, date-specific roster management, raw attendance events/import batches/anomalies/corrections/overtime/comp-leave/payroll daily snapshots, and branch-aware attendance import. The new schema is the first P0.1 slice, not the entire P0.1 scope.
 
 **Verification evidence:**
@@ -389,7 +392,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - [Backend Tests #42519334777](https://github.com/AdiSarkale/remake-tally/actions/runs/42519334777) and [Backend tenant isolation #42519334849](https://github.com/AdiSarkale/remake-tally/actions/runs/42519334849) passed. Both backend suites reported **123 passed, 5 skipped and 7 warnings**.
 - The initial integration test run exposed one test-fixture date mismatch; the fixture was corrected to test an actual overlap within the employee's employment dates, and the final CI runs above passed.
 
-**Next action:** Build shift catalog and assignment APIs with employee/branch/team scope enforcement and audit logging. Then implement idempotent roster generation and date-specific overrides before integrating raw attendance events. Preserve the approved decisions and do not implement deferred T-01 to T-14 by assumption.
+**Next action:** Build shift assignment APIs with employee/branch/team scope enforcement and audit logging. Then implement idempotent roster generation and date-specific overrides before integrating raw attendance events. Shift catalog UI and integrated CI verification of the new API slice remain pending. Preserve approved decisions and do not implement deferred T-01 to T-14 by assumption.
 
 ---
 
@@ -410,6 +413,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 | 1.10 | 9 November 2026 | Links the approved HR Decision Register v1.0 and records the 39 product decisions, eight follow-up clarifications, accepted dependencies and post-MVP deferrals. |
 | 1.11 | 9 November 2026 | Adds the complete P0.1 Architecture & MVP Implementation Specification v1.0; updates the next gate to contributor review and baseline verification. Architecture is documented; implementation and CI remain pending. |
 | 1.12 | 9 November 2026 | Records owner authorization, AUD-05–AUD-08 verification, effective-dated attendance scopes, initial P0.1 shift schema and assignment resolver, and passing integrated CI. Shift APIs, roster generation and attendance-event integration remain pending. |
+| 1.13 | 9 November 2026 | Adds the P0.1 shift catalog and break-rule API slice, exact permission requirements, audit behavior, immutable identifiers and assignment/roster schedule-lock safeguards. CI for this slice is pending. |
 
 ## 11. Integration and verification record
 
