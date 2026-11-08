@@ -100,12 +100,7 @@ def _check_module_route_grant(db: Session, user: models.User, module: str, reque
         if not exact.allowed:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Permission denied: {module}.{feature}.{action}")
         return
-    wildcard = db.query(RolePermissionGrant).filter_by(
-        role=user.role.value, module=module, feature="*", action="*",
-        data_scope="tenant", allowed=True,
-    ).first()
-    if wildcard is None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Missing permission: {module}.{feature}.{action}")
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Missing explicit permission: {module}.{feature}.{action}")
 
 
 def require_area(area: str):
