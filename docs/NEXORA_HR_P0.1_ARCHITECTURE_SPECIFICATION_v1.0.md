@@ -1341,7 +1341,7 @@ A test plan is not a test result. Do not mark CI passed until the run exists and
 | P0.1-00 Baseline verification | Re-run current tests/CI for existing timezone and DELETE fixes; verify branch/team scope on attendance routes; verify AUD-08 | **Complete** — AUD-05–AUD-08 verified; integrated CI and tenant-isolation checks passed. |
 | P0.1-01 Schema/migrations | Initial slice delivered: shift types, break rules, assignments, roster entries and workforce policy versions. Attendance event, import batch, anomaly, correction, overtime, comp-leave credit and payroll daily snapshot tables remain subsequent migrations. | **In progress** — migration `p0_hr_shift_roster_016` and PostgreSQL migration/provisioning CI passed. |
 | P0.1-02 Shift catalog | Backend shift type and break-rule APIs delivered; catalog UI remains pending | **Backend complete and CI-verified** — exact `hr.shifts.read/write` grants, audit events, duplicate handling, immutable identifiers and schedule-lock safeguards. 132 backend tests passed, 5 skipped; tenant isolation, PostgreSQL migrations and integrated CI passed. |
-| P0.1-03 Assignment engine | Department defaults, employee overrides, effective dates and conflict validation | **Backend APIs implemented; CI pending** — create/list/detail, effective-dated successor revision and end-date closure; exact permissions, employee scope checks, branch validation and Core audit events added. |
+| P0.1-03 Assignment engine | Department defaults, employee overrides, effective dates and conflict validation | **Backend complete and CI-verified** — create/list/detail, effective-dated successor revision and end-date closure; exact permissions, employee scope checks, branch validation and Core audit events added. Backend suite: 141 passed, 5 skipped, 7 warnings; tenant isolation and integrated CI passed. |
 | P0.1-04 Roster engine | Idempotent generation, date overrides, weekly-off/holiday states | Roster constraints and scope tests pass. |
 | P0.1-05 Timezone engine | Branch timezone with tenant fallback, overnight boundaries, branch-scoped import context | **Shift-window core implemented** — UTC boundary and DST rejection tests pass; branch-aware attendance/import context remains pending. |
 | P0.1-06 Attendance event intake | Manual, employee and Excel raw event ingestion; legacy summary compatibility | Event idempotency and import atomicity pass. |
@@ -1352,7 +1352,7 @@ A test plan is not a test result. Do not mark CI passed until the run exists and
 | P0.1-11 Reports/UI | Roster, attendance, overtime and exception screens/reports | Frontend typecheck/build and browser smoke pass. |
 | P0.1-12 Release hardening | Authorization, tenant isolation, audit, migration, CI and documentation | All applicable acceptance criteria pass. |
 
-Recommended order: P0.1-00 is complete. The initial shift schema, resolver, shift catalog APIs and shift assignment APIs are committed. Shift catalog and assignment UI remain pending. Verify P0.1-03 backend and tenant-isolation CI before proceeding to idempotent roster generation and date-specific overrides. Do not implement payroll shift logic ahead of a persisted, tested roster.
+Recommended order: P0.1-00 is complete. The initial shift schema, resolver, shift catalog APIs and shift assignment APIs are committed. P0.1-03 backend and tenant-isolation CI passed. Shift catalog and assignment UI remain pending. Proceed to idempotent roster generation and date-specific overrides. Do not implement payroll shift logic ahead of a persisted, tested roster.
 
 ---
 
@@ -1430,7 +1430,7 @@ P0.1 may be called **implemented** only when:
 - Contributor architecture review: **Not a prerequisite; no longer a release gate.**
 - Implementation authorization: **Approved on 9 November 2026.**
 - Code implementation: **In progress** — initial shift schema/migration, effective-dated resolver, shift catalog APIs and shift assignment APIs committed; roster generation, date-specific overrides, UI and attendance-event workflows remain pending.
-- Test/CI verification: **Earlier slices verified; P0.1-03 pending** — shift catalog CI passed (132 backend tests, 5 skipped, 7 warnings; tenant-isolation, PostgreSQL migration/provisioning and integrated CI passed). The new assignment API test suite and tenant-isolation workflow have not yet produced a recorded result. Remaining P0.1 capabilities are not yet implemented.
+- Test/CI verification: **P0.1-03 verified** — [Backend Tests #42522229984](https://github.com/AdiSarkale/remake-tally/actions/runs/42522229984), [Backend tenant isolation #42522230145](https://github.com/AdiSarkale/remake-tally/actions/runs/42522230145) and [Minitally CI #42522229991](https://github.com/AdiSarkale/remake-tally/actions/runs/42522229991) passed. Backend: 141 passed, 5 skipped, 7 warnings. PostgreSQL control-plane/tenant migrations and provisioning, frontend typecheck/build and Playwright smoke passed. Remaining P0.1 capabilities are not yet implemented.
 
 ---
 
