@@ -354,7 +354,7 @@ A workstream may be marked **Implemented** only when all applicable items are co
 | 1.2 | 8 November 2026 | Records follow-up branch-scope regression coverage, Playwright smoke selector corrections and actual CI outcomes. |
 | 1.3 | 8 November 2026 | Records the final Payroll smoke navigation fix integrated through PR #30 and the latest CI rerun status. |
 | 1.4 | 8 November 2026 | Records successful latest integrated CI: backend, tenant isolation, PostgreSQL migrations/provisioning, frontend typecheck/build and Playwright smoke suite passed. |
-| 1.5 | 8 November 2026 | Retires module wildcard authorization fallback with exact route grants; adds payroll-to-Finance reversal regression coverage, HOD Playwright approval smoke coverage and explicit PF/PT/TDS non-certification notice; records remaining manual staging verification. |
+| 1.5 | 8 November 2026 | Retires module wildcard authorization fallback with exact route grants; adds payroll-to-Finance reversal regression coverage, HOD Playwright approval smoke coverage and explicit PF/PT/TDS non-certification notice; records CI run 42483216968 passing and remaining manual staging verification. |
 
 ## 11. Integration and verification record
 
@@ -364,6 +364,6 @@ A workstream may be marked **Implemented** only when all applicable items are co
 - Final Payroll smoke navigation fix integrated through [PR #30](https://github.com/AdiSarkale/remake-tally/pull/30), merged on 8 November 2026.
 - Latest integration commit: `e4c2b40f5a1cc60a22574b5a674ec5c0a008a7bf`.
 - PR #27 remains open and unmerged; its target is `main`, but no merge to `main` has been performed.
-- Latest integrated CI run completed successfully: backend tests and compilation passed; PostgreSQL control-plane/tenant migrations and tenant provisioning tests passed; frontend typecheck and production build passed; Playwright employee/HR/Admin/Finance smoke tests passed. The separate tenant-isolation workflow also passed. A separate duplicate Backend Tests workflow is still running, but the full Minitally CI backend job is green.
+- Latest integrated [Minitally CI run #42483216968](https://github.com/AdiSarkale/remake-tally/actions/runs/42483216968) passed all jobs: backend tests and compilation; PostgreSQL control-plane/tenant migrations and tenant provisioning lifecycle; frontend typecheck, production build and Playwright browser smoke. The backend suite reported 105 passed, 5 skipped and 7 warnings. Separate [Backend Tests #42483216854](https://github.com/AdiSarkale/remake-tally/actions/runs/42483216854) and [tenant-isolation #42483216875](https://github.com/AdiSarkale/remake-tally/actions/runs/42483216875) workflows also passed.
 
 **End of document.**
