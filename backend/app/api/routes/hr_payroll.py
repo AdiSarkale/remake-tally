@@ -236,10 +236,9 @@ def _calculate_employee_monthly_payroll(
             work_date is not None and employment_active
             and employment_start <= work_date <= employment_end
         )
-        scheduled_workday = (
-            in_employment_period
-            and _calendar_type(work_date, week_off_days, calendar_overrides) == "working_day"
-        )
+        if not in_employment_period:
+            continue
+        scheduled_workday = _calendar_type(work_date, week_off_days, calendar_overrides) == "working_day"
         if row.status == "present":
             present_days += Decimal("1")
         elif row.status == "half_day":
