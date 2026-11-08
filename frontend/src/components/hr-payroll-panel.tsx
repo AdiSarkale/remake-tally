@@ -19,7 +19,7 @@ interface SalaryInput {
   annual_salary: number; basic_pct: number; hra_pct: number; da_pct: number; conveyance_monthly: number;
   medical_allowance_monthly: number; pf_pct: number; professional_tax_monthly: number; tds_monthly: number;
 }
-interface PayrollSettings { id: number; salary_count_mode: SalaryMode; monthly_salary_days: number; week_off_days: number[]; updated_at?: string | null; }
+interface PayrollSettings { id: number; salary_count_mode: SalaryMode; monthly_salary_days: number; week_off_days: number[]; timezone: string; updated_at?: string | null; }
 interface CalendarDay { work_date: string; day_type: CalendarType; description: string; is_override: boolean; }
 interface AttendanceRow {
   id: string | null; employee_id: string; employee_code: string; employee_name: string; work_date: string; status: string;
@@ -37,7 +37,7 @@ const emptySalary: SalaryInput = {
   annual_salary: 0, basic_pct: 50, hra_pct: 40, da_pct: 0, conveyance_monthly: 0,
   medical_allowance_monthly: 0, pf_pct: 12, professional_tax_monthly: 200, tds_monthly: 0,
 };
-const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];\nconst fallbackTimeZones = ["Asia/Kolkata", "UTC", "Asia/Dubai", "Asia/Singapore", "Asia/Tokyo", "Europe/London", "Europe/Berlin", "America/New_York", "America/Los_Angeles", "Australia/Sydney"];\nconst availableTimeZones: string[] = typeof Intl.supportedValuesOf === "function" ? ["UTC", ...Intl.supportedValuesOf("timeZone")] : fallbackTimeZones;
 const money = (value: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(value || 0);
 const monthName = (year: number, month: number) => new Date(year, month - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 const dayLabel = (value: string) => new Date(value + "T12:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" });
@@ -51,7 +51,7 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
   const [settings, setSettings] = useState<PayrollSettings | null>(null);
   const [calendar, setCalendar] = useState<CalendarDay[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRow[]>([]);
-  const [attendanceFile, setAttendanceFile] = useState<File | null>(null);
+  const [attendanceFile, setAttendanceFile] = useState<File | null>(null);\n  const [importTimezone, setImportTimezone] = useState("Asia/Kolkata");
   const [selectedEmployee, setSelectedEmployee] = useState("");
   const [editingEmployee, setEditingEmployee] = useState<string | null>(null);
   const [salaryForm, setSalaryForm] = useState<SalaryInput>(emptySalary);
@@ -72,7 +72,7 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
     } catch (err) { fail(err); }
   }, []);
   const loadSettings = useCallback(async () => {
-    try { setSettings(await api.get<PayrollSettings>("/hr/payroll/settings")); } catch (err) { fail(err); }
+    try { const row = await api.get<PayrollSettings>("/hr/payroll/settings"); setSettings(row); setImportTimezone(row.timezone || "Asia/Kolkata"); } catch (err) { fail(err); }
   }, []);
   const loadCalendar = useCallback(async () => {
     try { setCalendar(await api.get<CalendarDay[]>("/hr/calendar?year=" + year + "&month=" + month)); } catch (err) { fail(err); }
@@ -174,7 +174,7 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
       const formData = new FormData();
       formData.append("file", attendanceFile);
       const response = await fetch(
-        BASE_URL + "/api/v1/hr/attendance/import?year=" + year + "&month=" + month,
+        BASE_URL + "/api/v1/hr/attendance/import?year=" + year + "&month=" + month + "&import_timezone=" + encodeURIComponent(importTimezone),
         { method: "POST", headers: token ? { Authorization: "Bearer " + token } : {}, body: formData },
       );
       if (!response.ok) {
@@ -332,9 +332,10 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
     {tab === "attendance" ? <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3"><label className="text-sm font-medium" htmlFor="attendance-employee">Employee</label><select id="attendance-employee" className="h-9 min-w-[240px] rounded-md border bg-background px-3 text-sm" value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)}>{employees.map((row) => <option key={row.employee_id} value={row.employee_id}>{row.employee_code} — {row.employee_name}</option>)}</select><Button size="sm" variant="outline" disabled={busy} onClick={() => void loadAttendance()}>Refresh month</Button></div>
       <div className="flex flex-wrap items-center gap-3 rounded-lg border p-3">
-        <div className="min-w-0 flex-1"><h3 className="font-medium">Bulk attendance import</h3><p className="text-xs text-muted-foreground">Download the template for {monthName(year, month)}. The import validates the entire workbook and changes no rows if any validation error is found.</p></div>
+        <div className="min-w-0 flex-1"><h3 className="font-medium">Bulk attendance import</h3><p className="text-xs text-muted-foreground">Download the template for {monthName(year, month)}. Select the timezone in which the Excel punch times were recorded. The import validates the entire workbook and changes no rows if any validation error is found.</p></div>
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void downloadAttendanceTemplate()}><Download className="mr-1 size-3.5" />Download Excel template</Button>
         {canEdit ? <>
+          <label className="min-w-[220px] space-y-1 text-xs"><span className="block font-medium">Timezone used by this Excel file</span><select aria-label="Attendance import timezone" className="h-9 w-full rounded-md border bg-background px-2 text-sm" disabled={busy} value={importTimezone} onChange={(event) => setImportTimezone(event.target.value)}>{!availableTimeZones.includes(importTimezone) ? <option value={importTimezone}>{importTimezone}</option> : null}{availableTimeZones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}</select></label>
           <label className="text-sm"><span className="sr-only">Choose attendance workbook</span><input key={attendanceFile ? attendanceFile.name + ":" + attendanceFile.size : "attendance-empty"} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={busy} className="max-w-[260px] text-sm file:mr-2 file:rounded-md file:border file:bg-background file:px-2 file:py-1" onChange={(event) => setAttendanceFile(event.target.files?.[0] ?? null)} /></label>
           <Button size="sm" disabled={busy || !attendanceFile} onClick={() => void importAttendanceWorkbook()}><Upload className="mr-1 size-3.5" />Import attendance</Button>
         </> : null}
