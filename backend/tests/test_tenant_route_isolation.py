@@ -126,13 +126,22 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
             amount=10 if suffix == "a" else 20,
             created_by="admin",
         )
+        # Mirror the exact route-level grant migration instead of relying on
+        # wildcard compatibility grants in isolated tenant fixtures.
+        import importlib.util
+        migration_path = Path(__file__).resolve().parents[1] / "alembic" / "versions" / "p0_authz_exact_015.py"
+        spec = importlib.util.spec_from_file_location("p0_authz_exact_015_test", migration_path)
+        authz_migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(authz_migration)
         module_grants = [
             models.RolePermissionGrant(
-                role=role.value, module=module, feature="*", action="*",
-                data_scope="tenant", allowed=True, updated_by="test",
+                role=role, module=module, feature=feature, action=action,
+                data_scope="tenant", allowed=True, updated_by="test-migration",
             )
-            for role, modules in deps.ROLE_PERMISSIONS.items()
+            for role, modules in authz_migration.ROLE_MODULES.items()
             for module in modules
+            for feature, actions in authz_migration.MODULE_FEATURE_ACTIONS.get(module, {}).items()
+            for action in actions
         ]
         payroll_grants = [
             models.RolePermissionGrant(
@@ -1505,13 +1514,13 @@ def test_feature_action_grant_can_restrict_one_route_without_revoking_module(iso
     })
     assert revoked.status_code == 200, revoked.text
 
-    # Exact denial overrides the role's legacy-preserving module wildcard grant.
+    # Exact denial overrides the seeded explicit allow for this feature/action.
     denied = client.post("/api/v1/finance/customer-payments", headers=headers, json={
         "payment_date": "2026-11-07", "customer_id": "missing", "amount": 10,
         "mode": "UPI", "reference": "", "remarks": "",
     })
     assert denied.status_code == 403, denied.text
 
-    # Read access remains granted by the module's baseline wildcard.
+    # Read access remains granted by its separate explicit read permission.
     readable = client.get("/api/v1/finance/customer-payments", headers=headers)
     assert readable.status_code == 200, readable.text
