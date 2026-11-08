@@ -296,7 +296,8 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
             ["pf_pct", "Employee PF (% of basic)"], ["professional_tax_monthly", "Professional tax / month (₹)"], ["tds_monthly", "TDS / month (₹)"],
           ] as const).map(([field, label]) => <label key={field} className="space-y-1 text-sm"><span>{label}</span><Input disabled={!canEdit || busy} type="number" min="0" step="0.01" value={salaryForm[field]} onChange={(e) => setSalaryForm((old) => ({ ...old, [field]: Number(e.target.value) }))} /></label>)}
         </div>
-        <p className="text-xs text-muted-foreground">Basic + HRA + DA + fixed allowances must not exceed monthly gross. Confirm statutory PF and tax values with your payroll policy.</p>
+        <p className="text-xs text-muted-foreground">Basic + HRA + DA + fixed allowances must not exceed monthly gross.</p>
+        <p role="note" className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-900 dark:text-amber-200">PF, Professional Tax (PT) and TDS are configured/manual deductions in this release. They are not certified statutory calculations. Verify the applicable jurisdiction, employee eligibility, effective-date rules and current rates with a qualified payroll professional before finalizing live payroll.</p>
         {canEdit ? <Button disabled={busy || salaryForm.annual_salary <= 0} onClick={() => void saveSalary()}><Save className="mr-1 size-4" />Save salary structure</Button> : null}
         <div className="grid gap-2 rounded-md bg-muted/40 p-3 text-sm sm:grid-cols-3">
           <div>Monthly gross <strong>{money(salaryForm.annual_salary / 12)}</strong></div>
