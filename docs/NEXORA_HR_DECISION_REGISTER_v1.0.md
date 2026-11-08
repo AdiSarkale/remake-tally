@@ -2,7 +2,7 @@
 
 **Document ID:** NEX-HR-DEC-001  
 **Version:** 1.0  
-**Status:** Product decisions approved; technical specification and implementation pending  
+**Status:** Product decisions approved; P0.1 MVP architecture documented; contributor review and implementation pending  
 **Decision baseline:** 9 November 2026  
 **Module:** HR & Payroll  
 **P0.1 architecture:** [Nexora HR P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md)  
@@ -241,7 +241,7 @@ These previously identified items remain tracked independently from the new prod
 |---|---|---|
 | AUD-05 | Excel punch-out timezone conversion defect | Code correction committed; verification still required. |
 | AUD-06 | Attendance DELETE authorization gap | Permission correction committed; verification still required. |
-| AUD-07 | Enforce employee branch/team scopes in attendance handlers | Outstanding remediation. |
+| AUD-07 | Verify and extend employee branch/team scope enforcement to attendance handlers, imports, exports and P0.1 endpoints | Core branch/team scope infrastructure is implemented; coverage of attendance-backed and new endpoints must be verified and extended. |
 | AUD-08 | Correct payroll attendance counters outside employee employment dates | Outstanding remediation. |
 
 The latest timezone/import and authorization changes must not be described as verified until the relevant tests and CI have actually run and passed.
@@ -250,9 +250,9 @@ The latest timezone/import and authorization changes must not be described as ve
 
 ## 8. Required specification and implementation sequence
 
-1. Link this register from the P0.1 enhancement specification and active HR implementation tracker.
-2. Update the P0.1 specification so its proposed defaults are replaced by the approved decisions in this register.
-3. Produce the MVP technical specification: entities, migrations, API contracts, UI behavior, state transitions, authorization, audit, calculation rules, failure handling and acceptance tests.
+1. Link this register from the P0.1 architecture specification and active HR implementation tracker. **Completed.**
+2. Replace the earlier proposed defaults with the approved product decisions. **Completed in P0.1 Architecture Specification v1.0; the earlier v1.1 document is retained as historical audit/design draft.**
+3. Produce the MVP technical architecture: entities, migrations, API contracts, UI behavior, state transitions, authorization, audit, calculation rules, failure handling and acceptance tests. **Documented in P0.1 Architecture Specification v1.0; contributor review remains pending.**
 4. Complete and verify AUD-05 through AUD-08, recording actual test/CI evidence.
 5. Implement in dependency order: shift definitions and assignments; branch-aware calendar/timezone; raw punch ingestion and reconciliation; attendance calculation and summary; corrections and approvals; overtime; payroll integration and immutable provenance; reports and anomaly handling.
 6. Keep T-01 through T-14 in the post-MVP backlog and schedule a separate review after MVP scope is delivered.
@@ -269,6 +269,6 @@ This document records the product user's decisions as of 9 November 2026. Any la
 - Impact on data model, migration, APIs, payroll, permissions, reports and existing customers.
 - Approval attribution and effective version.
 
-**Current approval boundary:** Product decision direction is approved by the project user. Detailed technical specification, contributor review, implementation authorization and release acceptance remain separate gates.
+**Current approval boundary:** Product decision direction is approved by the project user and the P0.1 MVP architecture is documented. Contributor review, implementation authorization and release acceptance remain separate gates.
 
 **End of register.**
