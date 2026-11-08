@@ -4,7 +4,7 @@ import { chromium } from "playwright";
 const base = "http://127.0.0.1:5173";
 const browser = await chromium.launch({ headless: true });
 
-async function persona(role, username) {
+async function persona(role, username, apiOverride = null) {
   const context = await browser.newContext();
   const profile = {
     full_name: username, role, username,
@@ -19,6 +19,7 @@ async function persona(role, username) {
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname.replace("/api/v1", "");
+    if (apiOverride && await apiOverride(route, url, path)) return;
     if (path === "/auth/me") {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(profile) });
       return;
@@ -76,6 +77,56 @@ try {
     await page.getByRole("tab", { name: "Payroll", exact: true }).click();
     await page.getByRole("button", { name: "Monthly Payroll", exact: true }).click();
     await page.getByText(/Payroll preview/).waitFor();
+    await context.close();
+  }
+
+
+  // HOD persona: a department approver can decide only requests assigned to their login.
+  {
+    let decision = "pending";
+    let patchCount = 0;
+    const { context, page } = await persona("Operator", "hod", async (route, url, path) => {
+      const method = route.request().method();
+      if (path === "/hr/leave/types" && method === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+          { id: "leave-cl", code: "CL", name: "Casual Leave", is_paid: true, active: true },
+        ]) });
+        return true;
+      }
+      if (path.startsWith("/hr/leave/balances") && method === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+        return true;
+      }
+      if (path === "/hr/leave/requests" && method === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+          {
+            id: "hod-request", employee_id: "employee-1", leave_type_id: "leave-cl",
+            start_date: "2026-11-16", end_date: "2026-11-17", total_days: 2,
+            half_day: false, reason: "Personal work", status: decision,
+            requested_by: "employee", approver_username: "hod",
+            decided_by: decision === "pending" ? "" : "hod", decision_note: "Approved by HOD",
+          },
+        ]) });
+        return true;
+      }
+      if (path === "/hr/leave/requests/hod-request" && method === "PATCH") {
+        const payload = route.request().postDataJSON();
+        decision = payload.status;
+        patchCount += 1;
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "hod-request", status: decision }) });
+        return true;
+      }
+      return false;
+    });
+    page.on("dialog", (dialog) => dialog.accept("Approved by HOD"));
+    await page.goto(base + "/hr");
+    await page.getByRole("tab", { name: "Leave", exact: true }).click();
+    await page.getByRole("button", { name: "Approve", exact: true }).waitFor();
+    assert.equal(await page.getByRole("heading", { name: "Create leave policy", exact: true }).count(), 0);
+    await page.getByRole("button", { name: "Approve", exact: true }).click();
+    await page.getByText("approved", { exact: true }).waitFor();
+    assert.equal(decision, "approved");
+    assert.equal(patchCount, 1);
     await context.close();
   }
 
