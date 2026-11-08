@@ -37,7 +37,7 @@ const emptySalary: SalaryInput = {
   annual_salary: 0, basic_pct: 50, hra_pct: 40, da_pct: 0, conveyance_monthly: 0,
   medical_allowance_monthly: 0, pf_pct: 12, professional_tax_monthly: 200, tds_monthly: 0,
 };
-const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];\nconst fallbackTimeZones = ["Asia/Kolkata", "UTC", "Asia/Dubai", "Asia/Singapore", "Asia/Tokyo", "Europe/London", "Europe/Berlin", "America/New_York", "America/Los_Angeles", "Australia/Sydney"];\nconst availableTimeZones: string[] = typeof Intl.supportedValuesOf === "function" ? ["UTC", ...Intl.supportedValuesOf("timeZone")] : fallbackTimeZones;
+const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];\nconst fallbackTimeZones = ["Asia/Kolkata", "UTC", "Asia/Dubai", "Asia/Singapore", "Asia/Tokyo", "Europe/London", "Europe/Berlin", "America/New_York", "America/Los_Angeles", "Australia/Sydney"];\nconst timeZoneApi = Intl as unknown as { supportedValuesOf?: (key: "timeZone") => string[] };\nconst availableTimeZones: string[] = Array.from(new Set(["UTC", ...(timeZoneApi.supportedValuesOf ? timeZoneApi.supportedValuesOf("timeZone") : fallbackTimeZones)]));
 const money = (value: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(value || 0);
 const monthName = (year: number, month: number) => new Date(year, month - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 const dayLabel = (value: string) => new Date(value + "T12:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" });
