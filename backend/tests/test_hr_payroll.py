@@ -3,6 +3,7 @@ from datetime import date, time as time_type
 from io import BytesIO
 from decimal import Decimal
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from openpyxl import Workbook, load_workbook
@@ -252,6 +253,25 @@ def test_attendance_excel_parser_reads_valid_rows_and_excel_times():
     assert rows[0]["punch_out"].minute == 30
     assert rows[1]["status"] == "half_day"
     assert rows[1]["work_date"] == date(2026, 10, 6)
+
+
+def test_attendance_excel_parser_uses_the_timezone_selected_for_each_import():
+    workbook = _attendance_workbook([
+        ["EMP-001", date(2026, 10, 5), "present", 0, time_type(8, 30), time_type(17, 0), ""],
+    ])
+    employees = {
+        "EMP-001": SimpleNamespace(id="emp-1", emp_code="EMP-001", active=True),
+    }
+
+    rows = _parse_attendance_workbook(
+        workbook, 2026, 10, employees, ZoneInfo("America/New_York")
+    )
+
+    # 5 October 2026 is in daylight-saving time in New York (UTC-04:00).
+    assert rows[0]["punch_in"].hour == 12
+    assert rows[0]["punch_in"].minute == 30
+    assert rows[0]["punch_out"].hour == 21
+    assert rows[0]["punch_out"].minute == 0
 
 
 def test_attendance_excel_parser_rejects_entire_file_on_unknown_employee_or_bad_period():
