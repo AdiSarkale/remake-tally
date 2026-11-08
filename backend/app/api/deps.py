@@ -73,12 +73,22 @@ def current_user(
 
 
 def _route_feature_action(request: Request) -> tuple[str, str]:
+    """Resolve a stable feature name from the route resource, not an ID/action segment."""
     parts = [part for part in request.url.path.split("/") if part]
     if len(parts) >= 2 and parts[0] == "api" and parts[1].startswith("v"):
         parts = parts[2:]
-    resource = parts[1] if len(parts) > 1 else "overview"
-    if resource.startswith("{"):
-        resource = "overview"
+    if not parts:
+        feature = "overview"
+    else:
+        module_resource = parts[0].replace("-", "_")
+        child_resource = parts[1] if len(parts) > 1 else ""
+        # These are utility/action paths within their parent feature, not
+        # separate permission domains. Dynamic IDs likewise retain the parent.
+        utility_segments = {"lookup", "next-number", "from-quotation", "me"}
+        if not child_resource or child_resource.startswith("{") or child_resource in utility_segments:
+            feature = module_resource
+        else:
+            feature = child_resource.replace("-", "_")
     action_segment = parts[-1] if parts else ""
     if action_segment in {"prepare", "approve", "finalize", "lock", "reverse", "cancel", "submit", "post"}:
         action = action_segment
@@ -87,7 +97,7 @@ def _route_feature_action(request: Request) -> tuple[str, str]:
             "GET": "read", "POST": "create", "PUT": "update",
             "PATCH": "update", "DELETE": "delete",
         }.get(request.method.upper(), "read")
-    return resource.replace("-", "_"), action
+    return feature, action
 
 
 def _check_module_route_grant(db: Session, user: models.User, module: str, request: Request) -> None:
