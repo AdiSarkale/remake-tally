@@ -1,8 +1,8 @@
 """Payroll, attendance and HR calendar models."""
 from __future__ import annotations
 
-from datetime import date, datetime
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, func
+from datetime import date, datetime, time
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, Time, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -105,3 +105,141 @@ class HRPayrollItem(Base):
     paid_leave_days: Mapped[float] = mapped_column(Numeric(7, 2), default=0, nullable=False)
     unpaid_leave_days: Mapped[float] = mapped_column(Numeric(7, 2), default=0, nullable=False)
     overtime_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class HRWorkforcePolicyVersion(Base):
+    """Versioned tenant workforce policy snapshot used by roster generation."""
+
+    __tablename__ = "hr_workforce_policy_versions"
+    __table_args__ = (
+        UniqueConstraint("version_code", name="uq_hr_workforce_policy_version_code"),
+        CheckConstraint(
+            "effective_to IS NULL OR effective_to >= effective_from",
+            name="ck_hr_workforce_policy_effective_dates",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    version_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    configuration: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class HRShiftType(Base):
+    """Reusable local-time shift definition; roster rows retain immutable snapshots."""
+
+    __tablename__ = "hr_shift_types"
+    __table_args__ = (
+        UniqueConstraint("code", name="uq_hr_shift_type_code"),
+        CheckConstraint("end_day_offset IN (0, 1)", name="ck_hr_shift_end_day_offset"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    code: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    start_time: Mapped[time] = mapped_column(Time, nullable=False)
+    end_time: Mapped[time] = mapped_column(Time, nullable=False)
+    end_day_offset: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class HRShiftBreakRule(Base):
+    """Scheduled paid/unpaid break rule attached to a shift definition."""
+
+    __tablename__ = "hr_shift_break_rules"
+    __table_args__ = (
+        UniqueConstraint("shift_type_id", "code", name="uq_hr_shift_break_rule_code"),
+        CheckConstraint("planned_duration_minutes > 0", name="ck_hr_shift_break_duration_positive"),
+        CheckConstraint("sequence >= 0", name="ck_hr_shift_break_sequence_nonnegative"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    shift_type_id: Mapped[str] = mapped_column(ForeignKey("hr_shift_types.id", ondelete="RESTRICT"), nullable=False, index=True)
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    planned_duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    scheduled_start_time: Mapped[time | None] = mapped_column(Time, nullable=True)
+    scheduled_end_time: Mapped[time | None] = mapped_column(Time, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class HRShiftAssignment(Base):
+    """Effective-dated employee assignment or department default shift."""
+
+    __tablename__ = "hr_shift_assignments"
+    __table_args__ = (
+        CheckConstraint(
+            "(scope_type = 'employee' AND employee_id IS NOT NULL AND department IS NULL) OR "
+            "(scope_type = 'department' AND employee_id IS NULL AND department IS NOT NULL AND length(trim(department)) > 0)",
+            name="ck_hr_shift_assignment_scope_target",
+        ),
+        CheckConstraint("valid_to IS NULL OR valid_to >= valid_from", name="ck_hr_shift_assignment_effective_dates"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    scope_type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    employee_id: Mapped[str | None] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=True, index=True)
+    branch_id: Mapped[str | None] = mapped_column(ForeignKey("hr_branches.id", ondelete="RESTRICT"), nullable=True, index=True)
+    department: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    shift_type_id: Mapped[str] = mapped_column(ForeignKey("hr_shift_types.id", ondelete="RESTRICT"), nullable=False, index=True)
+    weekdays: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    supersedes_assignment_id: Mapped[str | None] = mapped_column(ForeignKey("hr_shift_assignments.id", ondelete="SET NULL"), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class HRShiftRosterEntry(Base):
+    """One resolved schedule outcome per employee and local shift-start work date."""
+
+    __tablename__ = "hr_shift_roster_entries"
+    __table_args__ = (
+        UniqueConstraint("employee_id", "work_date", name="uq_hr_shift_roster_employee_day"),
+        CheckConstraint(
+            "status IN ('scheduled', 'weekly_off', 'holiday', 'cancelled')",
+            name="ck_hr_shift_roster_status",
+        ),
+        CheckConstraint(
+            "(status = 'scheduled' AND shift_type_id IS NOT NULL AND scheduled_start_at_utc IS NOT NULL "
+            "AND scheduled_end_at_utc IS NOT NULL AND scheduled_end_at_utc > scheduled_start_at_utc) OR "
+            "(status <> 'scheduled' AND shift_type_id IS NULL AND scheduled_start_at_utc IS NULL AND scheduled_end_at_utc IS NULL)",
+            name="ck_hr_shift_roster_schedule_fields",
+        ),
+        CheckConstraint(
+            "is_override = false OR length(trim(override_reason)) > 0",
+            name="ck_hr_shift_roster_override_reason",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    employee_id: Mapped[str] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), nullable=False, index=True)
+    work_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    shift_type_id: Mapped[str | None] = mapped_column(ForeignKey("hr_shift_types.id", ondelete="RESTRICT"), nullable=True)
+    source_assignment_id: Mapped[str | None] = mapped_column(ForeignKey("hr_shift_assignments.id", ondelete="SET NULL"), nullable=True, index=True)
+    is_override: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    override_reason: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    branch_id: Mapped[str | None] = mapped_column(ForeignKey("hr_branches.id", ondelete="RESTRICT"), nullable=True, index=True)
+    department_snapshot: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    timezone_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    scheduled_start_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    scheduled_end_at_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    shift_code_snapshot: Mapped[str] = mapped_column(String(32), default="", nullable=False)
+    shift_name_snapshot: Mapped[str] = mapped_column(String(120), default="", nullable=False)
+    break_rules_snapshot: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
+    policy_version_id: Mapped[str | None] = mapped_column(ForeignKey("hr_workforce_policy_versions.id", ondelete="RESTRICT"), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
