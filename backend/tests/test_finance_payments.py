@@ -49,10 +49,22 @@ def client(db_session):
     supplier = models.Party(kind="supplier", name="Test Supplier")
     db_session.add_all([
         user, customer, supplier,
-        models.RolePermissionGrant(
-            role="Admin", module="finance", feature="*", action="*",
-            data_scope="tenant", allowed=True, updated_by="test",
-        ),
+        *[
+            models.RolePermissionGrant(
+                role="Admin", module="finance", feature=feature, action=action,
+                data_scope="tenant", allowed=True, updated_by="test",
+            )
+            for feature, actions in {
+                "customer_payments": {"read", "create"},
+                "supplier_payments": {"read", "create"},
+                "receivables": {"read"},
+                "payables": {"read"},
+                "accounts": {"read", "create"},
+                "payroll_account_mapping": {"read", "update"},
+                "journals": {"read"},
+            }.items()
+            for action in actions
+        ],
     ])
     db_session.flush()
 
