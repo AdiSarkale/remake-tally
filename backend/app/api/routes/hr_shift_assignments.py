@@ -85,20 +85,24 @@ def _authorize_assignment(
 
 
 def _validate_employee_branch(
-    db: Session, employee_id: str, branch_id: str | None, effective_date: date,
+    db: Session, employee_id: str, branch_id: str | None,
+    effective_date: date, effective_to: date | None,
 ) -> None:
-    rows = db.query(models.EmployeeOrgAssignment).filter(
+    query = db.query(models.EmployeeOrgAssignment).filter(
         models.EmployeeOrgAssignment.employee_id == employee_id,
-        models.EmployeeOrgAssignment.valid_from <= effective_date,
+        models.EmployeeOrgAssignment.valid_from <= (effective_to or date.max),
         (
             models.EmployeeOrgAssignment.valid_to.is_(None)
             | (models.EmployeeOrgAssignment.valid_to >= effective_date)
         ),
-    ).all()
-    if len(rows) > 1:
-        raise HTTPException(409, "Employee has overlapping organization assignments on the shift assignment start date")
-    if branch_id and rows and rows[0].branch_id and rows[0].branch_id != branch_id:
-        raise HTTPException(422, "Shift assignment branch must match the employee's branch on its effective start date")
+    )
+    rows = query.order_by(models.EmployeeOrgAssignment.valid_from).all()
+    for index, left in enumerate(rows):
+        for right in rows[index + 1:]:
+            if left.valid_to is None or right.valid_from <= left.valid_to:
+                raise HTTPException(409, "Employee has overlapping organization assignments during the shift assignment period")
+    if branch_id and any(row.branch_id and row.branch_id != branch_id for row in rows):
+        raise HTTPException(422, "Shift assignment branch must match the employee's branch throughout its effective period")
 
 
 def _create_or_conflict(db: Session, user: models.User, payload: schemas.ShiftAssignmentIn):
@@ -107,7 +111,8 @@ def _create_or_conflict(db: Session, user: models.User, payload: schemas.ShiftAs
             db, user, payload.employee_id, "update", payload.valid_from,
         )
         _validate_employee_branch(
-            db, payload.employee_id, payload.branch_id, payload.valid_from,
+            db, payload.employee_id, payload.branch_id,
+            payload.valid_from, payload.valid_to,
         )
     else:
         _assert_department_scope(
