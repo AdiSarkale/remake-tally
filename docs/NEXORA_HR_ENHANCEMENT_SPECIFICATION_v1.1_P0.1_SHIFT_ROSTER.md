@@ -763,6 +763,7 @@ No implementation should infer these decisions silently.
 
 | Version | Date | Change |
 |---|---|---|
-| 1.1 — P0.1 | 8 November 2026 | Initial draft. Includes audit of current attendance/payroll implementation, risk register, proposed shift/roster model, payroll integration contract, migration plan, test matrix and decisions requiring joint approval. |\n| 1.1 status note | 9 November 2026 | Retained as historical audit/design draft. Approved decisions and MVP architecture are now maintained in Decision Register v1.0 and P0.1 Architecture Specification v1.0. |
+| 1.1 — P0.1 | 8 November 2026 | Initial draft. Includes audit of current attendance/payroll implementation, risk register, proposed shift/roster model, payroll integration contract, migration plan, test matrix and decisions requiring joint approval. |
+| 1.1 status note | 9 November 2026 | Retained as historical audit/design draft. Approved decisions and MVP architecture are now maintained in Decision Register v1.0 and P0.1 Architecture Specification v1.0. |
 
 **End of specification.**
