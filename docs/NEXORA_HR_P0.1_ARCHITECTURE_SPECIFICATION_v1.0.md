@@ -2,7 +2,7 @@
 
 **Document ID:** NEX-HR-ARCH-001  
 **Version:** 1.0  
-**Status:** Architecture baseline complete — contributor review and implementation gate pending  
+**Status:** Approved for implementation by project owner — P0.1 implementation in progress  
 **Decision baseline:** 9 November 2026  
 **Module:** HR & Payroll / People Management  
 **Priority:** P0.1 — Workforce foundations  
@@ -12,7 +12,7 @@
 **Implementation tracker:** [Nexora HR & Payroll Implementation Status](NEXORA_HR_PAYROLL_IMPLEMENTATION_STATUS_v1.0.md)  
 **Roadmap:** [Nexora HR High-Value Implementation Roadmap v1.0](NEXORA_HR_HIGH_VALUE_IMPLEMENTATION_ROADMAP_v1.0.md)
 
-> This document converts the approved product decisions into the P0.1 MVP architecture. It is a design specification, not evidence of implementation or test completion. The product direction is approved by the project user; the technical design must still be reviewed by both project contributors before database migrations or feature implementation begin.
+> This document converts the approved product decisions into the P0.1 MVP architecture. The project owner authorized implementation on 9 November 2026. This specification remains the design authority; implementation progress and verification evidence are tracked separately in the HR/Payroll Implementation Status document.
 
 ---
 
@@ -1335,12 +1335,12 @@ A test plan is not a test result. Do not mark CI passed until the run exists and
 
 | Work package | Deliverable | Dependency / exit condition |
 |---|---|---|
-| P0.1-00 Baseline verification | Re-run current tests/CI for existing timezone and DELETE fixes; verify branch/team scope on attendance routes; verify AUD-08 | Actual CI and findings recorded. |
-| P0.1-01 Schema/migrations | Shift types, break rules, assignments, roster, event, import batch, anomaly, correction, overtime, comp-leave credit, policy version and payroll daily snapshot tables | Reviewed migration plan and rollback. |
+| P0.1-00 Baseline verification | Re-run current tests/CI for existing timezone and DELETE fixes; verify branch/team scope on attendance routes; verify AUD-08 | **Complete** — AUD-05–AUD-08 verified; integrated CI and tenant-isolation checks passed. |
+| P0.1-01 Schema/migrations | Initial slice delivered: shift types, break rules, assignments, roster entries and workforce policy versions. Attendance event, import batch, anomaly, correction, overtime, comp-leave credit and payroll daily snapshot tables remain subsequent migrations. | **In progress** — migration `p0_hr_shift_roster_016` and PostgreSQL migration/provisioning CI passed. |
 | P0.1-02 Shift catalog | Shift type and break configuration APIs/UI | Permission and audit tests pass. |
-| P0.1-03 Assignment engine | Department defaults, employee overrides, effective dates and conflict validation | Schedule resolver unit tests pass. |
+| P0.1-03 Assignment engine | Department defaults, employee overrides, effective dates and conflict validation | **Core resolver implemented and unit-tested** — APIs, audit integration and authorization wiring remain pending. |
 | P0.1-04 Roster engine | Idempotent generation, date overrides, weekly-off/holiday states | Roster constraints and scope tests pass. |
-| P0.1-05 Timezone engine | Branch timezone with tenant fallback, overnight boundaries, branch-scoped import context | UTC/local round-trip tests pass. |
+| P0.1-05 Timezone engine | Branch timezone with tenant fallback, overnight boundaries, branch-scoped import context | **Shift-window core implemented** — UTC boundary and DST rejection tests pass; branch-aware attendance/import context remains pending. |
 | P0.1-06 Attendance event intake | Manual, employee and Excel raw event ingestion; legacy summary compatibility | Event idempotency and import atomicity pass. |
 | P0.1-07 Reconciliation | Tenant margin setting, source comparison, anomaly queue and resolution | No last-write-wins; anomaly tests pass. |
 | P0.1-08 Attendance summary/correction | Daily summary projection, missing punch exception, correction workflow | HR correction and audit tests pass. |
@@ -1349,7 +1349,7 @@ A test plan is not a test result. Do not mark CI passed until the run exists and
 | P0.1-11 Reports/UI | Roster, attendance, overtime and exception screens/reports | Frontend typecheck/build and browser smoke pass. |
 | P0.1-12 Release hardening | Authorization, tenant isolation, audit, migration, CI and documentation | All applicable acceptance criteria pass. |
 
-Recommended order: complete P0.1-00 first, then build schema and schedule foundation before attendance UI. Do not implement payroll shift logic ahead of a tested schedule resolver.
+Recommended order: P0.1-00 is complete. The initial shift schema and tested resolver are committed. Next implement shift catalog and assignment APIs with scope enforcement/audit, then idempotent roster generation and date-specific overrides. Do not implement payroll shift logic ahead of a persisted, tested roster.
 
 ---
 
@@ -1404,7 +1404,7 @@ The following items were explicitly deferred by the project user. Keep them visi
 
 P0.1 may be called **implemented** only when:
 
-1. The product decisions and this architecture have been reviewed by both project contributors.
+1. The product decisions and this architecture are approved by the project owner.
 2. Database migrations are reviewed, additive where possible and tested.
 3. Shift types, assignments and roster generation work as specified.
 4. Branch timezone, tenant fallback and overnight work-date behavior pass tests.
@@ -1418,16 +1418,16 @@ P0.1 may be called **implemented** only when:
 12. Tenant isolation, employee scope, separation of duties and audit tests pass.
 13. Backend, frontend, migration and browser CI results are recorded as passing.
 14. Documentation and implementation tracker are updated.
-15. Changes are reviewed and merged into the agreed integration branch.
+15. Changes are committed to the agreed integration branch and pass required code review/CI; merging the integration PR into `main` remains a separate explicit authorization.
 
 ### Current gate status
 
-- Product decisions: **Approved by project user.**
-- MVP architecture: **Specified in this document.**
-- Contributor review: **Pending.**
-- Implementation approval: **Pending contributor review and P0.1-00 verification.**
-- Code implementation: **Not started by this document.**
-- Test/CI verification of the new architecture: **Not run.**
+- Product decisions: **Approved by project owner.**
+- MVP architecture: **Approved for implementation by project owner on 9 November 2026.**
+- Contributor architecture review: **Not a prerequisite; no longer a release gate.**
+- Implementation authorization: **Approved on 9 November 2026.**
+- Code implementation: **In progress** — initial shift schema/migration and effective-dated shift assignment resolver committed.
+- Test/CI verification: **Initial implementation verified** — integrated Minitally CI #42519334843 passed; backend 123 passed, 5 skipped, 7 warnings; tenant-isolation #42519334849 passed; PostgreSQL migrations/provisioning, frontend typecheck/build and Playwright smoke passed. Remaining P0.1 capabilities are not yet implemented.
 
 ---
 
@@ -1435,6 +1435,6 @@ P0.1 may be called **implemented** only when:
 
 | Version | Date | Change |
 |---|---|---|
-| 1.0 | 9 November 2026 | Initial complete P0.1 MVP architecture based on HR Decision Register v1.0; defines ownership, schedule resolution, entities, attendance event processing, source reconciliation, approvals, payroll integration, APIs, UI, migrations, security, tests, implementation packages and deferred post-MVP decisions. |
+| 1.0 | 9 November 2026 | Initial complete P0.1 MVP architecture based on HR Decision Register v1.0; defines ownership, schedule resolution, entities, attendance event processing, source reconciliation, approvals, payroll integration, APIs, UI, migrations, security, tests, implementation packages and deferred post-MVP decisions. Status subsequently updated after owner authorization and initial schema/resolver implementation; no approved product decisions were reopened. |
 
 **End of specification.**
