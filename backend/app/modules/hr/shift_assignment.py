@@ -136,7 +136,11 @@ def create_shift_assignment(
         raise ShiftAssignmentConfigurationError("Assignment scope must be employee or department")
     if valid_to is not None and valid_to < valid_from:
         raise ShiftAssignmentConfigurationError("Assignment end date cannot precede start date")
-    if not weekdays or any(day < 0 or day > 6 for day in weekdays) or len(set(weekdays)) != len(weekdays):
+    if (
+        not weekdays
+        or any(not isinstance(day, int) or isinstance(day, bool) or day < 0 or day > 6 for day in weekdays)
+        or len(set(weekdays)) != len(weekdays)
+    ):
         raise ShiftAssignmentConfigurationError("Weekdays must be a non-empty unique set from 0 (Monday) to 6 (Sunday)")
     if scope_type == "employee":
         if not employee_id or department is not None:
@@ -199,7 +203,7 @@ def create_shift_assignment(
             same_exact_target
             and existing.valid_from < valid_from
             and (existing.valid_to is None or existing.valid_to >= valid_from)
-            and (valid_to is None or existing.valid_to is None or existing.valid_to <= valid_to)
+            and (valid_to is None or (existing.valid_to is not None and existing.valid_to <= valid_to))
         )
         if not can_supersede:
             raise ShiftAssignmentConfigurationError(
