@@ -7,7 +7,7 @@ for callers that own authorization, audit, and roster persistence.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.orm import Session
@@ -144,6 +144,13 @@ def create_shift_assignment(
         employee = db.get(Employee, employee_id)
         if employee is None or not employee.active:
             raise ShiftAssignmentConfigurationError("An active employee is required for this assignment")
+        if employee.joining_date and valid_from < employee.joining_date:
+            raise ShiftAssignmentConfigurationError("Employee shift assignment cannot start before the joining date")
+        if employee.end_date:
+            if valid_from > employee.end_date:
+                raise ShiftAssignmentConfigurationError("Employee shift assignment cannot start after the employment end date")
+            if valid_to is None or valid_to > employee.end_date:
+                valid_to = employee.end_date
         normalized_department = None
     else:
         normalized_department = (department or "").strip()
@@ -225,6 +232,11 @@ def resolve_shift_for_work_date(
     employee = db.get(Employee, employee_id)
     if employee is None:
         raise ShiftAssignmentConfigurationError("Employee not found")
+    if (
+        (employee.joining_date is not None and work_date < employee.joining_date)
+        or (employee.end_date is not None and work_date > employee.end_date)
+    ):
+        return None
 
     roster = db.query(HRShiftRosterEntry).filter_by(
         employee_id=employee_id, work_date=work_date,
