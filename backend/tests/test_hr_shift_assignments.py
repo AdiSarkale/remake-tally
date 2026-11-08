@@ -236,3 +236,44 @@ def test_daylight_saving_ambiguous_or_nonexistent_boundaries_fail_closed(
 
     with pytest.raises(ShiftAssignmentConfigurationError, match=message):
         resolve_shift_window(work_date, shift, "America/New_York")
+
+
+def test_temporary_assignment_cannot_truncate_an_open_ended_future_schedule(db):
+    employee, branch = _seed_employee_and_branch(db)
+    first_shift = _shift(db, "DAY", time(9), time(17))
+    temporary_shift = _shift(db, "TEMP", time(10), time(18))
+    existing = create_shift_assignment(
+        db, scope_type="employee", employee_id=employee.id, branch_id=branch.id,
+        shift_type_id=first_shift.id, weekdays=[0, 1, 2, 3, 4],
+        valid_from=date(2026, 1, 1), valid_to=None, created_by="admin",
+    )
+    db.flush()
+
+    with pytest.raises(ShiftAssignmentConfigurationError, match="overlaps"):
+        create_shift_assignment(
+            db, scope_type="employee", employee_id=employee.id, branch_id=branch.id,
+            shift_type_id=temporary_shift.id, weekdays=[0, 1, 2, 3, 4],
+            valid_from=date(2026, 3, 1), valid_to=date(2026, 3, 31), created_by="admin",
+        )
+
+    assert existing.valid_to is None
+
+
+def test_shift_resolution_stops_outside_employee_employment_dates(db):
+    employee = models.Employee(
+        id="bounded-employee", emp_code="BND001", name="Bounded employment",
+        department="Production", joining_date=date(2026, 1, 10),
+        end_date=date(2026, 1, 20), active=False,
+    )
+    db.add(employee)
+    db.flush()
+    shift = _shift(db, "DAY", time(9), time(17))
+    _assignment(
+        db, scope_type="employee", shift_id=shift.id, employee_id=employee.id,
+        weekdays=[0, 1, 2, 3, 4, 5, 6],
+        valid_from=date(2026, 1, 10), valid_to=date(2026, 1, 20),
+    )
+    db.commit()
+
+    assert resolve_shift_for_work_date(db, employee.id, date(2026, 1, 9)) is None
+    assert resolve_shift_for_work_date(db, employee.id, date(2026, 1, 21)) is None
