@@ -1,14 +1,14 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.10  
+**Version:** 1.11  
 **Status:** Active implementation tracker  
 **Baseline:** 9 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
 **Integration PR:** [#27](https://github.com/AdiSarkale/remake-tally/pull/27) — open, not merged into `main`  
 **Audience:** GodlyKO and Adi Sarkale  
 **Purpose:** One shared reference for completed HR/Payroll work, remaining gaps, implementation decisions, ownership, and verification. Both project contributors should read this before changing HR, Payroll, authorization, or related data models.
-**Approved product decisions:** [Nexora HR — Final Product Decision Register v1.0](NEXORA_HR_DECISION_REGISTER_v1.0.md) — records 39 initial decisions, 8 follow-up clarifications, accepted dependencies and post-MVP deferrals.
+**Approved product decisions:** [Nexora HR — Final Product Decision Register v1.0](NEXORA_HR_DECISION_REGISTER_v1.0.md) — records 39 initial decisions, 8 follow-up clarifications, accepted dependencies and post-MVP deferrals.  \n**P0.1 architecture:** [Nexora HR — P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md) — complete architecture baseline for contributor review; implementation and verification remain pending.
 
 > This is an implementation tracker, not a claim that every planned capability is complete. “Merged” means present in the repository baseline; it does not mean this document independently reran every test or verified production deployment.
 
@@ -24,7 +24,7 @@ The existing HR foundation and payroll workspace are in place. The next phase is
 | Employee skills and production linkage | Implemented | Preserve cross-module ownership |
 | Payroll, attendance, calendar, payslips and leave workflows | Implemented as the current payroll foundation; PF/PT/TDS remain manual/configured and non-certified | Add effective-dated statutory rules only after qualified compliance review |
 | Payroll-to-Finance reversal | **Implemented** — linked opposite journal is posted atomically with payroll reversal | Preserve journal linkage and regression coverage |
-| Tenant timezone | Implemented; defaults to `Asia/Kolkata`; branch records also store IANA timezones | Payroll still uses the tenant timezone; branch-specific payroll timezone behavior remains future work |
+| Timezone baseline | Tenant timezone is implemented; branch records store IANA timezones | P0.1 specifies branch timezone with tenant fallback; branch-aware shift/attendance behavior is not yet implemented |
 | Audit service integration | Implemented for the covered HR/P1 events | Expand the event catalogue as new capabilities are added |
 | Branch/team data scopes | **Implemented in the P0 branch** | Admin must configure verified employee assignments; no legacy auto-backfill |
 | Granular feature/action authorization | **Exact route grants enforced; legacy wildcard fallback retired in migration 015** | Review and approve narrower role-specific access profiles; add explicit grants for every new protected route |
@@ -377,7 +377,7 @@ The specification records the static audit of the existing attendance model, API
 - Commits: `5bb6098f0fc491d09f3dc4e653ef773ea1868b64` (API), `e1aeb0b9d068f4b4103b753d895e26c0ba3c4d8d` and `99ac198212957b4b2935ff0187cb5d3d95784f83` (UI), `54a0a53d634e0ab50ffd43041e54b511115efaf7` (selected-timezone regression test).
 - **Verification limitation:** No test suite or CI run has yet verified this feature.
 
-**Next action:** Jointly resolve the seven decisions in Section 19 of the P0.1 specification, then approve the detailed design and begin the corrective tasks before shift/roster implementation.
+**Next action:** Review the completed [P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md), verify the existing timezone/DELETE fixes and attendance scope coverage, resolve AUD-08, then authorize implementation through contributor review. The seven-question decision list in the historical v1.1 draft is superseded by the approved Decision Register v1.0.
 
 ---
 
@@ -394,7 +394,7 @@ The specification records the static audit of the existing attendance model, API
 | 1.6 | 8 November 2026 | Adds a dedicated high-value HR implementation roadmap and links it from this tracker; records the phased P0/P1/P2 sequence and the immediate P0.1 shift-and-roster specification deliverable. |
 | 1.7 | 8 November 2026 | Links the P0.1 Shift & Roster Enhancement Specification; records the attendance/payroll source audit, identified risks, draft design, test matrix and joint decisions required before implementation. |
 | 1.8 | 8 November 2026 | Records the first two P0 audit remediations: Excel punch-out timezone conversion and attendance DELETE write authorization; updates the regression expectation and explicitly records that CI has not yet been run. |
-| 1.9 | 8 November 2026 | Adds a per-import IANA timezone selector, tenant-timezone default, API validation and audit provenance; adds selected-timezone conversion regression coverage. CI remains pending. |
+| 1.9 | 8 November 2026 | Adds a per-import IANA timezone selector, tenant-timezone default, API validation and audit provenance; adds selected-timezone conversion regression coverage. CI remains pending. |\n| 1.10 | 9 November 2026 | Links the approved HR Decision Register v1.0 and records the 39 product decisions, eight follow-up clarifications, accepted dependencies and post-MVP deferrals. |\n| 1.11 | 9 November 2026 | Adds the complete P0.1 Architecture & MVP Implementation Specification v1.0; updates the next gate to contributor review and baseline verification. Architecture is documented; implementation and CI remain pending. |
 
 ## 11. Integration and verification record
 
