@@ -21,13 +21,14 @@ The existing HR foundation and payroll workspace are in place. The next phase is
 |---|---|---|
 | Employee master and lifecycle | Implemented in the current baseline | Maintain regression coverage |
 | Employee skills and production linkage | Implemented | Preserve cross-module ownership |
-| Payroll, attendance, calendar, payslips and leave workflows | Implemented as the current payroll foundation; PF/PT/TDS remain manual/configured and non-certified | Add effective-dated statutory rules only after qualified compliance review |\n| Payroll-to-Finance reversal | **Implemented** — linked opposite journal is posted atomically with payroll reversal | Preserve journal linkage and regression coverage |
+| Payroll, attendance, calendar, payslips and leave workflows | Implemented as the current payroll foundation; PF/PT/TDS remain manual/configured and non-certified | Add effective-dated statutory rules only after qualified compliance review |
+| Payroll-to-Finance reversal | **Implemented** — linked opposite journal is posted atomically with payroll reversal | Preserve journal linkage and regression coverage |
 | Tenant timezone | Implemented; defaults to `Asia/Kolkata`; branch records also store IANA timezones | Payroll still uses the tenant timezone; branch-specific payroll timezone behavior remains future work |
 | Audit service integration | Implemented for the covered HR/P1 events | Expand the event catalogue as new capabilities are added |
 | Branch/team data scopes | **Implemented in the P0 branch** | Admin must configure verified employee assignments; no legacy auto-backfill |
 | Granular feature/action authorization | **Exact route grants enforced; legacy wildcard fallback retired in migration 015** | Review and approve narrower role-specific access profiles; add explicit grants for every new protected route |
 | Automatic leave accrual | **Implemented for monthly and monthly-prorated policies** | HR triggers each accrual period; background scheduling and annual-upfront automation remain out of scope |
-| Statutory payroll jurisdiction | **Not implemented as a jurisdiction-aware ruleset** | Introduce Maharashtra as configuration 1, with an extensible jurisdiction model |
+| Statutory payroll jurisdiction | **PF/PT/TDS remain manual; no certified statutory ruleset** | Implement only after jurisdiction/effective-date model and qualified compliance review |
 
 ## 2. Completed work in the current repository baseline
 
@@ -157,8 +158,8 @@ Persisted grant fields:
 - `role_permission_grants` with a unique constraint across role/module/feature/action/data-scope.
 - `require_permission(module, feature, action, data_scope)` for explicit protected actions.
 - Route-level feature/action derivation for module-guarded endpoints; explicit workflow transitions such as approve, prepare, finalize, lock, reverse and cancel are mapped to their action names.
-- Exact feature/action grants take precedence over compatibility wildcard grants.
-- Explicit denied grants block the matching route even when the legacy module wildcard would otherwise allow it.
+- Each module-guarded route now requires an exact feature/action grant; wildcard fallback is retired.
+- Explicit denied grants block the matching route, including where another action on the same feature remains allowed.
 - Admin-only APIs to list and upsert role grants.
 - Audit events for permission grant creation and changes.
 - Admin UI to manage role grants and their data scopes.
@@ -230,7 +231,9 @@ The current v1 leave year is calendar-year based. A leave request cannot span tw
 
 ## 6. Workstream D — Statutory payroll jurisdiction
 
-**Status: NOT IMPLEMENTED as a certified jurisdiction-aware statutory ruleset.**\n\nCurrent PF, Professional Tax (PT) and TDS values remain configured/manual deductions. The payroll UI now labels them as non-certified and instructs users to verify jurisdiction, eligibility, effective dates and current rules before live finalization. No statutory-compliance claim is made.
+**Status: NOT IMPLEMENTED as a certified jurisdiction-aware statutory ruleset.**
+
+Current PF, Professional Tax (PT) and TDS values remain configured/manual deductions. The payroll UI now labels them as non-certified and instructs users to verify jurisdiction, eligibility, effective dates and current rules before live finalization. No statutory-compliance claim is made.
 
 **Confirmed product decision:** Maharashtra is the first statutory payroll jurisdiction and will be **Configuration 1**. The design must support additional jurisdictions later without changing the core payroll calculation engine.
 
@@ -318,7 +321,7 @@ Ownership is assigned per work package, not permanently by person. GodlyKO and A
 | Leave accrual specification and policy decisions | Joint review before implementation |
 | Leave accrual backend and tests | Implemented in P0; both contributors review operational policy and first-run reconciliation |
 | Maharashtra statutory rule research/configuration | Joint review with qualified compliance input |
-| Granular authorization migration | Framework implemented; jointly approve the role-by-role matrix before removing wildcard fallback |
+| Granular authorization migration | Exact route grants enforced; jointly approve narrower role-level access and review bespoke routes |
 | Branch/site and reporting-manager model | Data model implemented; Admin/HR must verify and configure assignments |
 | Branch/team scopes | Core enforcement implemented; jointly review coverage as new employee-backed endpoints are added |
 
@@ -350,7 +353,8 @@ A workstream may be marked **Implemented** only when all applicable items are co
 | 1.1 | 8 November 2026 | Updated after P0 integration into the PR #27 head branch: records branch/team scopes, granular authorization framework and monthly/pro-rata leave accrual as implemented, with operational and migration limitations explicitly retained. |
 | 1.2 | 8 November 2026 | Records follow-up branch-scope regression coverage, Playwright smoke selector corrections and actual CI outcomes. |
 | 1.3 | 8 November 2026 | Records the final Payroll smoke navigation fix integrated through PR #30 and the latest CI rerun status. |
-| 1.4 | 8 November 2026 | Records successful latest integrated CI: backend, tenant isolation, PostgreSQL migrations/provisioning, frontend typecheck/build and Playwright smoke suite passed. |\n| 1.5 | 8 November 2026 | Retires module wildcard authorization fallback with exact route grants; adds payroll-to-Finance reversal regression coverage, HOD Playwright approval smoke coverage and explicit PF/PT/TDS non-certification notice; records remaining manual staging verification. |
+| 1.4 | 8 November 2026 | Records successful latest integrated CI: backend, tenant isolation, PostgreSQL migrations/provisioning, frontend typecheck/build and Playwright smoke suite passed. |
+| 1.5 | 8 November 2026 | Retires module wildcard authorization fallback with exact route grants; adds payroll-to-Finance reversal regression coverage, HOD Playwright approval smoke coverage and explicit PF/PT/TDS non-certification notice; records remaining manual staging verification. |
 
 ## 11. Integration and verification record
 
