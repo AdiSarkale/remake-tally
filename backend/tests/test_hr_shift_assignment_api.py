@@ -138,6 +138,8 @@ def test_create_list_detail_revise_and_end_employee_assignment(db, user):
         second.id, schemas.ShiftAssignmentEndIn(valid_to=date(2026, 6, 30)), db, user,
     )
     assert ended.valid_to == date(2026, 6, 30)
+    audit_events = db.query(models.AuditLog).filter_by(entity="hr_shift_assignment").all()
+    assert len(audit_events) == 4
     with pytest.raises(HTTPException) as cannot_extend:
         hr_shift_assignments.end_assignment(
             second.id, schemas.ShiftAssignmentEndIn(valid_to=date(2026, 7, 1)), db, user,
@@ -260,3 +262,76 @@ def test_assignment_schema_rejects_bad_weekdays_and_malformed_targets():
             branch_id=None, shift_type_id="shift", weekdays=[0],
             valid_from=date(2026, 1, 1),
         )
+
+
+
+def test_explicit_branch_assignment_cannot_cross_a_future_employee_branch_transfer(db, user):
+    _write_grants(db)
+    employee, branch, shift = _seed(db)
+    other = models.HRBranch(code="MUM", name="Mumbai", timezone="Asia/Kolkata")
+    db.add(other)
+    org = db.query(models.EmployeeOrgAssignment).filter_by(employee_id=employee.id).one()
+    org.valid_to = date(2026, 3, 31)
+    db.add(models.EmployeeOrgAssignment(
+        employee_id=employee.id, branch_id=other.id, department="Production",
+        valid_from=date(2026, 4, 1), created_by="admin",
+    ))
+    db.commit()
+
+    with pytest.raises(HTTPException) as mismatch:
+        hr_shift_assignments.create_assignment(
+            _payload(employee, branch, shift),
+            db,
+            user,
+        )
+    assert mismatch.value.status_code == 422
+
+
+def test_branch_scoped_user_can_only_create_department_default_for_fully_scoped_branch(db):
+    employee, branch, shift = _seed(db)
+    actor = models.Employee(
+        id="dept-scope-actor", emp_code="DSA001", name="Department Scope Actor",
+        department="Production", joining_date=date(2026, 1, 1), active=True,
+    )
+    actor_user = models.User(
+        id="dept-scope-user", username="dept-scope-user", full_name="Department Scope User",
+        password_hash="test", role=models.Role.hr, active=True,
+        must_change_password=False,
+    )
+    db.add_all([actor, actor_user])
+    db.flush()
+    db.add(models.EmployeeOrgAssignment(
+        employee_id=actor.id, branch_id=branch.id, department="Production",
+        valid_from=date(2026, 1, 1), created_by="admin",
+    ))
+    db.add(models.EmployeeUserLink(
+        user_id=actor_user.id, employee_id=actor.id, created_by="admin",
+    ))
+    db.add_all([
+        models.RolePermissionGrant(
+            role="HR", module="hr", feature="shift_assignments", action="write",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ),
+        models.RolePermissionGrant(
+            role="HR", module="hr", feature="employees", action="update",
+            data_scope="branch", allowed=True, updated_by="test",
+        ),
+    ])
+    db.commit()
+
+    global_default = schemas.ShiftAssignmentIn(
+        scope_type="department", branch_id=None, department="Production",
+        shift_type_id=shift.id, weekdays=[0, 1, 2, 3, 4],
+        valid_from=date(2026, 1, 1),
+    )
+    with pytest.raises(HTTPException) as global_denied:
+        hr_shift_assignments.create_assignment(global_default, db, actor_user)
+    assert global_denied.value.status_code == 403
+
+    branch_default = schemas.ShiftAssignmentIn(
+        scope_type="department", branch_id=branch.id, department="Production",
+        shift_type_id=shift.id, weekdays=[0, 1, 2, 3, 4],
+        valid_from=date(2026, 1, 1),
+    )
+    created = hr_shift_assignments.create_assignment(branch_default, db, actor_user)
+    assert created.branch_id == branch.id
