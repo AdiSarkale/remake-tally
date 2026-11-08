@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api.deps import current_user, require_area, require_permission
+from app.api.deps import current_user, employee_scope_ids, require_area, require_permission
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
 from app.modules.finance.payroll_posting import post_payroll_journal, reverse_payroll_journal
@@ -33,6 +33,16 @@ hr_access = Depends(require_permission("hr", "payroll", "read", "tenant"))
 _CENT = Decimal("0.01")
 
 
+
+
+def _ensure_attendance_employee_scope(
+    db: Session, user: models.User, employee_id: str, work_date: date, action: str,
+) -> None:
+    scoped_ids = employee_scope_ids(
+        db, user, "hr", "employees", action, as_of_date=work_date,
+    )
+    if scoped_ids is not None and employee_id not in scoped_ids:
+        raise HTTPException(status_code=403, detail="Employee is outside your configured attendance access scope")
 
 
 def _ensure_period_not_prepared(db: Session, year: int, month: int) -> None:
@@ -803,9 +813,18 @@ def get_monthly_attendance(
     descriptions = {row.work_date: row.description for row in calendar_rows}
     week_off_days = _week_offs(settings)
     tenant_tz = _tenant_timezone(db)
+    visible_days = []
+    for day in (date(year, month, number) for number in range(1, end.day + 1)):
+        scoped_ids = employee_scope_ids(
+            db, user, "hr", "employees", "read", as_of_date=day,
+        )
+        if scoped_ids is None or employee_id in scoped_ids:
+            visible_days.append(day)
+    if not visible_days:
+        raise HTTPException(status_code=403, detail="Employee is outside your configured attendance access scope")
     return [
         _attendance_output(employee, day, by_date.get(day), _calendar_type(day, week_off_days, overrides), descriptions.get(day, ""), tenant_tz)
-        for day in (date(year, month, number) for number in range(1, end.day + 1))
+        for day in visible_days
     ]
 
 
@@ -864,6 +883,20 @@ async def import_attendance_from_excel(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    scope_cache: dict[date, list[str] | None] = {}
+    for item in rows:
+        work_date = item["work_date"]
+        if work_date not in scope_cache:
+            scope_cache[work_date] = employee_scope_ids(
+                db, user, "hr", "employees", "update", as_of_date=work_date,
+            )
+        scoped_ids = scope_cache[work_date]
+        if scoped_ids is not None and item["employee_id"] not in scoped_ids:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Attendance import includes an employee outside your access scope on {work_date}",
+            )
+
     created = updated = cleared = 0
     try:
         for item in rows:
@@ -914,6 +947,7 @@ def upsert_daily_attendance(
     employee = db.get(models.Employee, payload.employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
+    _ensure_attendance_employee_scope(db, user, payload.employee_id, payload.work_date, "update")
     tenant_tz = _tenant_timezone(db)
     punch_in = _to_utc(payload.punch_in, tenant_tz)
     punch_out = _to_utc(payload.punch_out, tenant_tz)
@@ -952,6 +986,7 @@ def clear_daily_attendance(
     employee = db.get(models.Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
+    _ensure_attendance_employee_scope(db, user, employee_id, work_date, "update")
     row = db.query(models.EmployeeAttendance).filter_by(employee_id=employee_id, work_date=work_date).first()
     if row is not None:
         db.delete(row)
