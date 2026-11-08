@@ -401,7 +401,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - Reuses the existing create_shift_assignment service and resolver precedence. Overlap/conflict errors fail closed; successor creation closes the prior assignment on the preceding day and records the supersession link.
 - Exact tenant permissions required: `hr.shift_assignments.read` and `hr.shift_assignments.write`. Employee-targeted operations additionally use the existing effective-date-aware `hr.employees.read/update` employee-scope grants. Scoped users cannot create global department defaults; branch-scoped department defaults are allowed only when every currently assigned employee in the department/branch is within scope.
 - All assignment create, successor, prior-period closure and end-date mutations write Core audit events in the same database transaction.
-- Added API tests for exact permissions, create/list/detail/revise/end lifecycle, department defaults, overlap rejection without mutation, branch mismatch, scoped-user denial and malformed weekday/target payloads.
+- Added API tests for exact permissions, create/list/detail/revise/end lifecycle, transactional audit events, department defaults, overlap rejection without mutation, current and future branch mismatch, branch/team-scoped user denial and malformed weekday/target payloads. Added the new read endpoint to the two-tenant route-isolation regression test.
 - **Verification status: implementation and tests committed; CI has not yet been observed for these commits. Do not mark this slice CI-verified until the integrated backend and tenant-isolation workflows complete.** No new migration was required because `hr_shift_assignments` was created in migration 016.
 
 **Next action:** Run the new API test suite and integrated CI/tenant-isolation checks. After they pass, proceed to P0.1-04 — idempotent roster generation and date-specific overrides. Shift catalog UI remains pending. Preserve approved decisions and do not implement deferred T-01 to T-14 by assumption.
@@ -428,6 +428,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 | 1.13 | 9 November 2026 | Adds the P0.1 shift catalog and break-rule API slice, exact permission requirements, audit behavior, immutable identifiers and assignment/roster schedule-lock safeguards. CI for this slice is pending. |
 | 1.14 | 9 November 2026 | Records passing integrated CI, PostgreSQL migration checks, backend and tenant-isolation tests (132 passed, 5 skipped each), and clarifies that shift catalog UI and assignment/roster workflows remain pending. |
 | 1.15 | 9 November 2026 | Adds P0.1-03 employee/department shift assignment APIs, effective-dated successor/end lifecycle, branch/team scope checks, exact permissions, transactional audit events and API regression tests; CI pending. |
+| 1.16 | 9 November 2026 | Extends assignment validation across future employee branch transfers, adds scoped department-default and audit assertions, and adds the assignment read endpoint to two-tenant route-isolation coverage; CI pending. |
 
 ## 11. Integration and verification record
 
