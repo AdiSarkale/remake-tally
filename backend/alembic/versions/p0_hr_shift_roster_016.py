@@ -45,6 +45,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.UniqueConstraint("code", name="uq_hr_shift_type_code"),
         sa.CheckConstraint("end_day_offset IN (0, 1)", name="ck_hr_shift_end_day_offset"),
+        sa.CheckConstraint("end_day_offset = 1 OR end_time > start_time", name="ck_hr_shift_same_day_end_after_start"),
     )
 
     op.create_table(
