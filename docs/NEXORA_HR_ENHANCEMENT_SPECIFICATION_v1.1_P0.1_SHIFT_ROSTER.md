@@ -8,6 +8,7 @@
 **Module:** HR & Payroll  
 **Priority:** P0.1  
 **Related implementation tracker:** [Nexora HR & Payroll — Implementation Status and Next Work](NEXORA_HR_PAYROLL_IMPLEMENTATION_STATUS_v1.0.md)  
+**Related decision register:** [Nexora HR — Final Product Decision Register v1.0](NEXORA_HR_DECISION_REGISTER_v1.0.md)  
 **Related roadmap:** [Nexora HR — High-Value Implementation Roadmap v1.0](NEXORA_HR_HIGH_VALUE_IMPLEMENTATION_ROADMAP_v1.0.md)  
 **Repository branch audited:** `docs/hr-phase-2-implementation-status`
 
