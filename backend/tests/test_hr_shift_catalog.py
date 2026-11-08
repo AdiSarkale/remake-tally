@@ -54,20 +54,26 @@ def _shift_payload(
 
 
 def test_shift_catalog_routes_require_exact_read_and_write_grants(db, user):
-    for endpoint, action in (
+    endpoints = (
         (hr_shifts.list_shifts, "read"),
         (hr_shifts.create_shift, "write"),
         (hr_shifts.update_shift, "write"),
         (hr_shifts.set_shift_active, "write"),
         (hr_shifts.create_break_rule, "write"),
-    ):
+    )
+    dependencies = []
+    for endpoint, action in endpoints:
         dependency = inspect.signature(endpoint).parameters["user"].default
         assert isinstance(dependency, DependsParam)
         assert dependency.dependency is not None
+        dependencies.append((dependency, action))
         with pytest.raises(HTTPException) as denied:
             dependency.dependency(user=user, db=db)
         assert denied.value.status_code == 403
-        _grant(db, action)
+
+    _grant(db, "read")
+    _grant(db, "write")
+    for dependency, _action in dependencies:
         assert dependency.dependency(user=user, db=db) is user
 
 
