@@ -71,7 +71,11 @@ Payroll limitations:
 - PF/PT/TDS calculations remain configured/manual and are not represented as statutory-compliance certified. The Payroll UI now displays an explicit non-certification warning; no statutory auto-calculation is enabled.
 - No automatic bank payment, payslip email delivery or statutory filing is included.
 
-## Frontend implementation\n\nThe HR workspace includes Leave, Admin Access Control (branch, reporting assignments and role grants), and payroll state-transition controls. Finance includes chart-of-accounts, payroll account mapping and journal history. The Playwright smoke suite now covers employee self-service, HOD leave approval, HR leave/payroll administration, Admin access control and Finance journal history. These browser tests use API mocks; a manual staging walkthrough with real tenant data and authenticated accounts remains outstanding.\n\n## Required verification before P0 sign-off
+## Frontend implementation
+
+The HR workspace includes Leave, Admin Access Control (branch, reporting assignments and role grants), and payroll state-transition controls. Finance includes chart-of-accounts, payroll account mapping and journal history. The Playwright smoke suite now covers employee self-service, HOD leave approval, HR leave/payroll administration, Admin access control and Finance journal history. These browser tests use API mocks; a manual staging walkthrough with real tenant data and authenticated accounts remains outstanding.
+
+## Required verification before P0 sign-off
 
 - Run full backend unit and integration tests.
 - Run tenant PostgreSQL migration tests against a real disposable PostgreSQL instance.
