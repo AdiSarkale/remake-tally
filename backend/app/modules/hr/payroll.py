@@ -135,6 +135,7 @@ class HRShiftType(Base):
     __table_args__ = (
         UniqueConstraint("code", name="uq_hr_shift_type_code"),
         CheckConstraint("end_day_offset IN (0, 1)", name="ck_hr_shift_end_day_offset"),
+        CheckConstraint("end_day_offset = 1 OR end_time > start_time", name="ck_hr_shift_same_day_end_after_start"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
