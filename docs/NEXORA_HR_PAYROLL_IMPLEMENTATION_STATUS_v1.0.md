@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.11  
+**Version:** 1.12  
 **Status:** Active implementation tracker  
 **Baseline:** 9 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -9,7 +9,7 @@
 **Audience:** GodlyKO and Adi Sarkale  
 **Purpose:** One shared reference for completed HR/Payroll work, remaining gaps, implementation decisions, ownership, and verification. Both project contributors should read this before changing HR, Payroll, authorization, or related data models.
 **Approved product decisions:** [Nexora HR — Final Product Decision Register v1.0](NEXORA_HR_DECISION_REGISTER_v1.0.md) — records 39 initial decisions, 8 follow-up clarifications, accepted dependencies and post-MVP deferrals.  
-**P0.1 architecture:** [Nexora HR — P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md) — complete architecture baseline for contributor review; implementation and verification remain pending.
+**P0.1 architecture:** [Nexora HR — P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md) — approved for implementation by the project owner; initial shift schema and assignment engine are implemented and CI-verified.
 
 > This is an implementation tracker, not a claim that every planned capability is complete. “Merged” means present in the repository baseline; it does not mean this document independently reran every test or verified production deployment.
 
@@ -26,8 +26,9 @@ The existing HR foundation and payroll workspace are in place. The next phase is
 | Payroll, attendance, calendar, payslips and leave workflows | Implemented as the current payroll foundation; PF/PT/TDS remain manual/configured and non-certified | Add effective-dated statutory rules only after qualified compliance review |
 | Payroll-to-Finance reversal | **Implemented** — linked opposite journal is posted atomically with payroll reversal | Preserve journal linkage and regression coverage |
 | Timezone baseline | Tenant timezone is implemented; branch records store IANA timezones | P0.1 specifies branch timezone with tenant fallback; branch-aware shift/attendance behavior is not yet implemented |
+| P0.1 shift foundation | **Initial schema and assignment resolver implemented** — migration 016, shift types, break rules, effective-dated assignments, roster entries and policy-version table | Add shift catalog/assignment APIs, roster generation and date overrides |
 | Audit service integration | Implemented for the covered HR/P1 events | Expand the event catalogue as new capabilities are added |
-| Branch/team data scopes | **Implemented in the P0 branch** | Admin must configure verified employee assignments; no legacy auto-backfill |
+| Branch/team data scopes | **Implemented and extended to attendance read/write/import with historical effective-date checks** | Continue applying scope checks to every new HR/attendance endpoint; no legacy auto-backfill |
 | Granular feature/action authorization | **Exact route grants enforced; legacy wildcard fallback retired in migration 015** | Review and approve narrower role-specific access profiles; add explicit grants for every new protected route |
 | Automatic leave accrual | **Implemented for monthly and monthly-prorated policies** | HR triggers each accrual period; background scheduling and annual-upfront automation remain out of scope |
 | Statutory payroll jurisdiction | **PF/PT/TDS remain manual; no certified statutory ruleset** | Implement only after jurisdiction/effective-date model and qualified compliance review |
@@ -362,23 +363,33 @@ The roadmap prioritizes work in four phases:
 
 The roadmap is a proposed implementation sequence, not evidence that these features are already implemented or an authorization to modify locked specifications. Each package requires a baseline review, approved change request, detailed feature specification, acceptance criteria, and the Definition of Done before it is marked complete.
 
-**P0.1 specification and attendance audit:** [Nexora HR Enhancement Specification v1.1 — P0.1: Shift & Roster Management](NEXORA_HR_ENHANCEMENT_SPECIFICATION_v1.1_P0.1_SHIFT_ROSTER.md)
+**P0.1 architecture authority:** [Nexora HR — P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md). The project owner authorized implementation on 9 November 2026. A separate contributor architecture review is not a prerequisite. The older [P0.1 Shift & Roster Enhancement Specification v1.1](NEXORA_HR_ENHANCEMENT_SPECIFICATION_v1.1_P0.1_SHIFT_ROSTER.md) remains a historical audit/design draft; the Decision Register and architecture v1.0 govern current work.
 
-The specification records the static audit of the existing attendance model, APIs, Excel import, calendar, payroll calculations and tests. It identifies compatibility risks including the employee/day attendance uniqueness constraint, global-calendar payroll readiness, overnight import limitations, Excel punch-out timezone conversion, attendance DELETE authorization and missing employee-scope enforcement in attendance handlers. It also defines the proposed shift/roster model, payroll integration contract, migration strategy, test matrix and decisions requiring joint approval.
+**AUD-05–AUD-08 verification (9 November 2026):**
 
-**Audit status:** Source-code inspection completed; no application code changed and no tests were executed as part of this audit. The specification is a draft for joint review, not authorization to begin implementation.
+| Audit | Remediation / verification | Result |
+|---|---|---|
+| AUD-05 — Excel import timezone | Both Punch In and Punch Out are interpreted in the selected IANA import timezone and converted to UTC. Regression tests cover Asia/Kolkata and America/New_York, including both punch fields. | <strong>Verified</strong> — backend suite and integrated CI passed. |
+| AUD-06 — attendance DELETE authorization | DELETE requires the exact `hr/payroll/write/tenant` permission. A regression test verifies the route dependency, denial without a grant and acceptance with the grant. | <strong>Verified</strong> — backend suite and integrated CI passed. |
+| AUD-07 — attendance employee scope | Monthly attendance is filtered by employee scope on each work date; manual upsert, DELETE and Excel import enforce the `hr/employees/update` scope. Scope resolution now accepts an effective date so historical branch/team assignments are respected. The blank template contains no employee records. | <strong>Verified for current attendance routes</strong> — branch-history and write-scope regression tests passed. New P0.1 routes must use the same scope guard. |
+| AUD-08 — employment-period payroll counters | Attendance rows outside the employee's employment period are skipped before present/absence/leave counters and overtime are accumulated. A regression test covers pre-joining and post-exit records. | <strong>Verified</strong> — backend suite and integrated CI passed. |
 
-**P0 remediation started (8 November 2026):** Two audit defects have now been corrected on the integration branch:
-- Attendance Excel import now interprets both Punch In and Punch Out as tenant-local times before converting them to UTC. The regression test expectation now checks 17:00 Asia/Kolkata as 11:30 UTC.
-- Attendance DELETE now requires the exact `hr/payroll/write/tenant` permission in addition to the existing authenticated-user dependency.
-- Commits: `30958a60b09c2ab57b625c9a6b9b00901a33aab1` (backend fixes) and `11ea3c2923068ff0cc694b4ec756c0e85c4030e5` (regression assertion).
-- **Verification limitation:** These commits were made through the repository file API. The test suite and CI have not yet been run for these changes; do not treat them as verified until CI passes.
+**P0.1 implementation started — initial database schema and shift assignment engine:**
 
-**Import timezone selection requirement (8 November 2026):** Attendance Excel import now accepts an explicit IANA timezone via the `import_timezone` query parameter. The UI presents a timezone selector for each import, preselected from the tenant's configured timezone; the API retains tenant-timezone fallback for older clients. Both punch-in and punch-out are interpreted in the selected import timezone, converted to UTC for storage, and the selected timezone is included in the import audit event. Attendance display remains governed by the configured tenant timezone; this is not a per-row display-timezone feature.
-- Commits: `5bb6098f0fc491d09f3dc4e653ef773ea1868b64` (API), `e1aeb0b9d068f4b4103b753d895e26c0ba3c4d8d` and `99ac198212957b4b2935ff0187cb5d3d95784f83` (UI), `54a0a53d634e0ab50ffd43041e54b511115efaf7` (selected-timezone regression test).
-- **Verification limitation:** No test suite or CI run has yet verified this feature.
+- Added SQLAlchemy models and tenant migration `p0_hr_shift_roster_016` for workforce policy versions, shift types, break rules, effective-dated shift assignments and daily roster entries.
+- Added `backend/app/modules/hr/shift_assignment.py`: resolves date-specific roster entry > employee-specific assignment > department default > legacy calendar fallback. Conflicting department defaults and overlapping assignments fail closed.
+- The resolver uses branch IANA timezone with tenant fallback, treats overnight shifts as belonging to their local shift-start work date, stores resolved boundaries as UTC, and rejects ambiguous/nonexistent daylight-saving boundaries.
+- Assignment changes supersede a prior effective period without silently truncating an open-ended schedule for a temporary assignment. Resolution respects employee joining and end dates.
+- Added focused tests for precedence, branch/global default conflicts, recurring weekday patterns, supersession, employment dates, overnight boundaries and daylight-saving edge cases.
+- **Not yet implemented:** shift CRUD/assignment APIs and UI, roster generation/persistence workflows, date-specific roster management, raw attendance events/import batches/anomalies/corrections/overtime/comp-leave/payroll daily snapshots, and branch-aware attendance import. The new schema is the first P0.1 slice, not the entire P0.1 scope.
 
-**Next action:** Review the completed [P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md), verify the existing timezone/DELETE fixes and attendance scope coverage, resolve AUD-08, then authorize implementation through contributor review. The seven-question decision list in the historical v1.1 draft is superseded by the approved Decision Register v1.0.
+**Verification evidence:**
+
+- Integrated [Minitally CI #42519334843](https://github.com/AdiSarkale/remake-tally/actions/runs/42519334843) passed backend tests/compilation, PostgreSQL control-plane and tenant migrations, tenant provisioning lifecycle, frontend typecheck/build and Playwright smoke.
+- [Backend Tests #42519334777](https://github.com/AdiSarkale/remake-tally/actions/runs/42519334777) and [Backend tenant isolation #42519334849](https://github.com/AdiSarkale/remake-tally/actions/runs/42519334849) passed. Both backend suites reported **123 passed, 5 skipped and 7 warnings**.
+- The initial integration test run exposed one test-fixture date mismatch; the fixture was corrected to test an actual overlap within the employee's employment dates, and the final CI runs above passed.
+
+**Next action:** Build shift catalog and assignment APIs with employee/branch/team scope enforcement and audit logging. Then implement idempotent roster generation and date-specific overrides before integrating raw attendance events. Preserve the approved decisions and do not implement deferred T-01 to T-14 by assumption.
 
 ---
 
@@ -398,6 +409,7 @@ The specification records the static audit of the existing attendance model, API
 | 1.9 | 8 November 2026 | Adds a per-import IANA timezone selector, tenant-timezone default, API validation and audit provenance; adds selected-timezone conversion regression coverage. CI remains pending. |
 | 1.10 | 9 November 2026 | Links the approved HR Decision Register v1.0 and records the 39 product decisions, eight follow-up clarifications, accepted dependencies and post-MVP deferrals. |
 | 1.11 | 9 November 2026 | Adds the complete P0.1 Architecture & MVP Implementation Specification v1.0; updates the next gate to contributor review and baseline verification. Architecture is documented; implementation and CI remain pending. |
+| 1.12 | 9 November 2026 | Records owner authorization, AUD-05–AUD-08 verification, effective-dated attendance scopes, initial P0.1 shift schema and assignment resolver, and passing integrated CI. Shift APIs, roster generation and attendance-event integration remain pending. |
 
 ## 11. Integration and verification record
 
@@ -406,8 +418,10 @@ The specification records the static audit of the existing attendance model, API
 - Follow-up branch-scope regression coverage and initial UI smoke-selector fixes integrated through [PR #29](https://github.com/AdiSarkale/remake-tally/pull/29), merged on 8 November 2026.
 - Final Payroll smoke navigation fix integrated through [PR #30](https://github.com/AdiSarkale/remake-tally/pull/30), merged on 8 November 2026.
 - Previous verified integration baseline: `e4c2b40f5a1cc60a22574b5a674ec5c0a008a7bf`.
-- Subsequent P0 remediation commits on `docs/hr-phase-2-implementation-status`: `30958a60b09c2ab57b625c9a6b9b00901a33aab1` and `11ea3c2923068ff0cc694b4ec756c0e85c4030e5`. These have not yet been covered by a new CI run.
-- PR #27 remains open and unmerged; its target is `main`, but no merge to `main` has been performed.
-- Latest integrated [Minitally CI run #42483216968](https://github.com/AdiSarkale/remake-tally/actions/runs/42483216968) passed all jobs: backend tests and compilation; PostgreSQL control-plane/tenant migrations and tenant provisioning lifecycle; frontend typecheck, production build and Playwright browser smoke. The backend suite reported 105 passed, 5 skipped and 7 warnings. Separate [Backend Tests #42483216854](https://github.com/AdiSarkale/remake-tally/actions/runs/42483216854) and [tenant-isolation #42483216875](https://github.com/AdiSarkale/remake-tally/actions/runs/42483216875) workflows also passed.
+- AUD-05–AUD-08 remediation and test commits are on `docs/hr-phase-2-implementation-status`; the current attendance scope guard uses effective-date-aware employee scope resolution.
+- Initial P0.1 implementation commits include `3d2d3a6bd2c213b2a0a1ba7d25e343ab89e7664c` (shift models), `af20975197c451c4b0bb52fe151db7a47315edb2` (migration 016), `bf8e9dcf7dbe0aab1b1d1b15b6d309bddd93b26d` (assignment resolver) and `7d70f1bee6c8f16070f61d7378fa4f8cc11791ab` (resolver tests).
+- Verified branch head: `9b02c77f7d7493e56fa544a9ff83d121e2aed06b`.
+- Integrated [Minitally CI #42519334843](https://github.com/AdiSarkale/remake-tally/actions/runs/42519334843), [Backend Tests #42519334777](https://github.com/AdiSarkale/remake-tally/actions/runs/42519334777) and [Backend tenant isolation #42519334849](https://github.com/AdiSarkale/remake-tally/actions/runs/42519334849) passed. Backend: 123 passed, 5 skipped, 7 warnings. PostgreSQL migrations/provisioning, frontend typecheck/build and Playwright smoke passed.
+- PR #27 remains open and unmerged; its target is `main`. No merge to `main` has been performed.
 
 **End of document.**
