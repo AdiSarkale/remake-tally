@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.7  
+**Version:** 1.8  
 **Status:** Active implementation tracker  
 **Baseline:** 8 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -366,6 +366,12 @@ The specification records the static audit of the existing attendance model, API
 
 **Audit status:** Source-code inspection completed; no application code changed and no tests were executed as part of this audit. The specification is a draft for joint review, not authorization to begin implementation.
 
+**P0 remediation started (8 November 2026):** Two audit defects have now been corrected on the integration branch:
+- Attendance Excel import now interprets both Punch In and Punch Out as tenant-local times before converting them to UTC. The regression test expectation now checks 17:00 Asia/Kolkata as 11:30 UTC.
+- Attendance DELETE now requires the exact `hr/payroll/write/tenant` permission in addition to the existing authenticated-user dependency.
+- Commits: `30958a60b09c2ab57b625c9a6b9b00901a33aab1` (backend fixes) and `11ea3c2923068ff0cc694b4ec756c0e85c4030e5` (regression assertion).
+- **Verification limitation:** These commits were made through the repository file API. The test suite and CI have not yet been run for these changes; do not treat them as verified until CI passes.
+
 **Next action:** Jointly resolve the seven decisions in Section 19 of the P0.1 specification, then approve the detailed design and begin the corrective tasks before shift/roster implementation.
 
 ---
@@ -382,6 +388,7 @@ The specification records the static audit of the existing attendance model, API
 | 1.5 | 8 November 2026 | Retires module wildcard authorization fallback with exact route grants; adds payroll-to-Finance reversal regression coverage, HOD Playwright approval smoke coverage and explicit PF/PT/TDS non-certification notice; records CI run 42483216968 passing and remaining manual staging verification. |
 | 1.6 | 8 November 2026 | Adds a dedicated high-value HR implementation roadmap and links it from this tracker; records the phased P0/P1/P2 sequence and the immediate P0.1 shift-and-roster specification deliverable. |
 | 1.7 | 8 November 2026 | Links the P0.1 Shift & Roster Enhancement Specification; records the attendance/payroll source audit, identified risks, draft design, test matrix and joint decisions required before implementation. |
+| 1.8 | 8 November 2026 | Records the first two P0 audit remediations: Excel punch-out timezone conversion and attendance DELETE write authorization; updates the regression expectation and explicitly records that CI has not yet been run. |
 
 ## 11. Integration and verification record
 
@@ -389,7 +396,8 @@ The specification records the static audit of the existing attendance model, API
 - Integrated into the PR #27 head branch through [PR #28](https://github.com/AdiSarkale/remake-tally/pull/28), merged on 8 November 2026.
 - Follow-up branch-scope regression coverage and initial UI smoke-selector fixes integrated through [PR #29](https://github.com/AdiSarkale/remake-tally/pull/29), merged on 8 November 2026.
 - Final Payroll smoke navigation fix integrated through [PR #30](https://github.com/AdiSarkale/remake-tally/pull/30), merged on 8 November 2026.
-- Latest integration commit: `e4c2b40f5a1cc60a22574b5a674ec5c0a008a7bf`.
+- Previous verified integration baseline: `e4c2b40f5a1cc60a22574b5a674ec5c0a008a7bf`.
+- Subsequent P0 remediation commits on `docs/hr-phase-2-implementation-status`: `30958a60b09c2ab57b625c9a6b9b00901a33aab1` and `11ea3c2923068ff0cc694b4ec756c0e85c4030e5`. These have not yet been covered by a new CI run.
 - PR #27 remains open and unmerged; its target is `main`, but no merge to `main` has been performed.
 - Latest integrated [Minitally CI run #42483216968](https://github.com/AdiSarkale/remake-tally/actions/runs/42483216968) passed all jobs: backend tests and compilation; PostgreSQL control-plane/tenant migrations and tenant provisioning lifecycle; frontend typecheck, production build and Playwright browser smoke. The backend suite reported 105 passed, 5 skipped and 7 warnings. Separate [Backend Tests #42483216854](https://github.com/AdiSarkale/remake-tally/actions/runs/42483216854) and [tenant-isolation #42483216875](https://github.com/AdiSarkale/remake-tally/actions/runs/42483216875) workflows also passed.
 
