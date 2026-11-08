@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.6  
+**Version:** 1.7  
 **Status:** Active implementation tracker  
 **Baseline:** 8 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -360,7 +360,13 @@ The roadmap prioritizes work in four phases:
 
 The roadmap is a proposed implementation sequence, not evidence that these features are already implemented or an authorization to modify locked specifications. Each package requires a baseline review, approved change request, detailed feature specification, acceptance criteria, and the Definition of Done before it is marked complete.
 
-**Immediate next deliverable:** Nexora HR Enhancement Specification v1.1 — Phase P0.1: Shift & Roster Management. First audit the existing attendance model and confirm shift-based calculation compatibility before implementation.
+**P0.1 specification and attendance audit:** [Nexora HR Enhancement Specification v1.1 — P0.1: Shift & Roster Management](NEXORA_HR_ENHANCEMENT_SPECIFICATION_v1.1_P0.1_SHIFT_ROSTER.md)
+
+The specification records the static audit of the existing attendance model, APIs, Excel import, calendar, payroll calculations and tests. It identifies compatibility risks including the employee/day attendance uniqueness constraint, global-calendar payroll readiness, overnight import limitations, Excel punch-out timezone conversion, attendance DELETE authorization and missing employee-scope enforcement in attendance handlers. It also defines the proposed shift/roster model, payroll integration contract, migration strategy, test matrix and decisions requiring joint approval.
+
+**Audit status:** Source-code inspection completed; no application code changed and no tests were executed as part of this audit. The specification is a draft for joint review, not authorization to begin implementation.
+
+**Next action:** Jointly resolve the seven decisions in Section 19 of the P0.1 specification, then approve the detailed design and begin the corrective tasks before shift/roster implementation.
 
 ---
 
@@ -375,6 +381,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 | 1.4 | 8 November 2026 | Records successful latest integrated CI: backend, tenant isolation, PostgreSQL migrations/provisioning, frontend typecheck/build and Playwright smoke suite passed. |
 | 1.5 | 8 November 2026 | Retires module wildcard authorization fallback with exact route grants; adds payroll-to-Finance reversal regression coverage, HOD Playwright approval smoke coverage and explicit PF/PT/TDS non-certification notice; records CI run 42483216968 passing and remaining manual staging verification. |
 | 1.6 | 8 November 2026 | Adds a dedicated high-value HR implementation roadmap and links it from this tracker; records the phased P0/P1/P2 sequence and the immediate P0.1 shift-and-roster specification deliverable. |
+| 1.7 | 8 November 2026 | Links the P0.1 Shift & Roster Enhancement Specification; records the attendance/payroll source audit, identified risks, draft design, test matrix and joint decisions required before implementation. |
 
 ## 11. Integration and verification record
 
