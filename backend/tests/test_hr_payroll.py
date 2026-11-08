@@ -453,3 +453,69 @@ def test_unknown_joining_date_is_reported_and_full_month_attendance_is_required(
     finally:
         db.close()
         engine.dispose()
+
+
+def test_monthly_attendance_is_filtered_by_historical_employee_scope():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app import models
+    from app.api.routes.hr_payroll import get_monthly_attendance
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        branch_a = models.HRBranch(code="A", name="Branch A", timezone="Asia/Kolkata")
+        branch_b = models.HRBranch(code="B", name="Branch B", timezone="Asia/Kolkata")
+        manager = models.Employee(
+            id="monthly-manager", emp_code="M001", name="Manager",
+            joining_date=date(2026, 1, 1), active=True,
+        )
+        target = models.Employee(
+            id="monthly-target", emp_code="M002", name="Transferred employee",
+            joining_date=date(2026, 1, 1), active=True,
+        )
+        user = models.User(
+            id="monthly-user", username="monthly-manager", full_name="Manager",
+            password_hash="test", role=models.Role.hr, active=True,
+            must_change_password=False,
+        )
+        db.add_all([branch_a, branch_b, manager, target, user])
+        db.flush()
+        db.add_all([
+            models.EmployeeUserLink(user_id=user.id, employee_id=manager.id, created_by="admin"),
+            models.RolePermissionGrant(
+                role="HR", module="hr", feature="employees", action="read",
+                data_scope="branch", allowed=True, updated_by="test",
+            ),
+            models.EmployeeOrgAssignment(
+                employee_id=manager.id, branch_id=branch_a.id, department="Ops",
+                valid_from=date(2026, 1, 1), created_by="admin",
+            ),
+            models.EmployeeOrgAssignment(
+                employee_id=target.id, branch_id=branch_a.id, department="Ops",
+                valid_from=date(2026, 1, 1), valid_to=date(2026, 1, 15), created_by="admin",
+            ),
+            models.EmployeeOrgAssignment(
+                employee_id=target.id, branch_id=branch_b.id, department="Ops",
+                valid_from=date(2026, 1, 16), created_by="admin",
+            ),
+            models.HRPayrollSettings(id=1, week_off_days="5,6", timezone="Asia/Kolkata"),
+            models.EmployeeAttendance(
+                employee_id=target.id, work_date=date(2026, 1, 10), status="present",
+            ),
+            models.EmployeeAttendance(
+                employee_id=target.id, work_date=date(2026, 1, 20), status="present",
+            ),
+        ])
+        db.commit()
+
+        result = get_monthly_attendance(target.id, 2026, 1, db, user)
+
+        assert len(result) == 15
+        assert result[0].work_date == date(2026, 1, 1)
+        assert result[-1].work_date == date(2026, 1, 15)
+    finally:
+        db.close()
+        engine.dispose()
