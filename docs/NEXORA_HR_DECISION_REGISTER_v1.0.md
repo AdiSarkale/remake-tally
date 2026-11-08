@@ -2,7 +2,7 @@
 
 **Document ID:** NEX-HR-DEC-001  
 **Version:** 1.0  
-**Status:** Product decisions approved; P0.1 MVP architecture documented; contributor review and implementation pending  
+**Status:** Product decisions approved; P0.1 MVP architecture approved for implementation; implementation in progress  
 **Decision baseline:** 9 November 2026  
 **Module:** HR & Payroll  
 **P0.1 architecture:** [Nexora HR P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md)  
@@ -239,12 +239,12 @@ These previously identified items remain tracked independently from the new prod
 
 | Audit ID | Finding / required work | Current record |
 |---|---|---|
-| AUD-05 | Excel punch-out timezone conversion defect | Code correction committed; verification still required. |
-| AUD-06 | Attendance DELETE authorization gap | Permission correction committed; verification still required. |
-| AUD-07 | Verify and extend employee branch/team scope enforcement to attendance handlers, imports, exports and P0.1 endpoints | Core branch/team scope infrastructure is implemented; coverage of attendance-backed and new endpoints must be verified and extended. |
-| AUD-08 | Correct payroll attendance counters outside employee employment dates | Outstanding remediation. |
+| AUD-05 | Excel punch-out timezone conversion defect | **Verified** — both punch fields use the selected IANA timezone; Asia/Kolkata and America/New_York regression coverage passed in CI. |
+| AUD-06 | Attendance DELETE authorization gap | **Verified** — exact `hr/payroll/write/tenant` route dependency is present; denied/allowed grant regression test passed in CI. |
+| AUD-07 | Verify and extend employee branch/team scope enforcement to attendance handlers, imports, exports and P0.1 endpoints | **Existing attendance routes verified** — monthly reads filter by effective work-date scope; manual upsert, DELETE and Excel import enforce employee update scope. Blank template contains no employee records. New P0.1 endpoints do not exist yet and must apply the same backend scope checks before release. |
+| AUD-08 | Correct payroll attendance counters outside employee employment dates | **Verified** — out-of-employment attendance is excluded from attendance counters and overtime; regression test passed in CI. |
 
-The latest timezone/import and authorization changes must not be described as verified until the relevant tests and CI have actually run and passed.
+Verification evidence: integrated Minitally CI #42519334843, Backend Tests #42519334777 and tenant-isolation #42519334849 passed on the integration branch. Backend suites reported 123 passed, 5 skipped and 7 warnings. AUD-05–AUD-08 are verified for the existing attendance/payroll code; new P0.1 endpoints remain subject to the scope requirement above.
 
 ---
 
@@ -252,8 +252,8 @@ The latest timezone/import and authorization changes must not be described as ve
 
 1. Link this register from the P0.1 architecture specification and active HR implementation tracker. **Completed.**
 2. Replace the earlier proposed defaults with the approved product decisions. **Completed in P0.1 Architecture Specification v1.0; the earlier v1.1 document is retained as historical audit/design draft.**
-3. Produce the MVP technical architecture: entities, migrations, API contracts, UI behavior, state transitions, authorization, audit, calculation rules, failure handling and acceptance tests. **Documented in P0.1 Architecture Specification v1.0; contributor review remains pending.**
-4. Complete and verify AUD-05 through AUD-08, recording actual test/CI evidence.
+3. Produce the MVP technical architecture: entities, migrations, API contracts, UI behavior, state transitions, authorization, audit, calculation rules, failure handling and acceptance tests. **Documented in P0.1 Architecture Specification v1.0 and approved for implementation by the project owner on 9 November 2026.**
+4. Complete and verify AUD-05 through AUD-08, recording actual test/CI evidence. **Completed for existing attendance/payroll code; new P0.1 endpoints must inherit employee scope enforcement.**
 5. Implement in dependency order: shift definitions and assignments; branch-aware calendar/timezone; raw punch ingestion and reconciliation; attendance calculation and summary; corrections and approvals; overtime; payroll integration and immutable provenance; reports and anomaly handling.
 6. Keep T-01 through T-14 in the post-MVP backlog and schedule a separate review after MVP scope is delivered.
 
@@ -269,6 +269,6 @@ This document records the product user's decisions as of 9 November 2026. Any la
 - Impact on data model, migration, APIs, payroll, permissions, reports and existing customers.
 - Approval attribution and effective version.
 
-**Current approval boundary:** Product decision direction is approved by the project user and the P0.1 MVP architecture is documented. Contributor review, implementation authorization and release acceptance remain separate gates.
+**Current approval boundary:** Product decisions and P0.1 MVP architecture are approved by the project owner. Implementation was explicitly authorized on 9 November 2026; contributor architecture review is not a prerequisite. Release acceptance and any merge to `main` remain separate gates.
 
 **End of register.**
