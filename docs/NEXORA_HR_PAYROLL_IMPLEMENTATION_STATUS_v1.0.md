@@ -8,6 +8,7 @@
 **Integration PR:** [#27](https://github.com/AdiSarkale/remake-tally/pull/27) — open, not merged into `main`  
 **Audience:** GodlyKO and Adi Sarkale  
 **Purpose:** One shared reference for completed HR/Payroll work, remaining gaps, implementation decisions, ownership, and verification. Both project contributors should read this before changing HR, Payroll, authorization, or related data models.
+**Approved product decisions:** [Nexora HR — Final Product Decision Register v1.0](NEXORA_HR_DECISION_REGISTER_v1.0.md) — records 39 initial decisions, 8 follow-up clarifications, accepted dependencies and post-MVP deferrals.
 
 > This is an implementation tracker, not a claim that every planned capability is complete. “Merged” means present in the repository baseline; it does not mean this document independently reran every test or verified production deployment.
 
