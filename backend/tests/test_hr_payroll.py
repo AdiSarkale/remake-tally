@@ -514,8 +514,8 @@ def test_monthly_attendance_is_filtered_by_historical_employee_scope():
         result = get_monthly_attendance(target.id, 2026, 1, db, user)
 
         assert len(result) == 15
-        assert result[0].work_date == date(2026, 1, 1)
-        assert result[-1].work_date == date(2026, 1, 15)
+        assert result[0]["work_date"] == date(2026, 1, 1)
+        assert result[-1]["work_date"] == date(2026, 1, 15)
     finally:
         db.close()
         engine.dispose()
