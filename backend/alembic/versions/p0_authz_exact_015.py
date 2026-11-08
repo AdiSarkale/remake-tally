@@ -37,6 +37,8 @@ MODULE_FEATURE_ACTIONS = {
         "plants": {"read", "create", "update", "delete"},
         "warehouses": {"read", "create", "update", "delete"},
         "supplier_products": {"read", "create", "update", "delete"},
+        "orders": {"read", "create", "update", "delete"},
+        "grns": {"read", "create", "update", "delete"},
         "movements": {"create"},
         "requisitions": {"update"},
     },
