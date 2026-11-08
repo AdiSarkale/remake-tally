@@ -489,6 +489,10 @@ def test_monthly_attendance_is_filtered_by_historical_employee_scope():
                 role="HR", module="hr", feature="employees", action="read",
                 data_scope="branch", allowed=True, updated_by="test",
             ),
+            models.RolePermissionGrant(
+                role="HR", module="hr", feature="employees", action="update",
+                data_scope="branch", allowed=True, updated_by="test",
+            ),
             models.EmployeeOrgAssignment(
                 employee_id=manager.id, branch_id=branch_a.id, department="Ops",
                 valid_from=date(2026, 1, 1), created_by="admin",
@@ -512,6 +516,14 @@ def test_monthly_attendance_is_filtered_by_historical_employee_scope():
         db.commit()
 
         result = get_monthly_attendance(target.id, 2026, 1, db, user)
+
+        from fastapi import HTTPException
+        from app.api.routes.hr_payroll import _ensure_attendance_employee_scope
+
+        _ensure_attendance_employee_scope(db, user, target.id, date(2026, 1, 10), "update")
+        with pytest.raises(HTTPException) as outside_scope:
+            _ensure_attendance_employee_scope(db, user, target.id, date(2026, 1, 20), "update")
+        assert outside_scope.value.status_code == 403
 
         assert len(result) == 15
         assert result[0]["work_date"] == date(2026, 1, 1)
