@@ -329,7 +329,7 @@ Use status labels consistently: **Not started**, **In specification**, **In deve
 
 The first feature-level specification should be:
 
-**Nexora HR Enhancement Specification v1.1 — Phase P0.1: Shift & Roster Management**
+**[Nexora HR Enhancement Specification v1.1 — Phase P0.1: Shift & Roster Management](NEXORA_HR_ENHANCEMENT_SPECIFICATION_v1.1_P0.1_SHIFT_ROSTER.md)**
 
 It must define:
 
