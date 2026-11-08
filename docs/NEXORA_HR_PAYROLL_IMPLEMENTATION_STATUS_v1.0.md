@@ -1,9 +1,9 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.9  
+**Version:** 1.10  
 **Status:** Active implementation tracker  
-**Baseline:** 8 November 2026  
+**Baseline:** 9 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
 **Integration PR:** [#27](https://github.com/AdiSarkale/remake-tally/pull/27) — open, not merged into `main`  
 **Audience:** GodlyKO and Adi Sarkale  
