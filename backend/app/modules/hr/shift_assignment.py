@@ -59,6 +59,9 @@ def _timezone_for_branch(db: Session, branch_id: str | None) -> ZoneInfo:
         if branch is None or not branch.active:
             raise ShiftAssignmentConfigurationError("The assigned branch does not exist or is inactive")
         timezone_name = (branch.timezone or "").strip()
+        if not timezone_name:
+            settings = db.get(HRPayrollSettings, 1)
+            timezone_name = settings.timezone if settings and settings.timezone else "Asia/Kolkata"
     else:
         settings = db.get(HRPayrollSettings, 1)
         timezone_name = settings.timezone if settings and settings.timezone else "Asia/Kolkata"
