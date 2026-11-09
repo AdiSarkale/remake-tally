@@ -1099,7 +1099,7 @@ def upsert_daily_attendance(
             )
         context = resolved_context
     attendance_tz = ZoneInfo(context.timezone_name)
-    if punch_out is not None and punch_in is None:
+    if payload.status != "unmarked" and punch_out is not None and punch_in is None:
         raise HTTPException(status_code=422, detail="Punch In is required when Punch Out is supplied")
     if punch_in and punch_out and punch_out <= punch_in:
         raise HTTPException(status_code=422, detail="Punch-out must be after punch-in")
