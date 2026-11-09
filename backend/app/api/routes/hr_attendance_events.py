@@ -205,6 +205,10 @@ def create_manual_attendance_event(
     scoped = employee_scope_ids(db, user, "hr", "employees", "update", as_of_date=payload.work_date)
     if scoped is not None and employee.id not in scoped:
         raise HTTPException(status_code=403, detail="Employee is outside your configured attendance access scope")
+    if payload.break_code and payload.event_type not in {"break_start", "break_end"}:
+        raise HTTPException(status_code=422, detail="Break Code is only valid for break_start or break_end events")
+    if payload.break_code and payload.event_type not in {"break_start", "break_end"}:
+        raise HTTPException(status_code=422, detail="Break Code is only valid for break_start or break_end events")
     try:
         context, roster, instant, break_rule_id = _local_event_context(
             db, employee.id, payload.work_date, payload.occurred_at, payload.break_code,
