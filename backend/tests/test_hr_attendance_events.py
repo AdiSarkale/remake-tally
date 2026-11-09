@@ -69,6 +69,7 @@ def test_raw_event_append_is_idempotent_for_same_source_reference():
             source_type="manual_hr",
             source_reference="manual-request-001",
             recorded_by="hr-user",
+            note="Updated summary note, same source event",
         )
         assert retried.id == event_id
         assert retry_created is False
