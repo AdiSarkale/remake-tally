@@ -90,7 +90,6 @@ def append_attendance_event(
             and _utc(existing.occurred_at_utc) == instant
             and existing.timezone_name == timezone_name
             and existing.break_rule_id == break_rule_id
-            and (existing.note or "") == (note or "")
         )
         if not same_event:
             raise AttendanceEventError("This source reference has already been used for a different attendance event")
