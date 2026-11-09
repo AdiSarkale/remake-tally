@@ -110,6 +110,17 @@ def _tenant_timezone(db: Session) -> ZoneInfo:
         raise HTTPException(status_code=500, detail="Tenant timezone is invalid; update HR payroll settings") from exc
 
 
+def _attendance_context(db: Session, employee_id: str, work_date: date):
+    try:
+        return resolve_employee_work_context(db, employee_id, work_date)
+    except ShiftAssignmentConfigurationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _attendance_timezone(db: Session, employee_id: str, work_date: date) -> ZoneInfo:
+    return ZoneInfo(_attendance_context(db, employee_id, work_date).timezone_name)
+
+
 def _to_utc(value: datetime | None, tenant_tz: ZoneInfo) -> datetime | None:
     if value is None:
         return None
