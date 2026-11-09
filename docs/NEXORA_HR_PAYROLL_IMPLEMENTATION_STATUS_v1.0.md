@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.14  
+**Version:** 1.18  
 **Status:** Active implementation tracker  
 **Baseline:** 9 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -9,7 +9,7 @@
 **Audience:** GodlyKO and Adi Sarkale  
 **Purpose:** One shared reference for completed HR/Payroll work, remaining gaps, implementation decisions, ownership, and verification. Both project contributors should read this before changing HR, Payroll, authorization, or related data models.
 **Approved product decisions:** [Nexora HR — Final Product Decision Register v1.0](NEXORA_HR_DECISION_REGISTER_v1.0.md) — records 39 initial decisions, 8 follow-up clarifications, accepted dependencies and post-MVP deferrals.  
-**P0.1 architecture:** [Nexora HR — P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md) — approved for implementation by the project owner; initial shift schema and assignment engine are implemented and CI-verified.
+**P0.1 architecture:** [Nexora HR — P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md) — approved for implementation by the project owner; shift schema, assignment APIs and the initial roster engine are present on the integration branch, with the latest P0.1-04 corrections awaiting CI.
 
 > This is an implementation tracker, not a claim that every planned capability is complete. “Merged” means present in the repository baseline; it does not mean this document independently reran every test or verified production deployment.
 
@@ -26,7 +26,7 @@ The existing HR foundation and payroll workspace are in place. The next phase is
 | Payroll, attendance, calendar, payslips and leave workflows | Implemented as the current payroll foundation; PF/PT/TDS remain manual/configured and non-certified | Add effective-dated statutory rules only after qualified compliance review |
 | Payroll-to-Finance reversal | **Implemented** — linked opposite journal is posted atomically with payroll reversal | Preserve journal linkage and regression coverage |
 | Timezone baseline | Tenant timezone is implemented; branch records store IANA timezones | P0.1 specifies branch timezone with tenant fallback; branch-aware shift/attendance behavior is not yet implemented |
-| P0.1 shift foundation | **Schema, assignment resolver and shift catalog APIs implemented** — migration 016, shift types, break rules, effective-dated assignments, roster entries and policy-version table | Build assignment APIs, roster generation and date overrides; shift catalog UI remains pending |
+| P0.1 shift foundation | **Schema, resolver, shift catalog APIs, assignment APIs and roster-generation/override backend implemented** — migrations 016/017, effective-dated assignments, idempotent roster entries and immutable override history | Verify P0.1-04 corrections in CI; roster read/view UI, shift catalog UI and assignment UI remain pending |
 | Audit service integration | Implemented for the covered HR/P1 events | Expand the event catalogue as new capabilities are added |
 | Branch/team data scopes | **Implemented and extended to attendance read/write/import with historical effective-date checks** | Continue applying scope checks to every new HR/attendance endpoint; no legacy auto-backfill |
 | Granular feature/action authorization | **Exact route grants enforced; legacy wildcard fallback retired in migration 015** | Review and approve narrower role-specific access profiles; add explicit grants for every new protected route |
@@ -384,7 +384,8 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - Added tenant-scoped shift catalog endpoints under `/api/v1/hr/shifts`: list/detail/create/update, soft activation/deactivation, and nested break-rule list/create/update/soft-deactivation. Protected with exact `hr.shifts.read` and `hr.shifts.write` tenant grants; all mutations write audit events.
 - Shift code and break-rule code are immutable identifiers. Shift schedule changes are rejected once assignments or rosters reference the shift; create a new shift code for revised hours. Break schedules must fit within the shift's local-time window.
 - Added shift catalog API tests for authorization, CRUD, duplicate handling, soft deactivation, immutable identifiers, schedule locking, overnight break validation and invalid shift durations.
-- **Not yet implemented:** shift catalog UI, employee/department assignment APIs and UI, roster generation/persistence workflows, date-specific roster management, raw attendance events/import batches/anomalies/corrections/overtime/comp-leave/payroll daily snapshots, and branch-aware attendance import. The catalog APIs are backend-only and do not yet provide a usable HR screen.
+- **Backend implemented:** employee/department assignment APIs, idempotent future roster generation, weekly-off/holiday materialization, date-specific overrides with immutable version history, exact write authorization, effective-date employee scope checks and audit events. Migrations 016 and 017 provide the roster and override-history persistence.
+- **Still pending:** CI verification of the latest P0.1-04 corrections; roster read/list endpoints and roster UI; shift catalog and assignment UI; raw attendance events/import batches/anomalies/corrections/overtime/comp-leave/payroll daily snapshots; and branch-aware attendance import.
 
 **Verification evidence:**
 
@@ -404,7 +405,20 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - Added API tests for exact permissions, create/list/detail/revise/end lifecycle, transactional audit events, department defaults, overlap rejection without mutation, current and future branch mismatch, branch/team-scoped user denial and malformed weekday/target payloads. Added the new read endpoint to the two-tenant route-isolation regression test.
 - **Verification: CI passed on 9 November 2026.** Backend Tests #42522229984, Backend tenant isolation #42522230145 and Minitally CI #42522229991 all passed. Each backend run reported **141 passed, 5 skipped, 7 warnings**. Minitally CI also passed PostgreSQL control-plane/tenant migrations and provisioning, frontend typecheck/build and Playwright smoke. The first run exposed two test-fixture contamination failures; the fixture was corrected to seed a department default without adding an employee, and the complete rerun passed. No new migration was required because `hr_shift_assignments` was created in migration 016.
 
-**Next action:** Proceed to P0.1-04 — idempotent roster generation and date-specific overrides. Shift catalog UI and shift assignment UI remain pending. Preserve approved decisions and do not implement deferred T-01 to T-14 by assumption.
+**P0.1-04 — Roster generation and date-specific override implementation (9 November 2026):**
+
+- Repository inspection confirmed the integration branch already contains `backend/app/modules/hr/shift_roster_generation.py`, `backend/app/api/routes/hr_shift_rosters.py`, request/response schemas, migration 017 for immutable roster-entry history, and `backend/tests/test_hr_shift_roster_generation.py`.
+- Generation is explicit and limited to a 31-calendar-day range and 500 employees per request. Scope supports explicit employee IDs, branch/department filters, or all active employees.
+- It resolves effective organization assignment and shift precedence for each local work date, stores branch/tenant timezone and UTC shift boundaries, snapshots active break rules, and applies versioned holiday/roster precedence. No holiday precedence is invented.
+- It materializes scheduled, weekly-off and holiday rows; preserves legacy calendar/week-off behavior for employees without shift assignments; skips unassigned legacy working days rather than inventing shifts.
+- Generation is future-only, blocked for non-draft payroll periods, idempotent against the employee/work-date unique key, and does not overwrite any existing roster entry or manual override.
+- Date-specific override endpoint: `PUT /api/v1/hr/shift-rosters/{employee_id}/{work_date}/override`. It supports scheduled, weekly-off and cancelled states, requires a reason, blocks historical/frozen-period changes, and records immutable prior versions in `hr_shift_roster_entry_history`.
+- Exact permission: `hr.shift_rosters.write`; employee update scope is enforced for every employee/work date in generation and for individual overrides. Core audit events are written in the same transaction.
+- **Corrections made in this work session:** override response schema now uses the shared ORM-enabled schema base; historical generation is checked before the idempotency skip; missing override employees map to HTTP 404. Regression tests cover each correction.
+- **Verification status:** the earlier P0.1 baseline CI included the initial roster engine; the latest correction commits have not yet produced a CI result. Do not mark these corrections CI-verified until fresh backend, tenant-isolation and integrated CI workflows pass.
+- **Remaining boundary:** this package does not add roster list/read APIs or frontend roster screens; those belong to the roster view/report UI work package. No raw attendance or payroll shift integration is included here.
+
+**Next action:** Run fresh backend, tenant-isolation and integrated CI for the P0.1-04 corrections. After passing, proceed to P0.1-05 — branch-aware timezone and attendance context. Keep roster read/view UI tracked for P0.1-11, and do not implement deferred T-01 to T-14 by assumption.
 
 ---
 
