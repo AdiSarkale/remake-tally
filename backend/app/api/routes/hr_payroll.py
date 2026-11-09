@@ -615,16 +615,15 @@ def _parse_attendance_workbook(
             event_tz = selected_tz
             if employee is not None and work_date is not None and db is not None:
                 try:
-                    context = resolve_employee_work_context(db, employee.id, work_date)
+                    context = resolve_employee_work_context(
+                        db, employee.id, work_date, timezone_override=selected_tz.key,
+                    )
                     batch_branch_ids.add(context.branch_id)
                     if branch_id is not None and context.branch_id != branch_id:
                         errors.append(f"Row {row_number}: employee {code} is not assigned to the selected branch on {work_date}.")
                     if branch_id is None and context.branch_id is not None:
                         errors.append(f"Row {row_number}: employee {code} is assigned to branch {context.branch_id}; select that branch for this batch.")
-                    # The branch timezone is the default; the explicit authorized import
-                    # timezone parameter is a single-batch override, not a per-row setting.
-                    if tenant_tz is None and context.timezone_name:
-                        event_tz = ZoneInfo(context.timezone_name)
+                    event_tz = selected_tz
                 except ShiftAssignmentConfigurationError as exc:
                     errors.append(f"Row {row_number}: {exc}.")
 
