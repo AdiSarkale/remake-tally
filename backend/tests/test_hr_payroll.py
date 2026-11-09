@@ -714,8 +714,8 @@ def test_manual_attendance_work_date_uses_previous_overnight_roster_day():
         db.commit()
         from app.modules.hr.shift_roster_generation import generate_shift_roster
         generate_shift_roster(
-            db, date(2026, 10, 5), date(2026, 10, 5),
-            employee_ids=[employee.id], branch_id=branch.id, generated_by="test",
+            db, start_date=date(2026, 10, 5), end_date=date(2026, 10, 5),
+            employee_ids=[employee.id], created_by="test",
         )
         # 06:00 IST on 6 October is 00:30 UTC and remains in the 5 October shift.
         context, work_date = resolve_attendance_work_date(
