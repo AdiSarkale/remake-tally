@@ -1077,7 +1077,7 @@ async def import_attendance_from_excel(
                     continue
                 source_reference = build_event_source_reference(
                     "legacy_summary_v1", file_hash, item["employee_id"],
-                    item["work_date"], event_type, instant.isoformat(),
+                    item["work_date"], event_type,
                 )
                 _, event_created = append_attendance_event(
                     db,
