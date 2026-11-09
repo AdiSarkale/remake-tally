@@ -606,6 +606,32 @@ def test_branch_context_uses_effective_branch_after_employee_transfer():
         engine.dispose()
 
 
+def test_attendance_work_date_resolves_branch_timezone_on_transfer_midnight():
+    from datetime import datetime, timezone
+    from app.modules.hr.shift_assignment import resolve_attendance_work_date
+
+    engine, db, branch_a, branch_b, emp_a, _ = _branch_attendance_db()
+    try:
+        first = db.query(models.EmployeeOrgAssignment).filter_by(employee_id=emp_a.id).one()
+        first.valid_to = date(2026, 5, 31)
+        db.add(models.EmployeeOrgAssignment(
+            employee_id=emp_a.id, branch_id=branch_b.id, department="Ops",
+            valid_from=date(2026, 6, 1), created_by="test",
+        ))
+        db.commit()
+
+        # 00:30 in New York on transfer day; UTC date/time is still early June 1.
+        context, work_date = resolve_attendance_work_date(
+            db, emp_a.id, datetime(2026, 6, 1, 4, 30, tzinfo=timezone.utc),
+        )
+        assert work_date == date(2026, 6, 1)
+        assert context.branch_id == branch_b.id
+        assert context.timezone_name == "America/New_York"
+    finally:
+        db.close()
+        engine.dispose()
+
+
 def test_attendance_localization_rejects_dst_gaps_and_folds():
     from datetime import datetime
     from app.modules.hr.shift_assignment import (
