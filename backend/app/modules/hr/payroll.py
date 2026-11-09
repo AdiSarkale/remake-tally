@@ -51,6 +51,10 @@ class EmployeeAttendance(Base):
     employee_id: Mapped[str] = mapped_column(ForeignKey("employees.id", ondelete="CASCADE"), index=True, nullable=False)
     work_date: Mapped[date] = mapped_column(Date, index=True, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="present", nullable=False)
+    # Work date and timezone are a snapshot of the local attendance context.
+    # UTC punch instants remain canonical and are never recalculated on transfers.
+    branch_id: Mapped[str | None] = mapped_column(ForeignKey("hr_branches.id", ondelete="RESTRICT"), nullable=True, index=True)
+    timezone_name: Mapped[str] = mapped_column(String(64), default="Asia/Kolkata", nullable=False)
     punch_in: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     punch_out: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     overtime_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
