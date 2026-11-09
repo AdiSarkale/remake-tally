@@ -491,6 +491,8 @@ def _attendance_template_workbook(year: int, month: int) -> io.BytesIO:
     ]
     for row in lines:
         instructions.append(row)
+    instructions.append(["Branch-aware import: choose one branch and one IANA timezone for the whole workbook. The branch timezone is the default; an authorized importer may override it."])
+    instructions.append(["Punch In / Punch Out must be within the selected timezone. For overnight rows, use a scheduled overnight shift; punch-out time may be earlier than punch-in time only for that scheduled shift."])
     instructions["A1"].font = Font(bold=True, size=15, color="244062")
     instructions.column_dimensions["A"].width = 110
     for cell in instructions[16]:
