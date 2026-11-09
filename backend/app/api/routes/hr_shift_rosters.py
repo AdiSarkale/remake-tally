@@ -14,8 +14,9 @@ from app.modules.core.audit import log_audit
 from app.modules.hr.shift_roster_generation import (
     ShiftRosterGenerationError,
     generate_shift_roster,
+    apply_shift_roster_override,
 )
-from app.modules.hr.shift_roster_schemas import ShiftRosterGenerateIn, ShiftRosterGenerateOut
+from app.modules.hr.shift_roster_schemas import (\n    ShiftRosterGenerateIn, ShiftRosterGenerateOut,\n    ShiftRosterOverrideIn, ShiftRosterOverrideOut,\n)
 
 router = APIRouter(prefix="/hr/shift-rosters", tags=["hr", "shift-rosters"])
 write_access = Depends(require_permission("hr", "shift_rosters", "write", "tenant"))
@@ -91,3 +92,55 @@ def generate_rosters(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(409, "Roster generation conflicted with another request; retry to pick up the existing entries") from exc
+
+
+
+@router.put("/{employee_id}/{work_date}/override", response_model=ShiftRosterOverrideOut)
+def override_roster_date(
+    employee_id: str,
+    work_date: date,
+    payload: ShiftRosterOverrideIn,
+    db: Session = Depends(get_db),
+    user: models.User = write_access,
+):
+    try:
+        allowed = employee_scope_ids(
+            db, user, "hr", "employees", "update", as_of_date=work_date,
+        )
+        if allowed is not None and employee_id not in set(allowed):
+            raise HTTPException(
+                403,
+                "Employee is outside your configured update scope for this effective date",
+            )
+        row = apply_shift_roster_override(
+            db,
+            employee_id=employee_id,
+            work_date=work_date,
+            status=payload.status,
+            shift_type_id=payload.shift_type_id,
+            reason=payload.reason,
+            changed_by=user.username,
+        )
+        log_audit(
+            db,
+            user.username,
+            "OVERRIDE",
+            "hr_shift_roster",
+            f"employee={employee_id}; work_date={work_date}; status={row.status}; "
+            f"shift={row.shift_type_id}; version={row.version}; reason={payload.reason}",
+        )
+        db.commit()
+        return row
+    except HTTPException:
+        db.rollback()
+        raise
+    except ShiftRosterGenerationError as exc:
+        db.rollback()
+        message = str(exc)
+        status_code = 409 if any(token in message.lower() for token in (
+            "blocked", "policy", "historical", "overlap", "conflict",
+        )) else 422
+        raise HTTPException(status_code, message) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Roster override conflicted with another update") from exc
