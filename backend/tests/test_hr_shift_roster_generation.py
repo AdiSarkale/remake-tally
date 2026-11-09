@@ -189,7 +189,13 @@ def test_generation_rejects_frozen_payroll_period(db):
 
 def test_generation_rejects_historical_dates(db):
     employee, _, _ = _seed(db)
-    yesterday = date.today() - timedelta(days=1)
+    yesterday = date.today() - timedelta(days=3)
+    employee.joining_date = yesterday - timedelta(days=30)
+    org = db.query(models.EmployeeOrgAssignment).filter_by(employee_id=employee.id).one()
+    org.valid_from = yesterday - timedelta(days=30)
+    assignment = db.query(models.HRShiftAssignment).filter_by(employee_id=employee.id).one()
+    assignment.valid_from = yesterday - timedelta(days=30)
+    db.commit()
     with pytest.raises(ShiftRosterGenerationError, match="Historical roster generation"):
         _generate(db, employee, start=yesterday, end=yesterday)
 
@@ -202,3 +208,76 @@ def test_branch_and_department_filters_are_applied_per_effective_work_date(db):
     )
     assert result.employee_count == 1
     assert result.created_count == 7
+
+
+
+def test_controlled_override_preserves_each_previous_roster_version(db):
+    from app.modules.hr.shift_roster_generation import apply_shift_roster_override
+
+    employee, branch, original_shift = _seed(db)
+    work_date = date(2040, 1, 3)
+    _generate(db, employee, start=work_date, end=work_date)
+    revised_shift = models.HRShiftType(
+        id="roster-shift-late", code="LATE", name="Late Shift",
+        start_time=time(12), end_time=time(20), end_day_offset=0,
+        active=True, created_by="admin",
+    )
+    db.add(revised_shift)
+    db.commit()
+
+    row = apply_shift_roster_override(
+        db, employee_id=employee.id, work_date=work_date,
+        status="scheduled", shift_type_id=revised_shift.id,
+        reason="Approved production coverage change", changed_by="hr-user",
+    )
+    assert row.version == 2
+    assert row.is_override is True
+    assert row.shift_type_id == revised_shift.id
+    first_history = db.query(models.HRShiftRosterEntryHistory).filter_by(
+        roster_entry_id=row.id, version=1,
+    ).one()
+    assert first_history.snapshot["shift_type_id"] == original_shift.id
+    assert first_history.snapshot["status"] == "scheduled"
+
+    row = apply_shift_roster_override(
+        db, employee_id=employee.id, work_date=work_date,
+        status="weekly_off", shift_type_id=None,
+        reason="Approved plant shutdown for maintenance", changed_by="hr-user",
+    )
+    assert row.version == 3
+    assert row.status == "weekly_off"
+    assert db.query(models.HRShiftRosterEntryHistory).filter_by(
+        roster_entry_id=row.id,
+    ).count() == 2
+
+
+def test_manual_schedule_override_on_holiday_requires_roster_wins_policy(db):
+    from app.modules.hr.shift_roster_generation import apply_shift_roster_override
+
+    employee, _, shift = _seed(db)
+    work_date = date(2040, 1, 3)
+    db.add(models.HRCalendarDay(work_date=work_date, day_type="holiday", description="Plant holiday"))
+    db.commit()
+
+    with pytest.raises(ShiftRosterGenerationError, match="requires an effective workforce policy"):
+        apply_shift_roster_override(
+            db, employee_id=employee.id, work_date=work_date,
+            status="scheduled", shift_type_id=shift.id,
+            reason="Approved holiday production coverage", changed_by="hr-user",
+        )
+
+    policy = models.HRWorkforcePolicyVersion(
+        version_code="OVERRIDE-2040", effective_from=date(2040, 1, 1),
+        configuration={"holiday_roster_precedence": "roster_overrides_holiday"},
+        created_by="admin",
+    )
+    db.add(policy)
+    db.commit()
+    row = apply_shift_roster_override(
+        db, employee_id=employee.id, work_date=work_date,
+        status="scheduled", shift_type_id=shift.id,
+        reason="Approved holiday production coverage", changed_by="hr-user",
+    )
+    assert row.status == "scheduled"
+    assert row.is_override is True
+    assert row.policy_version_id == policy.id
