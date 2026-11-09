@@ -1,14 +1,16 @@
 """Regression tests for append-only HR attendance events and v2 imports."""
 from datetime import date, datetime, timezone
+import asyncio
 from io import BytesIO
 
 import pytest
 from openpyxl import Workbook
+from fastapi import UploadFile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.routes.hr_attendance_events import EmployeeSelfPunchCreate
+from app.api.routes.hr_attendance_events import EmployeeSelfPunchCreate, import_attendance_event_workbook
 from pydantic import ValidationError
 from app.modules.hr.attendance_events import (
     AttendanceEventError,
@@ -225,6 +227,71 @@ def test_event_workbook_v2_rejects_timezone_aware_cells_and_bad_rows_atomically(
                 file_hash="b" * 64,
             )
         assert db.query(models.HRAttendanceEvent).count() == 0
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_event_import_batch_is_atomic_and_idempotent_on_retry():
+    engine, db = _db()
+    try:
+        employee = _employee(db)
+        user = models.User(
+            id="attendance-hr-user",
+            username="attendance-hr-user",
+            full_name="HR User",
+            password_hash="test",
+            role=models.Role.hr,
+            active=True,
+            must_change_password=False,
+        )
+        db.add(user)
+        db.add(models.RolePermissionGrant(
+            role="HR", module="hr", feature="employees", action="update",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ))
+        db.commit()
+
+        valid_content = _event_workbook([[
+            "EMP-ATT-001", date(2026, 11, 10), "punch_in",
+            datetime(2026, 11, 10, 9, 0), None, None, "Gate 1",
+        ]])
+
+        async def upload(content):
+            return await import_attendance_event_workbook(
+                branch_id=None,
+                import_timezone="Asia/Kolkata",
+                file=UploadFile(filename="events.xlsx", file=BytesIO(content)),
+                db=db,
+                user=user,
+            )
+
+        first = asyncio.run(upload(valid_content))
+        second = asyncio.run(upload(valid_content))
+        assert first["status"] == second["status"] == "imported"
+        assert first["rows_imported"] == second["rows_imported"] == 1
+        assert db.query(models.HRAttendanceEvent).count() == 1
+        assert db.query(models.HRAttendanceImportBatch).count() == 2
+
+        invalid_content = _event_workbook([
+            [
+                "EMP-ATT-001", date(2026, 11, 11), "punch_in",
+                datetime(2026, 11, 11, 9, 0), None, None, "",
+            ],
+            [
+                "EMP-ATT-001", date(2026, 11, 11), "invalid_event",
+                datetime(2026, 11, 11, 9, 5), None, None, "",
+            ],
+        ])
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as rejected:
+            asyncio.run(upload(invalid_content))
+        assert rejected.value.status_code == 422
+        assert db.query(models.HRAttendanceEvent).count() == 1
+        rejected_batch = db.query(models.HRAttendanceImportBatch).filter_by(status="rejected").one()
+        assert rejected_batch.rows_imported == 0
+        assert rejected_batch.error_summary
     finally:
         db.close()
         engine.dispose()
