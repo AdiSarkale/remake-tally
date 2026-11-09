@@ -944,7 +944,8 @@ async def import_attendance_from_excel(
         branch = db.get(models.HRBranch, branch_id)
         if branch is None or not branch.active:
             raise HTTPException(status_code=422, detail="Select an active branch for this attendance import")
-        default_timezone = (branch.timezone or "").strip() or (settings.timezone or "Asia/Kolkata")
+        branch_timezone = (branch.timezone or "").strip()
+        default_timezone = branch_timezone or (settings.timezone or "Asia/Kolkata")
     else:
         default_timezone = settings.timezone or "Asia/Kolkata"
     selected_timezone = import_timezone or default_timezone
@@ -952,6 +953,7 @@ async def import_attendance_from_excel(
         import_tz = ZoneInfo(selected_timezone)
     except ZoneInfoNotFoundError as exc:
         raise HTTPException(status_code=422, detail="Import timezone must be a valid IANA timezone identifier") from exc
+
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=415, detail="Upload an .xlsx Excel workbook using the MiniTally attendance template.")
     content = await file.read(_MAX_ATTENDANCE_IMPORT_BYTES + 1)
@@ -987,6 +989,7 @@ async def import_attendance_from_excel(
             status_code=422,
             detail="Selected batch branch does not match every employee's effective branch for the imported work dates.",
         )
+
     scope_cache: dict[date, list[str] | None] = {}
     for item in rows:
         work_date = item["work_date"]
