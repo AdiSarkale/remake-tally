@@ -85,7 +85,7 @@ def test_tenant_hr_migration_chain_has_single_latest_head():
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["p0_hr_attendance_reconciliation_020"]
+    assert script.get_heads() == ["p0_hr_att_reconcile_020"]
     assert script.get_revision("hr_role_001").down_revision == "employee_type_001"
     assert script.get_revision("hr_employee_types_002").down_revision == "hr_role_001"
     assert script.get_revision("hr_employee_codes_003").down_revision == "hr_employee_types_002"
@@ -103,7 +103,7 @@ def test_tenant_hr_migration_chain_has_single_latest_head():
     assert script.get_revision("p0_hr_roster_history_017").down_revision == "p0_hr_shift_roster_016"
     assert script.get_revision("p0_hr_branch_timezone_018").down_revision == "p0_hr_roster_history_017"
     assert script.get_revision("p0_hr_attendance_events_019").down_revision == "p0_hr_branch_timezone_018"
-    assert script.get_revision("p0_hr_attendance_reconciliation_020").down_revision == "p0_hr_attendance_events_019"
+    assert script.get_revision("p0_hr_att_reconcile_020").down_revision == "p0_hr_attendance_events_019"
 
 
 def test_employee_branch_and_hierarchical_team_scopes_are_relationship_backed():
