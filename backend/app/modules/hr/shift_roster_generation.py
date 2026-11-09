@@ -15,11 +15,14 @@ from app.modules.hr.payroll import (
     HRShiftAssignment,
     HRShiftBreakRule,
     HRShiftRosterEntry,
+    HRShiftRosterEntryHistory,
+    HRShiftType,
     HRWorkforcePolicyVersion,
 )
 from app.modules.hr.shift_assignment import (
     ShiftAssignmentConfigurationError,
     resolve_shift_for_work_date,
+    resolve_shift_window,
 )
 
 
@@ -385,3 +388,155 @@ def generate_shift_roster(
         skipped_outside_employment_count=skipped_outside_employment_count,
         unassigned_working_day_count=unassigned_working_day_count,
     )
+
+
+
+def _assert_payroll_period_open(db: Session, work_date: date) -> None:
+    frozen = db.query(HRPayrollRun).filter(
+        HRPayrollRun.year == work_date.year,
+        HRPayrollRun.month == work_date.month,
+        HRPayrollRun.status != "draft",
+    ).first()
+    if frozen is not None:
+        raise ShiftRosterGenerationError(
+            f"Roster changes are blocked for {work_date.year}-{work_date.month:02d}: "
+            f"payroll run status is {frozen.status!r}"
+        )
+
+
+def _snapshot_roster_entry(row: HRShiftRosterEntry) -> dict:
+    snapshot = {}
+    for column in row.__table__.columns:
+        value = getattr(row, column.name)
+        if hasattr(value, "isoformat"):
+            value = value.isoformat()
+        elif isinstance(value, (list, dict)):
+            value = value.copy() if isinstance(value, dict) else list(value)
+        snapshot[column.name] = value
+    return snapshot
+
+
+def apply_shift_roster_override(
+    db: Session,
+    *,
+    employee_id: str,
+    work_date: date,
+    status: str,
+    shift_type_id: str | None,
+    reason: str,
+    changed_by: str,
+) -> HRShiftRosterEntry:
+    """Create or revise one future date override while preserving every prior version."""
+    if status not in {"scheduled", "weekly_off", "cancelled"}:
+        raise ShiftRosterGenerationError("Roster override status must be scheduled, weekly_off or cancelled")
+    if not reason or len(reason.strip()) < 10:
+        raise ShiftRosterGenerationError("Roster override reason must contain at least 10 characters")
+    if (status == "scheduled") != bool(shift_type_id):
+        raise ShiftRosterGenerationError("A scheduled override requires a shift; non-scheduled overrides must not specify one")
+
+    employee = db.get(Employee, employee_id)
+    if employee is None:
+        raise ShiftRosterGenerationError("Employee not found in this tenant")
+    if not employee.active:
+        raise ShiftRosterGenerationError("Inactive employees cannot receive future roster overrides")
+    if employee.joining_date and work_date < employee.joining_date:
+        raise ShiftRosterGenerationError("Roster override date precedes employee joining date")
+    if employee.end_date and work_date > employee.end_date:
+        raise ShiftRosterGenerationError("Roster override date is after employee end date")
+
+    _assert_payroll_period_open(db, work_date)
+    existing = db.query(HRShiftRosterEntry).filter_by(
+        employee_id=employee_id, work_date=work_date,
+    ).one_or_none()
+    org = _effective_org_assignment(db, employee_id, work_date)
+
+    try:
+        resolution = resolve_shift_for_work_date(db, employee_id, work_date)
+    except ShiftAssignmentConfigurationError as exc:
+        raise ShiftRosterGenerationError(str(exc)) from exc
+
+    branch_id = (
+        existing.branch_id if existing else
+        (resolution.branch_id if resolution and resolution.branch_id else (org.branch_id if org else None))
+    )
+    timezone_name = (
+        existing.timezone_name if existing else
+        (resolution.timezone_name if resolution else _timezone_name(db, branch_id, _tenant_timezone_name(db)))
+    )
+    local_today = datetime.now(ZoneInfo(timezone_name)).date()
+    if work_date < local_today:
+        raise ShiftRosterGenerationError("Historical roster overrides are not allowed")
+
+    policy = _policy_for_date(
+        db.query(HRWorkforcePolicyVersion).filter(
+            HRWorkforcePolicyVersion.effective_from <= work_date,
+            (HRWorkforcePolicyVersion.effective_to.is_(None) | (HRWorkforcePolicyVersion.effective_to >= work_date)),
+        ).all(),
+        work_date,
+    )
+    calendar = db.query(HRCalendarDay).filter_by(work_date=work_date).one_or_none()
+    if status == "scheduled" and calendar is not None and calendar.day_type == "holiday":
+        precedence = (policy.configuration or {}).get(HOLIDAY_PRECEDENCE_KEY) if policy else None
+        if precedence != "roster_overrides_holiday":
+            raise ShiftRosterGenerationError(
+                "Scheduling work on a calendar holiday requires an effective workforce policy "
+                "with holiday_roster_precedence='roster_overrides_holiday'"
+            )
+
+    shift_type = None
+    start_utc = end_utc = None
+    break_snapshot: list[dict] = []
+    if status == "scheduled":
+        shift_type = db.get(HRShiftType, shift_type_id)
+        if shift_type is None or not shift_type.active:
+            raise ShiftRosterGenerationError("An active shift definition is required for a scheduled override")
+        try:
+            start_utc, end_utc = resolve_shift_window(work_date, shift_type, timezone_name)
+        except ShiftAssignmentConfigurationError as exc:
+            raise ShiftRosterGenerationError(str(exc)) from exc
+        break_snapshot = _break_snapshot(db, shift_type.id)
+
+    source_assignment_id = (
+        existing.source_assignment_id if existing else
+        (resolution.assignment.id if resolution and resolution.assignment else None)
+    )
+    department_snapshot = (
+        existing.department_snapshot if existing else
+        (resolution.department if resolution else (org.department if org else ""))
+    ) or ""
+    policy_version_id = policy.id if policy else (existing.policy_version_id if existing else None)
+
+    if existing is None:
+        existing = HRShiftRosterEntry(
+            employee_id=employee_id,
+            work_date=work_date,
+            created_by=changed_by,
+        )
+        db.add(existing)
+        existing.version = 1
+    else:
+        db.add(HRShiftRosterEntryHistory(
+            roster_entry_id=existing.id,
+            version=existing.version,
+            snapshot=_snapshot_roster_entry(existing),
+            change_reason=reason.strip(),
+            changed_by=changed_by,
+        ))
+        existing.version += 1
+
+    existing.status = status
+    existing.shift_type_id = shift_type.id if shift_type else None
+    existing.source_assignment_id = source_assignment_id
+    existing.is_override = True
+    existing.override_reason = reason.strip()
+    existing.branch_id = branch_id
+    existing.department_snapshot = department_snapshot
+    existing.timezone_name = timezone_name
+    existing.scheduled_start_at_utc = start_utc
+    existing.scheduled_end_at_utc = end_utc
+    existing.shift_code_snapshot = shift_type.code if shift_type else ""
+    existing.shift_name_snapshot = shift_type.name if shift_type else ""
+    existing.break_rules_snapshot = break_snapshot
+    existing.policy_version_id = policy_version_id
+    db.flush()
+    return existing
