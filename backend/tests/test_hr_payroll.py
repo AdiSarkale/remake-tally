@@ -19,6 +19,9 @@ from app.api.routes.hr_payroll import (
 )
 from app.modules.hr.payroll_schemas import PayrollSettingsIn
 
+from app import models
+
+
 
 def _employee():
     return SimpleNamespace(
@@ -786,4 +789,40 @@ def test_overnight_event_uses_shift_start_work_date_across_midnight():
         db.close()
         engine.dispose()
 
+def test_branch_timezone_import_normalizes_local_times_and_snapshots_context():
+    engine, db, branch_a, _, emp_a, _ = _branch_attendance_db()
+    try:
+        workbook = _attendance_workbook([
+            ["TZA", date(2026, 10, 5), "present", 0, time_type(8, 30), time_type(17, 0), ""],
+        ])
+        rows = _parse_attendance_workbook(
+            workbook, 2026, 10, {"TZA": emp_a},
+            ZoneInfo("Asia/Kolkata"), db=db, branch_id=branch_a.id,
+        )
+        assert len(rows) == 1
+        assert rows[0]["branch_id"] == branch_a.id
+        assert rows[0]["timezone_name"] == "Asia/Kolkata"
+        assert rows[0]["punch_in"].hour == 3
+        assert rows[0]["punch_in"].minute == 0
+        assert rows[0]["punch_out"].hour == 11
+        assert rows[0]["punch_out"].minute == 30
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_import_rejects_wrong_selected_branch_for_employee_work_date():
+    engine, db, branch_a, branch_b, emp_a, _ = _branch_attendance_db()
+    try:
+        workbook = _attendance_workbook([
+            ["TZA", date(2026, 10, 5), "present", 0, time_type(8, 30), time_type(17, 0), ""],
+        ])
+        with pytest.raises(ValueError, match="not assigned to the selected branch"):
+            _parse_attendance_workbook(
+                workbook, 2026, 10, {"TZA": emp_a},
+                ZoneInfo("Asia/Kolkata"), db=db, branch_id=branch_b.id,
+            )
+    finally:
+        db.close()
+        engine.dispose()
 
