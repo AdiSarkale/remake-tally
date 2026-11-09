@@ -10,7 +10,9 @@ from fastapi.params import Depends as DependsParam
 
 from app import models
 from app.api.routes import hr_shift_rosters
-from app.modules.hr.shift_roster_schemas import ShiftRosterGenerateIn, ShiftRosterOverrideIn
+from app.modules.hr.shift_roster_schemas import (
+    ShiftRosterGenerateIn, ShiftRosterOverrideIn, ShiftRosterOverrideOut,
+)
 from app.modules.hr.shift_roster_generation import (
     ShiftRosterGenerationError,
     generate_shift_roster,
@@ -359,3 +361,44 @@ def test_roster_override_request_requires_a_reason_and_valid_shift_shape():
         reason="Approved line shutdown for maintenance",
     )
     assert valid.reason.startswith("Approved")
+
+
+
+def test_override_endpoint_response_schema_reads_sqlalchemy_model(db):
+    user = models.User(
+        id="roster-override-admin", username="roster-override-admin",
+        full_name="Roster Override Admin", password_hash="test",
+        role=models.Role.admin, active=True, must_change_password=False,
+    )
+    db.add(user)
+    db.add_all([
+        models.RolePermissionGrant(
+            role="Admin", module="hr", feature="shift_rosters", action="write",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ),
+        models.RolePermissionGrant(
+            role="Admin", module="hr", feature="employees", action="update",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ),
+    ])
+    db.commit()
+    employee, _, shift = _seed(db)
+    work_date = date(2040, 1, 3)
+
+    row = hr_shift_rosters.override_roster_date(
+        employee.id,
+        work_date,
+        ShiftRosterOverrideIn(
+            status="scheduled",
+            shift_type_id=shift.id,
+            reason="Approved additional production coverage",
+        ),
+        db,
+        user,
+    )
+
+    response = ShiftRosterOverrideOut.model_validate(row)
+    assert response.employee_id == employee.id
+    assert response.work_date == work_date
+    assert response.version == 1
+    assert response.is_override is True
