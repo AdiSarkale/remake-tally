@@ -937,8 +937,7 @@ async def import_attendance_from_excel(
         branch = db.get(models.HRBranch, branch_id)
         if branch is None or not branch.active:
             raise HTTPException(status_code=422, detail="Select an active branch for this attendance import")
-        branch_timezone = (branch.timezone or "").strip()
-        default_timezone = branch_timezone or (settings.timezone or "Asia/Kolkata")
+        default_timezone = (branch.timezone or "").strip() or (settings.timezone or "Asia/Kolkata")
     else:
         default_timezone = settings.timezone or "Asia/Kolkata"
     selected_timezone = import_timezone or default_timezone
@@ -981,7 +980,6 @@ async def import_attendance_from_excel(
             status_code=422,
             detail="Selected batch branch does not match every employee's effective branch for the imported work dates.",
         )
-
     scope_cache: dict[date, list[str] | None] = {}
     for item in rows:
         work_date = item["work_date"]
@@ -1027,7 +1025,7 @@ async def import_attendance_from_excel(
                 updated += 1
         log_audit(
             db, user.username, "IMPORT", "employee_attendance",
-            f"{year}-{month:02d}: branch={actual_branch or 'unassigned'}, timezone={selected_timezone}, rows={len(rows)}, created={created}, updated={updated}, cleared={cleared}",
+            f"{year}-{month:02d}: branch={actual_branch or 'unassigned'}; timezone={selected_timezone}; rows={len(rows)}; created={created}; updated={updated}; cleared={cleared}",
         )
         db.commit()
     except IntegrityError as exc:
