@@ -402,3 +402,37 @@ def test_override_endpoint_response_schema_reads_sqlalchemy_model(db):
     assert response.work_date == work_date
     assert response.version == 1
     assert response.is_override is True
+
+
+
+def test_override_endpoint_returns_not_found_for_employee_outside_tenant(db):
+    user = models.User(
+        id="roster-override-notfound-admin", username="roster-override-notfound-admin",
+        full_name="Roster Override Admin", password_hash="test",
+        role=models.Role.admin, active=True, must_change_password=False,
+    )
+    db.add_all([
+        user,
+        models.RolePermissionGrant(
+            role="Admin", module="hr", feature="shift_rosters", action="write",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ),
+        models.RolePermissionGrant(
+            role="Admin", module="hr", feature="employees", action="update",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ),
+    ])
+    db.commit()
+
+    with pytest.raises(HTTPException) as missing:
+        hr_shift_rosters.override_roster_date(
+            "employee-not-in-tenant",
+            date(2040, 1, 3),
+            ShiftRosterOverrideIn(
+                status="weekly_off",
+                reason="Approved weekly off for planned maintenance",
+            ),
+            db,
+            user,
+        )
+    assert missing.value.status_code == 404
