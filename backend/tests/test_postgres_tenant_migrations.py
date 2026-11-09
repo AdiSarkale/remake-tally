@@ -297,14 +297,15 @@ def test_postgres_company_provisioning_and_fleet_migration():
                 assert ("Admin", "attendance", "view", "tenant") in attendance_grants
                 assert ("HR", "attendance", "import", "tenant") in attendance_grants
                 assert ("Operator", "attendance", "event_create", "own") in attendance_grants
-                anomaly_grants = {
-                    (row[0], row[1], row[2], row[3])
-                    for row in connection.execute(text(
-                        "SELECT role, feature, action, data_scope "
-                        "FROM role_permission_grants "
-                        "WHERE module = 'hr' AND feature IN ('attendance_anomalies', 'workforce_settings')"
-                    ))
-                }
+                with engine.connect() as connection:
+                    anomaly_grants = {
+                        (row[0], row[1], row[2], row[3])
+                        for row in connection.execute(text(
+                            "SELECT role, feature, action, data_scope "
+                            "FROM role_permission_grants "
+                            "WHERE module = 'hr' AND feature IN ('attendance_anomalies', 'workforce_settings')"
+                        ))
+                    }
                 assert ("Admin", "attendance_anomalies", "resolve", "tenant") in anomaly_grants
                 assert ("HR", "attendance_anomalies", "false_positive", "tenant") in anomaly_grants
                 assert ("HR", "workforce_settings", "edit", "tenant") in anomaly_grants
