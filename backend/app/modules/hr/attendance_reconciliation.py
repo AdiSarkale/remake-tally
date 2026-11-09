@@ -6,6 +6,7 @@ from datetime import date, timezone
 from decimal import Decimal, InvalidOperation
 from itertools import combinations
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.core.audit import log_audit
@@ -66,6 +67,11 @@ def reconcile_attendance_event(
     """
     if event.voided_at is not None:
         return []
+    if db.query(HRAttendanceEvent.id).filter(
+        HRAttendanceEvent.supersedes_event_id == event.id,
+        HRAttendanceEvent.voided_at.is_(None),
+    ).first():
+        return []
     configured = configured_attendance_margin(db, event.work_date)
     if configured is None:
         return []
@@ -118,8 +124,13 @@ def reconcile_attendance_event(
             policy_version_id=policy.id,
             status="open",
         )
-        db.add(anomaly)
-        db.flush()
+        try:
+            with db.begin_nested():
+                db.add(anomaly)
+                db.flush()
+        except IntegrityError:
+            # Another concurrent event/import may have created the same pair.
+            continue
         log_audit(
             db,
             event.recorded_by,
