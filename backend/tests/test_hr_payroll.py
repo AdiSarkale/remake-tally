@@ -531,3 +531,149 @@ def test_monthly_attendance_is_filtered_by_historical_employee_scope():
     finally:
         db.close()
         engine.dispose()
+
+
+def _branch_attendance_db():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from app import models
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    settings = models.HRPayrollSettings(id=1, timezone="Asia/Kolkata")
+    branch_a = models.HRBranch(code="PUN", name="Pune", timezone="Asia/Kolkata", active=True)
+    branch_b = models.HRBranch(code="NYC", name="New York", timezone="America/New_York", active=True)
+    emp_a = models.Employee(id="tz-emp-a", emp_code="TZA", name="TZ A", joining_date=date(2026, 1, 1), active=True)
+    emp_b = models.Employee(id="tz-emp-b", emp_code="TZB", name="TZ B", joining_date=date(2026, 1, 1), active=True)
+    db.add_all([settings, branch_a, branch_b, emp_a, emp_b])
+    db.flush()
+    db.add_all([
+        models.EmployeeOrgAssignment(employee_id=emp_a.id, branch_id=branch_a.id, department="Ops", valid_from=date(2026, 1, 1), created_by="test"),
+        models.EmployeeOrgAssignment(employee_id=emp_b.id, branch_id=branch_b.id, department="Ops", valid_from=date(2026, 1, 1), created_by="test"),
+    ])
+    db.commit()
+    return engine, db, branch_a, branch_b, emp_a, emp_b
+
+
+def test_branch_context_resolves_effective_branch_timezone_and_tenant_fallback():
+    from app.modules.hr.shift_assignment import resolve_employee_work_context
+
+    engine, db, branch_a, branch_b, emp_a, emp_b = _branch_attendance_db()
+    try:
+        pune = resolve_employee_work_context(db, emp_a.id, date(2026, 4, 1))
+        new_york = resolve_employee_work_context(db, emp_b.id, date(2026, 4, 1))
+        assert pune.branch_id == branch_a.id
+        assert pune.timezone_name == "Asia/Kolkata"
+        assert new_york.branch_id == branch_b.id
+        assert new_york.timezone_name == "America/New_York"
+
+        unassigned = models.Employee(id="tz-legacy", emp_code="TZL", name="Legacy", joining_date=date(2026, 1, 1), active=True)
+        db.add(unassigned)
+        db.commit()
+        fallback = resolve_employee_work_context(db, unassigned.id, date(2026, 4, 1))
+        assert fallback.branch_id is None
+        assert fallback.timezone_name == "Asia/Kolkata"
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_branch_context_uses_effective_branch_after_employee_transfer():
+    from app.modules.hr.shift_assignment import resolve_employee_work_context
+
+    engine, db, branch_a, branch_b, emp_a, _ = _branch_attendance_db()
+    try:
+        first = db.query(models.EmployeeOrgAssignment).filter_by(employee_id=emp_a.id).one()
+        first.valid_to = date(2026, 5, 31)
+        db.add(models.EmployeeOrgAssignment(
+            employee_id=emp_a.id, branch_id=branch_b.id, department="Ops",
+            valid_from=date(2026, 6, 1), created_by="test",
+        ))
+        db.commit()
+
+        may = resolve_employee_work_context(db, emp_a.id, date(2026, 5, 31))
+        june = resolve_employee_work_context(db, emp_a.id, date(2026, 6, 1))
+        assert may.branch_id == branch_a.id
+        assert may.timezone_name == "Asia/Kolkata"
+        assert june.branch_id == branch_b.id
+        assert june.timezone_name == "America/New_York"
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_attendance_localization_rejects_dst_gaps_and_folds():
+    from datetime import datetime
+    from app.modules.hr.shift_assignment import (
+        ShiftAssignmentConfigurationError,
+        localize_attendance_datetime,
+    )
+
+    with pytest.raises(ShiftAssignmentConfigurationError, match="does not exist"):
+        localize_attendance_datetime(datetime(2026, 3, 8, 2, 30), "America/New_York")
+    with pytest.raises(ShiftAssignmentConfigurationError, match="ambiguous"):
+        localize_attendance_datetime(datetime(2026, 11, 1, 1, 30), "America/New_York")
+
+
+def test_attendance_import_parser_rejects_multiple_branches_atomically():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from app import models
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        branch_a = models.HRBranch(code="A", name="A", timezone="Asia/Kolkata", active=True)
+        branch_b = models.HRBranch(code="B", name="B", timezone="America/New_York", active=True)
+        emp_a = models.Employee(id="multi-a", emp_code="MULTIA", name="A", joining_date=date(2026, 1, 1), active=True)
+        emp_b = models.Employee(id="multi-b", emp_code="MULTIB", name="B", joining_date=date(2026, 1, 1), active=True)
+        db.add_all([branch_a, branch_b, emp_a, emp_b])
+        db.flush()
+        db.add_all([
+            models.EmployeeOrgAssignment(employee_id=emp_a.id, branch_id=branch_a.id, department="Ops", valid_from=date(2026, 1, 1), created_by="test"),
+            models.EmployeeOrgAssignment(employee_id=emp_b.id, branch_id=branch_b.id, department="Ops", valid_from=date(2026, 1, 1), created_by="test"),
+        ])
+        db.commit()
+        workbook = _attendance_workbook([
+            ["MULTIA", date(2026, 10, 5), "present", 0, time_type(8, 30), time_type(17, 0), ""],
+            ["MULTIB", date(2026, 10, 5), "present", 0, time_type(8, 30), time_type(17, 0), ""],
+        ])
+        with pytest.raises(ValueError, match="multiple branches"):
+            _parse_attendance_workbook(
+                workbook, 2026, 10,
+                {"MULTIA": emp_a, "MULTIB": emp_b},
+                ZoneInfo("Asia/Kolkata"), db=db, branch_id=None,
+            )
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_overnight_legacy_import_requires_scheduled_overnight_shift():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from app import models
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        branch = models.HRBranch(code="NIGHT", name="Night", timezone="Asia/Kolkata", active=True)
+        employee = models.Employee(id="night-employee", emp_code="NIGHT001", name="Night", joining_date=date(2026, 1, 1), active=True)
+        db.add_all([branch, employee])
+        db.flush()
+        db.add(models.EmployeeOrgAssignment(employee_id=employee.id, branch_id=branch.id, department="Ops", valid_from=date(2026, 1, 1), created_by="test"))
+        db.commit()
+        workbook = _attendance_workbook([
+            ["NIGHT001", date(2026, 10, 5), "present", 0, time_type(22, 0), time_type(6, 0), ""],
+        ])
+        with pytest.raises(ValueError, match="scheduled overnight shift"):
+            _parse_attendance_workbook(
+                workbook, 2026, 10, {"NIGHT001": employee},
+                ZoneInfo("Asia/Kolkata"), db=db, branch_id=branch.id, allow_overnight=True,
+            )
+    finally:
+        db.close()
+        engine.dispose()
