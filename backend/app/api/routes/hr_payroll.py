@@ -559,7 +559,7 @@ def _parse_attendance_workbook(
     branch_id: str | None = None,
     allow_overnight: bool = False,
 ) -> list[dict[str, Any]]:
-    """Validate a single-branch workbook and normalize its local punches to UTC."""
+    """Validate a single-branch workbook and normalize local punch times to UTC."""
     _validate_period(year, month)
     selected_tz = tenant_tz or ZoneInfo("Asia/Kolkata")
     if branch_id is not None and db is None:
@@ -612,18 +612,19 @@ def _parse_attendance_workbook(
                 errors.append(f"Row {row_number}: {exc}.")
 
             context = None
+            event_tz = selected_tz
             if employee is not None and work_date is not None and db is not None:
                 try:
                     context = resolve_employee_work_context(db, employee.id, work_date)
                     batch_branch_ids.add(context.branch_id)
                     if branch_id is not None and context.branch_id != branch_id:
-                        errors.append(
-                            f"Row {row_number}: employee {code} is not assigned to the selected branch on {work_date}."
-                        )
+                        errors.append(f"Row {row_number}: employee {code} is not assigned to the selected branch on {work_date}.")
                     if branch_id is None and context.branch_id is not None:
-                        errors.append(
-                            f"Row {row_number}: employee {code} is assigned to branch {context.branch_id}; select that branch for this batch."
-                        )
+                        errors.append(f"Row {row_number}: employee {code} is assigned to branch {context.branch_id}; select that branch for this batch.")
+                    # The branch timezone is the default; the explicit authorized import
+                    # timezone parameter is a single-batch override, not a per-row setting.
+                    if tenant_tz is None and context.timezone_name:
+                        event_tz = ZoneInfo(context.timezone_name)
                 except ShiftAssignmentConfigurationError as exc:
                     errors.append(f"Row {row_number}: {exc}.")
 
@@ -647,20 +648,23 @@ def _parse_attendance_workbook(
                 parsed_time = _parse_attendance_excel_time(raw_punch_in)
                 if parsed_time is not None and work_date is not None:
                     punch_in_local = datetime.combine(work_date, parsed_time)
-                    punch_in = localize_attendance_datetime(punch_in_local, selected_tz.key)
+                    punch_in = localize_attendance_datetime(punch_in_local, event_tz.key)
             except (ValueError, ShiftAssignmentConfigurationError) as exc:
                 errors.append(f"Row {row_number}: Punch In {exc}.")
             try:
                 parsed_time = _parse_attendance_excel_time(raw_punch_out)
                 if parsed_time is not None and work_date is not None:
                     punch_out_local = datetime.combine(work_date, parsed_time)
-                    if punch_in_local is not None and punch_out_local <= punch_in_local and allow_overnight:
-                        shift = resolve_shift_for_work_date(db, employee.id, work_date) if db is not None and employee is not None else None
-                        if shift is None or shift.scheduled_end_at_utc is None:
-                            errors.append(f"Row {row_number}: overnight punches require a scheduled overnight shift.")
+                    if punch_in_local is not None and punch_out_local <= punch_in_local:
+                        if allow_overnight and employee is not None and db is not None:
+                            shift = resolve_shift_for_work_date(db, employee.id, work_date)
+                            if shift is not None and shift.scheduled_end_at_utc is not None:
+                                punch_out_local += timedelta(days=1)
+                            else:
+                                errors.append(f"Row {row_number}: overnight punches require a scheduled overnight shift.")
                         else:
-                            punch_out_local += timedelta(days=1)
-                    punch_out = localize_attendance_datetime(punch_out_local, selected_tz.key)
+                            errors.append(f"Row {row_number}: Punch Out must be after Punch In.")
+                    punch_out = localize_attendance_datetime(punch_out_local, event_tz.key)
             except (ValueError, ShiftAssignmentConfigurationError) as exc:
                 errors.append(f"Row {row_number}: Punch Out {exc}.")
             if punch_in is not None and punch_out is not None and punch_out <= punch_in:
@@ -682,7 +686,7 @@ def _parse_attendance_workbook(
                     "employee_code": code,
                     "work_date": work_date,
                     "branch_id": context.branch_id if context else None,
-                    "timezone_name": selected_tz.key,
+                    "timezone_name": event_tz.key,
                     "status": status,
                     "overtime_minutes": overtime_minutes,
                     "punch_in": punch_in,
