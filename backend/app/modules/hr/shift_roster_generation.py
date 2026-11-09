@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.orm import Session
@@ -12,7 +12,6 @@ from app.modules.hr.payroll import (
     HRCalendarDay,
     HRPayrollRun,
     HRPayrollSettings,
-    HRShiftAssignment,
     HRShiftBreakRule,
     HRShiftRosterEntry,
     HRShiftRosterEntryHistory,
@@ -202,6 +201,20 @@ def generate_shift_roster(
         inactive = [row.emp_code for row in employees if not row.active]
         if inactive:
             raise ShiftRosterGenerationError(f"Inactive employees cannot receive future rosters: {', '.join(inactive)}")
+    elif branch_id or department:
+        employee_query = db.query(Employee).join(
+            EmployeeOrgAssignment,
+            EmployeeOrgAssignment.employee_id == Employee.id,
+        ).filter(
+            Employee.active.is_(True),
+            EmployeeOrgAssignment.valid_from <= end_date,
+            (EmployeeOrgAssignment.valid_to.is_(None) | (EmployeeOrgAssignment.valid_to >= start_date)),
+        )
+        if branch_id:
+            employee_query = employee_query.filter(EmployeeOrgAssignment.branch_id == branch_id)
+        if department:
+            employee_query = employee_query.filter(EmployeeOrgAssignment.department.ilike(department))
+        employees = employee_query.distinct().order_by(Employee.emp_code).all()
     else:
         employees = db.query(Employee).filter(Employee.active.is_(True)).order_by(Employee.emp_code).all()
 
