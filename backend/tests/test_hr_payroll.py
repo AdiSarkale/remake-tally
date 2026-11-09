@@ -717,7 +717,7 @@ def test_manual_attendance_work_date_uses_previous_overnight_roster_day():
             db, start_date=date(2040, 1, 2), end_date=date(2040, 1, 2),
             employee_ids=[employee.id], created_by="test",
         )
-        # 06:00 IST on 6 October is 00:30 UTC and remains in the 5 October shift.
+        # 06:00 IST on 3 January is 00:30 UTC and remains in the 2 January shift.
         context, work_date = resolve_attendance_work_date(
             db, employee.id, datetime(2040, 1, 3, 0, 30, tzinfo=timezone.utc),
         )
