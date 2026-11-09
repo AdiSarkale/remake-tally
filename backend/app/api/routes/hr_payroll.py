@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import calendar
+import hashlib
 import io
 from datetime import date, datetime, time as time_type, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -33,6 +34,11 @@ from app.modules.hr.shift_assignment import (
     resolve_employee_work_context,
     resolve_attendance_work_date,
     resolve_shift_for_work_date,
+)
+from app.modules.hr.attendance_events import (
+    AttendanceEventError,
+    append_attendance_event,
+    build_event_source_reference,
 )
 
 router = APIRouter(prefix="/hr", tags=["hr", "payroll"])
@@ -976,6 +982,8 @@ async def import_attendance_from_excel(
     await file.close()
     if len(content) > _MAX_ATTENDANCE_IMPORT_BYTES:
         raise HTTPException(status_code=413, detail="Attendance workbook must be 5 MB or smaller.")
+    file_hash = hashlib.sha256(content).hexdigest()
+    file_name = (file.filename or "attendance.xlsx").replace("\\", "/").split("/")[-1][:255]
 
     employees_by_code = {
         row.emp_code.strip().upper(): row
@@ -991,6 +999,22 @@ async def import_attendance_from_excel(
             db=db, branch_id=branch_id, allow_overnight=True,
         )
     except ValueError as exc:
+        rejected_batch = models.HRAttendanceImportBatch(
+            branch_id=branch_id,
+            import_timezone=selected_timezone,
+            template_version="legacy_summary_v1",
+            file_name=file_name,
+            file_hash=file_hash,
+            uploaded_by=user.username[:64],
+            status="rejected",
+            rows_total=0,
+            rows_imported=0,
+            rows_rejected=1,
+            error_summary=str(exc)[:4000],
+        )
+        db.add(rejected_batch)
+        log_audit(db, user.username, "REJECT", "hr_attendance_import_batch", f"legacy_summary_v1:{file_hash}:{str(exc)[:400]}")
+        db.commit()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     resolved_branches = {item["branch_id"] for item in rows}
@@ -1020,9 +1044,57 @@ async def import_attendance_from_excel(
                 detail=f"Attendance import includes an employee outside your access scope on {work_date}",
             )
 
+    batch = models.HRAttendanceImportBatch(
+        branch_id=actual_branch,
+        import_timezone=selected_timezone,
+        template_version="legacy_summary_v1",
+        file_name=file_name,
+        file_hash=file_hash,
+        uploaded_by=user.username[:64],
+        status="validated",
+        rows_total=len(rows),
+        rows_imported=0,
+        rows_rejected=0,
+        error_summary="",
+    )
+    db.add(batch)
+    log_audit(db, user.username, "VALIDATE", "hr_attendance_import_batch", f"legacy_summary_v1:{file_hash}:{len(rows)} rows")
+    db.commit()
+    db.refresh(batch)
+
     created = updated = cleared = 0
+    created_events = 0
     try:
         for item in rows:
+            roster = db.query(models.HRShiftRosterEntry).filter_by(
+                employee_id=item["employee_id"], work_date=item["work_date"],
+            ).first()
+            for event_type, instant in (
+                ("punch_in", item["punch_in"]),
+                ("punch_out", item["punch_out"]),
+            ):
+                if instant is None:
+                    continue
+                source_reference = build_event_source_reference(
+                    "legacy_summary_v1", file_hash, item["employee_id"],
+                    item["work_date"], event_type, instant.isoformat(),
+                )
+                _, event_created = append_attendance_event(
+                    db,
+                    employee_id=item["employee_id"],
+                    work_date=item["work_date"],
+                    event_type=event_type,
+                    occurred_at_utc=instant,
+                    timezone_name=item["timezone_name"],
+                    source_type="excel_import",
+                    source_reference=source_reference,
+                    recorded_by=user.username,
+                    import_batch_id=batch.id,
+                    roster_entry_id=roster.id if roster else None,
+                    note=item["note"],
+                )
+                created_events += int(event_created)
+
             existing = db.query(models.EmployeeAttendance).filter_by(
                 employee_id=item["employee_id"], work_date=item["work_date"]
             ).first()
@@ -1049,14 +1121,28 @@ async def import_attendance_from_excel(
                 existing.punch_out = item["punch_out"]
                 existing.note = item["note"]
                 updated += 1
+        batch.status = "imported"
+        batch.rows_imported = len(rows)
+        batch.rows_rejected = 0
+        log_audit(
+            db, user.username, "IMPORT", "hr_attendance_import_batch",
+            f"{batch.id}: rows={len(rows)}; new_events={created_events}",
+        )
         log_audit(
             db, user.username, "IMPORT", "employee_attendance",
             f"{year}-{month:02d}: branch={actual_branch or 'unassigned'}; timezone={selected_timezone}; rows={len(rows)}; created={created}; updated={updated}; cleared={cleared}",
         )
         db.commit()
-    except IntegrityError as exc:
+    except (IntegrityError, AttendanceEventError) as exc:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Attendance changed concurrently. Refresh the month and import again.") from exc
+        failed_batch = db.get(models.HRAttendanceImportBatch, batch.id)
+        if failed_batch is not None:
+            failed_batch.status = "rejected"
+            failed_batch.rows_rejected = len(rows)
+            failed_batch.error_summary = str(exc)[:4000]
+            log_audit(db, user.username, "REJECT", "hr_attendance_import_batch", f"{batch.id}: {str(exc)[:400]}")
+            db.commit()
+        raise HTTPException(status_code=409, detail="Attendance import could not be applied atomically. Review the batch and retry.") from exc
 
     return {
         "year": year, "month": month, "branch_id": actual_branch,
