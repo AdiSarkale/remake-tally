@@ -664,10 +664,12 @@ def _parse_attendance_workbook(
                             and scheduled.scheduled_start_at_utc is not None
                             and scheduled.scheduled_end_at_utc is not None
                             and scheduled.scheduled_end_at_utc > scheduled.scheduled_start_at_utc
+                            and scheduled.timezone_name == selected_tz.key
+                            and scheduled.scheduled_start_at_utc <= localize_attendance_datetime(punch_in_local, selected_tz.key)
                         ):
                             punch_out_local += timedelta(days=1)
                         else:
-                            errors.append(f"Row {row_number}: Punch Out is earlier than Punch In; a scheduled overnight shift is required.")
+                            errors.append(f"Row {row_number}: Punch Out is earlier than Punch In; a scheduled overnight shift in the selected batch timezone is required.")
                     punch_out = localize_attendance_datetime(punch_out_local, selected_tz.key)
             except (ValueError, ShiftAssignmentConfigurationError) as exc:
                 errors.append(f"Row {row_number}: Punch Out {exc}.")
