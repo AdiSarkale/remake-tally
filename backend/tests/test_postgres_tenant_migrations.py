@@ -284,7 +284,19 @@ def test_postgres_company_provisioning_and_fleet_migration():
                     revision = connection.execute(
                         text("SELECT version_num FROM alembic_version")
                     ).scalar_one()
-                assert revision
+                assert revision == "p0_hr_attendance_events_019"
+                with engine.connect() as connection:
+                    attendance_grants = {
+                        (row[0], row[1], row[2], row[3])
+                        for row in connection.execute(text(
+                            "SELECT role, feature, action, data_scope "
+                            "FROM role_permission_grants "
+                            "WHERE module = 'hr' AND feature = 'attendance'"
+                        ))
+                    }
+                assert ("Admin", "attendance", "view", "tenant") in attendance_grants
+                assert ("HR", "attendance", "import", "tenant") in attendance_grants
+                assert ("Operator", "attendance", "event_create", "own") in attendance_grants
             finally:
                 engine.dispose()
 
