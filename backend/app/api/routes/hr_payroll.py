@@ -909,6 +909,7 @@ def download_attendance_template(
 async def import_attendance_from_excel(
     year: int = Query(ge=2000, le=2100),
     month: int = Query(ge=1, le=12),
+    branch_id: str | None = Query(default=None, min_length=1, max_length=36),
     import_timezone: str | None = Query(default=None, min_length=1, max_length=64),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -917,7 +918,16 @@ async def import_attendance_from_excel(
 ):
     _validate_period(year, month)
     _ensure_period_not_prepared(db, year, month)
-    selected_timezone = import_timezone or _ensure_settings(db).timezone or "Asia/Kolkata"
+    settings = _ensure_settings(db)
+    if branch_id is not None:
+        branch = db.get(models.HRBranch, branch_id)
+        if branch is None or not branch.active:
+            raise HTTPException(status_code=422, detail="Select an active branch for this attendance import")
+        branch_timezone = (branch.timezone or "").strip()
+        default_timezone = branch_timezone or (settings.timezone or "Asia/Kolkata")
+    else:
+        default_timezone = settings.timezone or "Asia/Kolkata"
+    selected_timezone = import_timezone or default_timezone
     try:
         import_tz = ZoneInfo(selected_timezone)
     except ZoneInfoNotFoundError as exc:
@@ -938,9 +948,25 @@ async def import_attendance_from_excel(
         ).all()
     }
     try:
-        rows = _parse_attendance_workbook(content, year, month, employees_by_code, import_tz)
+        rows = _parse_attendance_workbook(
+            content, year, month, employees_by_code, import_tz,
+            db=db, branch_id=branch_id, allow_overnight=True,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    resolved_branches = {item["branch_id"] for item in rows}
+    if len(resolved_branches) > 1:
+        raise HTTPException(
+            status_code=422,
+            detail="Attendance workbook contains employees from multiple branches. Split the workbook into one import per branch.",
+        )
+    actual_branch = next(iter(resolved_branches), None)
+    if actual_branch != branch_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Selected batch branch does not match every employee's effective branch for the imported work dates.",
+        )
 
     scope_cache: dict[date, list[str] | None] = {}
     for item in rows:
@@ -970,12 +996,15 @@ async def import_attendance_from_excel(
             if existing is None:
                 existing = models.EmployeeAttendance(
                     employee_id=item["employee_id"], work_date=item["work_date"],
+                    branch_id=item["branch_id"], timezone_name=item["timezone_name"],
                     status=item["status"], overtime_minutes=item["overtime_minutes"],
                     punch_in=item["punch_in"], punch_out=item["punch_out"], note=item["note"],
                 )
                 db.add(existing)
                 created += 1
             else:
+                existing.branch_id = item["branch_id"]
+                existing.timezone_name = item["timezone_name"]
                 existing.status = item["status"]
                 existing.overtime_minutes = item["overtime_minutes"]
                 existing.punch_in = item["punch_in"]
@@ -984,7 +1013,7 @@ async def import_attendance_from_excel(
                 updated += 1
         log_audit(
             db, user.username, "IMPORT", "employee_attendance",
-            f"{year}-{month:02d}: timezone={selected_timezone}, rows={len(rows)}, created={created}, updated={updated}, cleared={cleared}",
+            f"{year}-{month:02d}: branch={actual_branch or 'unassigned'}, timezone={selected_timezone}, rows={len(rows)}, created={created}, updated={updated}, cleared={cleared}",
         )
         db.commit()
     except IntegrityError as exc:
@@ -992,7 +1021,8 @@ async def import_attendance_from_excel(
         raise HTTPException(status_code=409, detail="Attendance changed concurrently. Refresh the month and import again.") from exc
 
     return {
-        "year": year, "month": month, "rows_processed": len(rows),
+        "year": year, "month": month, "branch_id": actual_branch,
+        "timezone": selected_timezone, "rows_processed": len(rows),
         "created": created, "updated": updated, "cleared": cleared,
     }
 
