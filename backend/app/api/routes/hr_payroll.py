@@ -621,7 +621,6 @@ def _parse_attendance_workbook(
                         errors.append(f"Row {row_number}: employee {code} is not assigned to the selected branch on {work_date}.")
                     if branch_id is None and context.branch_id is not None:
                         errors.append(f"Row {row_number}: employee {code} is assigned to branch {context.branch_id}; select that branch for this batch.")
-                    event_tz = selected_tz
                 except ShiftAssignmentConfigurationError as exc:
                     errors.append(f"Row {row_number}: {exc}.")
 
