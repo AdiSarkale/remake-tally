@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.api.routes.hr_attendance_events import (
+    AttendanceAnomalyFalsePositive,
     AttendanceAnomalyResolve,
     AttendanceAnomalySettingsCreate,
     create_attendance_anomaly_settings,
@@ -243,7 +244,7 @@ def test_false_positive_requires_reason_and_does_not_change_source_events():
 
         result = mark_attendance_anomaly_false_positive(
             anomaly.id,
-            type("Payload", (), {"reason": "Reader clock was under maintenance"})(),
+            AttendanceAnomalyFalsePositive(reason="Reader clock was under maintenance"),
             db=db,
             user=user,
         )
