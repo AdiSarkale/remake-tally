@@ -159,7 +159,7 @@ def test_event_workbook_v2_rejects_timezone_aware_cells_and_bad_rows_atomically(
         content = _event_workbook([
             [
                 "EMP-ATT-001", date(2026, 11, 10), "punch_in",
-                datetime.fromisoformat("2026-11-10T09:00:00+05:30"), "source-aware", None, "",
+                "2026-11-10T09:00:00+05:30", "source-aware", None, "",
             ],
             [
                 "EMP-ATT-001", date(2026, 11, 10), "unknown",
