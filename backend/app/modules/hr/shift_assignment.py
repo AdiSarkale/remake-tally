@@ -430,27 +430,36 @@ def localize_attendance_datetime(value: datetime, timezone_name: str) -> datetim
 def resolve_attendance_work_date(
     db: Session, employee_id: str, punch_in_utc: datetime | None,
 ) -> tuple[EmployeeWorkContext, date]:
-    """Attribute a punch to its local date, preferring its scheduled shift start date."""
+    """Attribute punch-in to its local date, preferring an overnight roster start date."""
     if punch_in_utc is None:
         raise ShiftAssignmentConfigurationError("Punch In is required to resolve an attendance work date")
-    instant = punch_in_utc.replace(tzinfo=timezone.utc) if punch_in_utc.tzinfo is None else punch_in_utc.astimezone(timezone.utc)
-    # Resolve once using the local date, then retry the preceding local date for
-    # an overnight shift whose punch-in occurs shortly after midnight.
-    provisional_date = instant.date()
-    for candidate_date in (provisional_date, provisional_date - timedelta(days=1)):
-        try:
-            context = resolve_employee_work_context(db, employee_id, candidate_date)
-            roster_or_shift = resolve_shift_for_work_date(db, employee_id, candidate_date)
-        except ShiftAssignmentConfigurationError:
-            if candidate_date == provisional_date:
-                continue
-            raise
-        if roster_or_shift and roster_or_shift.scheduled_start_at_utc and roster_or_shift.scheduled_end_at_utc:
-            start = roster_or_shift.scheduled_start_at_utc
-            end = roster_or_shift.scheduled_end_at_utc
-            if start <= instant <= end:
-                return context, candidate_date
-        if candidate_date == provisional_date:
-            return context, candidate_date
-    context = resolve_employee_work_context(db, employee_id, provisional_date)
-    return context, provisional_date
+    instant = (
+        punch_in_utc.replace(tzinfo=timezone.utc)
+        if punch_in_utc.tzinfo is None else punch_in_utc.astimezone(timezone.utc)
+    )
+
+    # First derive the employee's current local date from effective branch context.
+    provisional = instant.date()
+    try:
+        first_context = resolve_employee_work_context(db, employee_id, provisional)
+        provisional = instant.astimezone(ZoneInfo(first_context.timezone_name)).date()
+    except ShiftAssignmentConfigurationError:
+        pass
+
+    # A punch shortly after midnight can belong to the previous local shift-start day.
+    previous_date = provisional - timedelta(days=1)
+    try:
+        previous_context = resolve_employee_work_context(db, employee_id, previous_date)
+        previous_shift = resolve_shift_for_work_date(db, employee_id, previous_date)
+        if (
+            previous_shift is not None
+            and previous_shift.scheduled_start_at_utc is not None
+            and previous_shift.scheduled_end_at_utc is not None
+            and previous_shift.scheduled_start_at_utc <= instant <= previous_shift.scheduled_end_at_utc
+        ):
+            return previous_context, previous_date
+    except ShiftAssignmentConfigurationError:
+        pass
+
+    context = resolve_employee_work_context(db, employee_id, provisional)
+    return context, provisional
