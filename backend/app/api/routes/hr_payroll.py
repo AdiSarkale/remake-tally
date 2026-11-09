@@ -31,6 +31,7 @@ from app.modules.hr.shift_assignment import (
     ShiftAssignmentConfigurationError,
     localize_attendance_datetime,
     resolve_employee_work_context,
+    resolve_attendance_work_date,
     resolve_shift_for_work_date,
 )
 
