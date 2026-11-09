@@ -881,10 +881,21 @@ def get_monthly_attendance(
             visible_days.append(day)
     if not visible_days:
         raise HTTPException(status_code=403, detail="Employee is outside your configured attendance access scope")
-    return [
-        _attendance_output(employee, day, by_date.get(day), _calendar_type(day, week_off_days, overrides), descriptions.get(day, ""), tenant_tz)
-        for day in visible_days
-    ]
+    output = []
+    for day in visible_days:
+        record = by_date.get(day)
+        if record is not None and record.timezone_name:
+            display_tz = ZoneInfo(record.timezone_name)
+        else:
+            context = _attendance_context(db, employee.id, day)
+            display_tz = ZoneInfo(context.timezone_name)
+        output.append(
+            _attendance_output(
+                employee, day, record, _calendar_type(day, week_off_days, overrides),
+                descriptions.get(day, ""), tenant_tz, display_tz,
+            )
+        )
+    return output
 
 
 
