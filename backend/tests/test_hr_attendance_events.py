@@ -12,6 +12,7 @@ from app.api.routes.hr_attendance_events import EmployeeSelfPunchCreate
 from pydantic import ValidationError
 from app.modules.hr.attendance_events import (
     AttendanceEventError,
+    attendance_event_template_workbook,
     append_attendance_event,
     parse_event_workbook,
 )
@@ -124,6 +125,22 @@ def _event_workbook(rows, headers=None):
     workbook.save(output)
     workbook.close()
     return output.getvalue()
+
+
+def test_event_v2_template_has_required_and_optional_columns():
+    workbook_bytes = attendance_event_template_workbook()
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(workbook_bytes, read_only=True, data_only=True)
+    try:
+        assert workbook.sheetnames == ["Attendance", "Instructions"]
+        assert list(next(workbook["Attendance"].iter_rows(min_row=1, max_row=1, values_only=True))) == [
+            "Employee Code", "Work Date", "Event Type", "Event DateTime (Local)",
+            "Source Reference", "Break Code", "Note",
+        ]
+        assert workbook["Instructions"].max_row >= 10
+    finally:
+        workbook.close()
 
 
 def test_event_workbook_v2_parses_local_datetime_using_batch_timezone():
