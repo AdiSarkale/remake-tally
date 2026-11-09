@@ -65,8 +65,54 @@ def upgrade() -> None:
     op.create_index("ix_hr_attendance_events_occurred_at_utc", "hr_attendance_events", ["occurred_at_utc"])
     op.create_index("ix_hr_attendance_events_import_batch_id", "hr_attendance_events", ["import_batch_id"])
 
+    # Seed only the exact permissions required by the new attendance event
+    # routes. Employee self-punch is an own-scope grant; it never grants tenant
+    # access to the attendance event collection.
+    bind = op.get_bind()
+    grants = sa.Table("role_permission_grants", sa.MetaData(), autoload_with=bind)
+    existing = {
+        (row.role, row.module, row.feature, row.action, row.data_scope)
+        for row in bind.execute(sa.select(
+            grants.c.role, grants.c.module, grants.c.feature,
+            grants.c.action, grants.c.data_scope,
+        ))
+    }
+    grant_specs = [
+        ("Admin", "attendance", "view", "tenant"),
+        ("Admin", "attendance", "event_create", "tenant"),
+        ("Admin", "attendance", "import", "tenant"),
+        ("HR", "attendance", "view", "tenant"),
+        ("HR", "attendance", "event_create", "tenant"),
+        ("HR", "attendance", "import", "tenant"),
+        ("Admin", "attendance", "event_create", "own"),
+        ("HR", "attendance", "event_create", "own"),
+        ("Operator", "attendance", "event_create", "own"),
+    ]
+    rows = []
+    for role, feature, action, scope in grant_specs:
+        key = (role, "hr", feature, action, scope)
+        if key in existing:
+            continue
+        rows.append({
+            "id": str(__import__("uuid").uuid4()),
+            "role": role,
+            "module": "hr",
+            "feature": feature,
+            "action": action,
+            "data_scope": scope,
+            "allowed": True,
+            "updated_by": "migration:p0_hr_attendance_events_019",
+        })
+    if rows:
+        op.bulk_insert(grants, rows)
+
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    grants = sa.Table("role_permission_grants", sa.MetaData(), autoload_with=bind)
+    op.execute(sa.delete(grants).where(
+        grants.c.updated_by == "migration:p0_hr_attendance_events_019",
+    ))
     op.drop_index("ix_hr_attendance_events_import_batch_id", table_name="hr_attendance_events")
     op.drop_index("ix_hr_attendance_events_occurred_at_utc", table_name="hr_attendance_events")
     op.drop_index("ix_hr_attendance_events_work_date", table_name="hr_attendance_events")
