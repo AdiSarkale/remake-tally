@@ -559,15 +559,14 @@ def _parse_attendance_workbook(
     branch_id: str | None = None,
     allow_overnight: bool = False,
 ) -> list[dict[str, Any]]:
-    """Validate a single-branch workbook and normalize local punch times to UTC."""
+    """Validate all workbook rows and normalize timestamps using one batch timezone."""
     _validate_period(year, month)
     selected_tz = tenant_tz or ZoneInfo("Asia/Kolkata")
-    if branch_id is not None and db is None:
-        raise ValueError("Database context is required for branch-aware attendance import")
     try:
         workbook = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
     except (InvalidFileException, BadZipFile, OSError, ValueError) as exc:
         raise ValueError("The file is not a readable Excel .xlsx workbook. Download the MiniTally template and try again.") from exc
+
     try:
         if "Attendance" not in workbook.sheetnames:
             raise ValueError('Workbook must contain a worksheet named "Attendance".')
@@ -583,8 +582,9 @@ def _parse_attendance_workbook(
         parsed: list[dict[str, Any]] = []
         errors: list[str] = []
         seen: set[tuple[str, date]] = set()
-        nonempty_count = 0
         batch_branch_ids: set[str | None] = set()
+        nonempty_count = 0
+
         for row_number, values in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
             cells = list(values[:len(_ATTENDANCE_EXCEL_HEADERS)])
             cells.extend([None] * (len(_ATTENDANCE_EXCEL_HEADERS) - len(cells)))
@@ -594,6 +594,7 @@ def _parse_attendance_workbook(
             if nonempty_count > _MAX_ATTENDANCE_IMPORT_ROWS:
                 errors.append(f"More than {_MAX_ATTENDANCE_IMPORT_ROWS} attendance rows were supplied.")
                 break
+
             row_error_start = len(errors)
             raw_code, raw_date, raw_status, raw_overtime, raw_punch_in, raw_punch_out, raw_note = cells
             code = str(raw_code).strip().upper() if raw_code is not None else ""
@@ -612,17 +613,17 @@ def _parse_attendance_workbook(
                 errors.append(f"Row {row_number}: {exc}.")
 
             context = None
-            event_tz = selected_tz
-            if employee is not None and work_date is not None and db is not None:
-                try:
-                    context = resolve_employee_work_context(db, employee.id, work_date)
-                    batch_branch_ids.add(context.branch_id)
-                    if branch_id is not None and context.branch_id != branch_id:
-                        errors.append(f"Row {row_number}: employee {code} is not assigned to the selected branch on {work_date}.")
-                    if branch_id is None and context.branch_id is not None:
-                        errors.append(f"Row {row_number}: employee {code} is assigned to branch {context.branch_id}; select that branch for this batch.")
-                except ShiftAssignmentConfigurationError as exc:
-                    errors.append(f"Row {row_number}: {exc}.")
+            if employee is not None and work_date is not None:
+                if db is not None:
+                    try:
+                        context = resolve_employee_work_context(db, employee.id, work_date)
+                        batch_branch_ids.add(context.branch_id)
+                    except ShiftAssignmentConfigurationError as exc:
+                        errors.append(f"Row {row_number}: {exc}.")
+                if branch_id is not None and (context is None or context.branch_id != branch_id):
+                    errors.append(f"Row {row_number}: employee {code} is not assigned to the selected branch on {work_date}.")
+                if branch_id is None and context is not None and context.branch_id is not None:
+                    errors.append(f"Row {row_number}: employee {code} is assigned to branch {context.branch_id}; select that branch for this batch.")
 
             status = str(raw_status).strip().lower().replace("-", "_").replace(" ", "_") if raw_status is not None else ""
             if status not in _ATTENDANCE_EXCEL_STATUSES:
@@ -641,28 +642,37 @@ def _parse_attendance_workbook(
             punch_in = punch_out = None
             punch_in_local = punch_out_local = None
             try:
-                parsed_time = _parse_attendance_excel_time(raw_punch_in)
-                if parsed_time is not None and work_date is not None:
-                    punch_in_local = datetime.combine(work_date, parsed_time)
-                    punch_in = localize_attendance_datetime(punch_in_local, event_tz.key)
+                punch_time = _parse_attendance_excel_time(raw_punch_in)
+                if punch_time is not None and work_date is not None:
+                    punch_in_local = datetime.combine(work_date, punch_time)
+                    punch_in = localize_attendance_datetime(punch_in_local, selected_tz.key)
             except (ValueError, ShiftAssignmentConfigurationError) as exc:
                 errors.append(f"Row {row_number}: Punch In {exc}.")
+
             try:
-                parsed_time = _parse_attendance_excel_time(raw_punch_out)
-                if parsed_time is not None and work_date is not None:
-                    punch_out_local = datetime.combine(work_date, parsed_time)
+                punch_time = _parse_attendance_excel_time(raw_punch_out)
+                if punch_time is not None and work_date is not None:
+                    punch_out_local = datetime.combine(work_date, punch_time)
                     if punch_in_local is not None and punch_out_local <= punch_in_local:
-                        if allow_overnight and employee is not None and db is not None:
-                            shift = resolve_shift_for_work_date(db, employee.id, work_date)
-                            if shift is not None and shift.scheduled_end_at_utc is not None:
-                                punch_out_local += timedelta(days=1)
-                            else:
-                                errors.append(f"Row {row_number}: overnight punches require a scheduled overnight shift.")
+                        scheduled = None
+                        if allow_overnight and db is not None and employee is not None:
+                            try:
+                                scheduled = resolve_shift_for_work_date(db, employee.id, work_date)
+                            except ShiftAssignmentConfigurationError as exc:
+                                errors.append(f"Row {row_number}: {exc}.")
+                        if (
+                            scheduled is not None
+                            and scheduled.scheduled_start_at_utc is not None
+                            and scheduled.scheduled_end_at_utc is not None
+                            and scheduled.scheduled_end_at_utc > scheduled.scheduled_start_at_utc
+                        ):
+                            punch_out_local += timedelta(days=1)
                         else:
-                            errors.append(f"Row {row_number}: Punch Out must be after Punch In.")
-                    punch_out = localize_attendance_datetime(punch_out_local, event_tz.key)
+                            errors.append(f"Row {row_number}: Punch Out is earlier than Punch In; a scheduled overnight shift is required.")
+                    punch_out = localize_attendance_datetime(punch_out_local, selected_tz.key)
             except (ValueError, ShiftAssignmentConfigurationError) as exc:
                 errors.append(f"Row {row_number}: Punch Out {exc}.")
+
             if punch_in is not None and punch_out is not None and punch_out <= punch_in:
                 errors.append(f"Row {row_number}: Punch Out must be after Punch In.")
 
@@ -682,7 +692,7 @@ def _parse_attendance_workbook(
                     "employee_code": code,
                     "work_date": work_date,
                     "branch_id": context.branch_id if context else None,
-                    "timezone_name": event_tz.key,
+                    "timezone_name": selected_tz.key,
                     "status": status,
                     "overtime_minutes": overtime_minutes,
                     "punch_in": punch_in,
