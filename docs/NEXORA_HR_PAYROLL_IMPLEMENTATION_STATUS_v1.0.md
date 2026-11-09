@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.20  
+**Version:** 1.23  
 **Status:** Active implementation tracker  
 **Baseline:** 9 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -9,7 +9,7 @@
 **Audience:** GodlyKO and Adi Sarkale  
 **Purpose:** One shared reference for completed HR/Payroll work, remaining gaps, implementation decisions, ownership, and verification. Both project contributors should read this before changing HR, Payroll, authorization, or related data models.
 **Approved product decisions:** [Nexora HR — Final Product Decision Register v1.0](NEXORA_HR_DECISION_REGISTER_v1.0.md) — records 39 initial decisions, 8 follow-up clarifications, accepted dependencies and post-MVP deferrals.  
-**P0.1 architecture:** [Nexora HR — P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md) — approved for implementation by the project owner; shift schema, assignment APIs and the initial roster engine are present on the integration branch, with the latest P0.1-04 corrections awaiting CI.
+**P0.1 architecture:** [Nexora HR — P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md) — approved for implementation by the project owner; shift schema, assignment APIs and the initial roster engine are present on the integration branch, with P0.1-05 CI-verified and P0.1-06 raw attendance event intake and import batches now implemented and CI-verified.
 
 > This is an implementation tracker, not a claim that every planned capability is complete. “Merged” means present in the repository baseline; it does not mean this document independently reran every test or verified production deployment.
 
@@ -25,7 +25,7 @@ The existing HR foundation and payroll workspace are in place. The next phase is
 | Employee skills and production linkage | Implemented | Preserve cross-module ownership |
 | Payroll, attendance, calendar, payslips and leave workflows | Implemented as the current payroll foundation; PF/PT/TDS remain manual/configured and non-certified | Add effective-dated statutory rules only after qualified compliance review |
 | Payroll-to-Finance reversal | **Implemented** — linked opposite journal is posted atomically with payroll reversal | Preserve journal linkage and regression coverage |
-| Timezone baseline | **P0.1-05 implemented and CI-verified:** effective-dated employee branch, branch IANA timezone with tenant fallback, one branch/one timezone per import batch, UTC punch normalization and historical attendance timezone snapshot | Backend, tenant-isolation, PostgreSQL migration/provisioning, frontend build and Playwright smoke passed on integration branch; raw event ingestion/batches/anomalies/corrections remain P0.1-06 |
+| Timezone and raw attendance baseline | **P0.1-05 and P0.1-06 implemented and CI-verified:** effective-dated branch/timezone resolution, immutable raw events, import batches, legacy summary compatibility and v2 event workbook intake | Backend, tenant-isolation, PostgreSQL migration/provisioning, frontend build and Playwright smoke passed; anomaly reconciliation and correction workflows remain P0.1-07/P0.1-08 |
 | P0.1 shift foundation | **Schema, resolver, shift catalog APIs, assignment APIs and roster-generation/override backend implemented** — migrations 016/017, effective-dated assignments, idempotent roster entries and immutable override history | Verify P0.1-04 corrections in CI; roster read/view UI, shift catalog UI and assignment UI remain pending |
 | Audit service integration | Implemented for the covered HR/P1 events | Expand the event catalogue as new capabilities are added |
 | Branch/team data scopes | **Implemented and extended to attendance read/write/import with historical effective-date checks** | Continue applying scope checks to every new HR/attendance endpoint; no legacy auto-backfill |
@@ -385,7 +385,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - Shift code and break-rule code are immutable identifiers. Shift schedule changes are rejected once assignments or rosters reference the shift; create a new shift code for revised hours. Break schedules must fit within the shift's local-time window.
 - Added shift catalog API tests for authorization, CRUD, duplicate handling, soft deactivation, immutable identifiers, schedule locking, overnight break validation and invalid shift durations.
 - **Backend implemented:** employee/department assignment APIs, idempotent future roster generation, weekly-off/holiday materialization, date-specific overrides with immutable version history, exact write authorization, effective-date employee scope checks and audit events. Migrations 016 and 017 provide the roster and override-history persistence.
-- **Still pending:** roster read/list endpoints and roster UI; shift catalog and assignment UI; raw attendance events/import batches/anomalies/corrections/overtime/comp-leave/payroll daily snapshots. P0.1-05 supplies branch-aware daily attendance context; raw-event/P0.1-06 work remains separate.
+- **Still pending:** roster read/list endpoints and roster UI; shift catalog and assignment UI; source reconciliation/anomalies (P0.1-07), daily summary projection/corrections (P0.1-08), overtime/comp-leave (P0.1-09), payroll daily snapshots (P0.1-10), and related UI/reports (P0.1-11). P0.1-06 now supplies the raw event and import-batch foundation.
 
 **Verification evidence:**
 
@@ -426,12 +426,27 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - Imported local punch times are converted to UTC using the selected batch timezone. DST gaps and ambiguous local times fail closed through the existing shift localizer.
 - `employee_attendance` now stores nullable `branch_id` and `timezone_name` provenance beside UTC punch instants. Migration 018 adds these columns and a branch index. Existing historical rows remain NULL; no branch/timezone is guessed from the employee's current assignment and no historical UTC data is rewritten.
 - Manual daily attendance uses the employee's effective branch timezone, validates punch-in against the resolved local work date/shift window, and preserves entries without punches (e.g. absence/leave). Monthly attendance displays stored rows in their recorded timezone snapshot.
-- The existing seven-column time-only attendance workbook is retained. Overnight punch-out is accepted only where an effective scheduled overnight roster exists and the punch-in falls inside that roster's UTC window. Raw punch events, batch lifecycle, anomalies, corrections, overtime/comp-leave and payroll daily snapshots remain P0.1-06/deferred scope.
+- The existing seven-column time-only attendance workbook is retained. Overnight punch-out is accepted only where an effective scheduled overnight roster exists and the punch-in falls inside that roster's UTC window. P0.1-06 adds append-only raw events and import batches; source reconciliation/anomalies remain P0.1-07, daily summary projection/corrections P0.1-08, overtime/comp-leave P0.1-09, and payroll daily snapshots P0.1-10.
 - Added regression coverage for effective branch timezone, tenant fallback, effective-dated transfer, local-midnight timezone changes on branch transfer, DST gap/fold rejection, branch import normalization, wrong-branch and mixed-branch rejection, overnight shift-start work-date attribution, and missing scheduled overnight shift rejection.
 - The first CI pass exposed test-maintenance issues: a shift fixture omitted its required audit actor, migration tests still expected revision 017 as the latest head, and the overnight test used an obsolete roster-generator argument and a historical date. Fixtures/assertions were corrected; the production future-only roster guard was retained.
 - **Verification: P0.1-05 CI-verified on 9 November 2026.** [Backend Tests #42570132429](https://github.com/AdiSarkale/remake-tally/actions/runs/42570132429), [Backend tenant isolation #42570132415](https://github.com/AdiSarkale/remake-tally/actions/runs/42570132415), and [Minitally CI #42570132478](https://github.com/AdiSarkale/remake-tally/actions/runs/42570132478) all passed on commit `390b8ef67408e7c87a2d3038f5f074c153ed210f`. Both standalone backend runs reported **167 passed, 5 skipped, 7 warnings**. Integrated CI passed backend tests, PostgreSQL control-plane/tenant migration and provisioning lifecycle, frontend typecheck/build, and Playwright smoke.
 
-**Next action:** Proceed to P0.1-06 within its separately approved raw-attendance scope. Keep roster read/view UI tracked for P0.1-11, and do not implement deferred T-01 to T-14 by assumption.
+**P0.1-06 — Raw attendance events and import-batch architecture (9 November 2026):**
+
+- Added tenant migration `p0_hr_attendance_events_019` with `hr_attendance_import_batches` and `hr_attendance_events`. Event foreign keys use RESTRICT semantics to preserve historical source records; event identity is unique by `source_type + source_reference`.
+- Added append-only `HRAttendanceEvent` and `HRAttendanceImportBatch` models. Events retain employee, local work date, UTC instant, IANA timezone snapshot, event type, source, stable source reference, roster/break-rule links, import batch, actor, note and controlled supersession/void provenance fields.
+- Added manual HR event capture at `POST /api/v1/hr/attendance/events`. The existing manual daily attendance upsert also appends raw punch-in/punch-out events in the same transaction; clearing or replacing a daily summary does not delete the original raw events.
+- Added employee self-punch at `POST /api/v1/hr/attendance/self-punch`. The employee is resolved from the authenticated `EmployeeUserLink`; the request schema rejects a client-supplied `employee_id`. A stable source reference is required for idempotent retries.
+- Preserved the existing legacy daily-summary Excel import. It now creates an import-batch record and raw punch events linked to that batch while continuing to update the payroll-facing `employee_attendance` summary. Ambiguous overnight time-only rows are rejected and directed to the v2 event workbook.
+- Added the v2 one-row-per-event workbook and download endpoint `GET /api/v1/hr/attendance/event-template`. Import endpoint: `POST /api/v1/hr/attendance/import-events`. Required columns are Employee Code, Work Date, Event Type and Event DateTime (Local); Source Reference, Break Code and Note are optional. Local event datetimes support next-day events for scheduled overnight rosters.
+- Import batches record branch, selected timezone, template version, filename, SHA-256 file hash, uploader, timestamp, status (`validated`, `imported`, `rejected`), row counts and bounded error summary. The event and legacy-summary imports validate the full workbook before attendance writes; event/summary mutations are atomic, and rejected attempts are retained as rejected batches.
+- Idempotency uses stable source references: deterministic file/row identity for v2 imports, deterministic source-row identity for legacy imports, and caller-provided request references for manual/self-punch APIs. Replaying the same source does not create another event; reusing a reference for a different event is rejected.
+- Migration 019 seeds exact grants for Admin/HR tenant attendance view, event creation and import, plus own-scope event creation for linked employee self-punch. Backend employee read/update scope checks are still applied to HR event reads, manual events and imports. Core audit events cover event creation and batch validation/import/rejection.
+- Added regression tests for source-reference idempotency/conflicts, timezone conversion, required-only and optional workbook columns, workbook template shape, self-punch identity rejection, batch metadata, and import atomicity/retry behavior.
+- **Verification: P0.1-06 CI-verified on 9 November 2026** at code commit `482b344425eef176f170939be853c5cc160b3fe8`. [Backend Tests #42574866468](https://github.com/AdiSarkale/remake-tally/actions/runs/42574866468) and [Backend tenant isolation #42574866477](https://github.com/AdiSarkale/remake-tally/actions/runs/42574866477) passed with **176 passed, 5 skipped, 7 warnings** each. [Minitally CI #42574866478](https://github.com/AdiSarkale/remake-tally/actions/runs/42574866478) passed backend tests, PostgreSQL control-plane/tenant migrations and provisioning (including exact attendance grants), frontend typecheck/build and Playwright smoke.
+- **Not included in P0.1-06:** source comparison/anomaly queue (P0.1-07), daily summary projection and correction/void workflow (P0.1-08), overtime/compensatory leave (P0.1-09), payroll daily snapshots (P0.1-10), and dedicated attendance UI/reports (P0.1-11). The v2 event API currently persists raw events; it does not yet project them into the daily summary.
+
+**Next action:** Proceed to P0.1-07 source reconciliation and anomaly handling. Keep roster read/view UI tracked for P0.1-11, and do not implement deferred T-01 to T-14 by assumption.
 
 ---
 
@@ -462,6 +477,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 | 1.20 | 9 November 2026 | Records passing P0.1-04 CI: backend and tenant-isolation suites 157 passed, 5 skipped, 7 warnings; PostgreSQL migrations/provisioning, frontend typecheck/build and existing Playwright smoke passed. Marks roster backend corrections CI-verified; roster read/view UI remains pending. |
 | 1.21 | 9 November 2026 | Records P0.1-05 branch-aware daily attendance context: effective branch/timezone resolution, single-branch/single-timezone import batches, UTC normalization, attendance provenance migration 018, historical snapshot behavior, manual attendance timezone handling, and regression tests. |
 | 1.22 | 9 November 2026 | Records CI corrections and successful verification for P0.1-05 on integration commit 390b8ef: 167 passed, 5 skipped, 7 warnings in each standalone backend suite; tenant isolation passed; integrated PostgreSQL migration/provisioning, frontend build and Playwright smoke passed. |
+| 1.23 | 9 November 2026 | Implements and CI-verifies P0.1-06 raw attendance events and import batches: migration 019, manual/self-punch APIs, legacy summary event capture, v2 event workbook/template, exact permissions, idempotency and atomic import. Backend and tenant-isolation suites: 176 passed, 5 skipped, 7 warnings; PostgreSQL migrations/provisioning, frontend and Playwright smoke passed. |
 
 ## 11. Integration and verification record
 
@@ -472,7 +488,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - Previous verified integration baseline: `e4c2b40f5a1cc60a22574b5a674ec5c0a008a7bf`.
 - AUD-05–AUD-08 remediation and test commits are on `docs/hr-phase-2-implementation-status`; the current attendance scope guard uses effective-date-aware employee scope resolution.
 - Initial P0.1 implementation commits include `3d2d3a6bd2c213b2a0a1ba7d25e343ab89e7664c` (shift models), `af20975197c451c4b0bb52fe151db7a47315edb2` (migration 016), `bf8e9dcf7dbe0aab1b1d1b15b6d309bddd93b26d` (assignment resolver) and `7d70f1bee6c8f16070f61d7378fa4f8cc11791ab` (resolver tests).
-- Verified branch head: `9b02c77f7d7493e56fa544a9ff83d121e2aed06b`.
+- P0.1-06 verified code commit: `482b344425eef176f170939be853c5cc160b3fe8`.
 - Integrated [Minitally CI #42519334843](https://github.com/AdiSarkale/remake-tally/actions/runs/42519334843), [Backend Tests #42519334777](https://github.com/AdiSarkale/remake-tally/actions/runs/42519334777) and [Backend tenant isolation #42519334849](https://github.com/AdiSarkale/remake-tally/actions/runs/42519334849) passed. Backend: 123 passed, 5 skipped, 7 warnings. PostgreSQL migrations/provisioning, frontend typecheck/build and Playwright smoke passed.
 - PR #27 remains open and unmerged; its target is `main`. No merge to `main` has been performed.
 
