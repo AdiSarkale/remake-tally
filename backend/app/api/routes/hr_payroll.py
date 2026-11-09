@@ -1145,6 +1145,9 @@ async def import_attendance_from_excel(
         raise HTTPException(status_code=409, detail="Attendance import could not be applied atomically. Review the batch and retry.") from exc
 
     return {
+        "batch_id": batch.id,
+        "template_version": batch.template_version,
+        "batch_status": batch.status,
         "year": year, "month": month, "branch_id": actual_branch,
         "timezone": selected_timezone, "rows_processed": len(rows),
         "created": created, "updated": updated, "cleared": cleared,
