@@ -191,7 +191,7 @@ def test_existing_tenant_upgrades_from_previous_head_to_current_head():
                     text("SELECT version_num FROM alembic_version")
                 ).scalar_one()
 
-            assert revision == "p0_hr_attendance_reconciliation_020"
+            assert revision == "p0_hr_att_reconcile_020"
         finally:
             engine.dispose()
     finally:
@@ -247,7 +247,7 @@ def test_postgres_company_provisioning_and_fleet_migration():
             assert len(events) == 2
             assert {event.operation for event in events} == {"provision"}
             assert all(event.status == "succeeded" for event in events)
-            assert all(event.to_revision == "p0_hr_attendance_reconciliation_020" for event in events)
+            assert all(event.to_revision == "p0_hr_att_reconcile_020" for event in events)
 
             with psycopg.connect(_psycopg_url(control_url)) as control_connection:
                 columns = {
@@ -284,7 +284,7 @@ def test_postgres_company_provisioning_and_fleet_migration():
                     revision = connection.execute(
                         text("SELECT version_num FROM alembic_version")
                     ).scalar_one()
-                assert revision == "p0_hr_attendance_reconciliation_020"
+                assert revision == "p0_hr_att_reconcile_020"
                 with engine.connect() as connection:
                     attendance_grants = {
                         (row[0], row[1], row[2], row[3])
@@ -354,7 +354,7 @@ def test_postgres_company_provisioning_and_fleet_migration():
             )
             assert len(retry_events) == 1
             assert retry_events[0].status == "succeeded"
-            assert retry_events[0].to_revision == "p0_hr_attendance_reconciliation_020"
+            assert retry_events[0].to_revision == "p0_hr_att_reconcile_020"
         finally:
             control.close()
 
