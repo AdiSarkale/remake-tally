@@ -88,9 +88,13 @@ def generate_rosters(
     except ShiftRosterGenerationError as exc:
         db.rollback()
         message = str(exc)
-        status_code = 409 if any(token in message.lower() for token in (
-            "overlap", "conflict", "blocked", "policy", "already exists",
-        )) else 422
+        status_code = (
+            404 if "not found in this tenant" in message.lower()
+            else 409 if any(token in message.lower() for token in (
+                "overlap", "conflict", "blocked", "policy", "already exists",
+            ))
+            else 422
+        )
         raise HTTPException(status_code, message) from exc
     except IntegrityError as exc:
         db.rollback()
