@@ -8,7 +8,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -43,6 +43,8 @@ class AttendanceEventCreate(BaseModel):
 
 
 class EmployeeSelfPunchCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     work_date: date
     event_type: Literal["punch_in", "punch_out", "break_start", "break_end"]
     occurred_at: datetime
