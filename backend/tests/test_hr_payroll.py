@@ -3,6 +3,7 @@ from datetime import date, time as time_type
 from io import BytesIO
 from decimal import Decimal
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from openpyxl import Workbook, load_workbook
@@ -17,6 +18,9 @@ from app.api.routes.hr_payroll import (
     _salary_count_divisor,
 )
 from app.modules.hr.payroll_schemas import PayrollSettingsIn
+
+from app import models
+
 
 
 def _employee():
@@ -127,6 +131,34 @@ def test_employment_period_outside_payroll_month_has_zero_payable_gross():
     )
     assert result["monthly_gross"] == Decimal("0.00")
     assert result["net_pay"] == Decimal("0.00")
+
+
+def test_attendance_counters_ignore_records_outside_employment_period():
+    employee = SimpleNamespace(
+        id="emp-lifecycle", emp_code="EMP-LIFE", name="Employment Window",
+        department="Production", joining_date=date(2026, 10, 15), end_date=date(2026, 10, 20),
+    )
+    attendance = [
+        SimpleNamespace(status="present", work_date=date(2026, 10, 1), overtime_minutes=100),
+        SimpleNamespace(status="present", work_date=date(2026, 10, 16), overtime_minutes=30),
+        SimpleNamespace(status="half_day", work_date=date(2026, 10, 17), overtime_minutes=60),
+        SimpleNamespace(status="absent", work_date=date(2026, 10, 18), overtime_minutes=0),
+        SimpleNamespace(status="paid_leave", work_date=date(2026, 10, 19), overtime_minutes=0),
+        SimpleNamespace(status="unpaid_leave", work_date=date(2026, 10, 20), overtime_minutes=0),
+        SimpleNamespace(status="paid_half_day", work_date=date(2026, 10, 21), overtime_minutes=0),
+        SimpleNamespace(status="present", work_date=date(2026, 10, 25), overtime_minutes=200),
+    ]
+
+    result = _calculate_employee_monthly_payroll(
+        employee, _profile(), attendance, 2026, 10, "fixed_days", 26, [5, 6], {}
+    )
+
+    assert result["present_days"] == Decimal("1.00")
+    assert result["half_days"] == Decimal("1.00")
+    assert result["absent_days"] == Decimal("1.00")
+    assert result["paid_leave_days"] == Decimal("1.00")
+    assert result["unpaid_leave_days"] == Decimal("1.00")
+    assert result["overtime_minutes"] == 90
 
 
 def test_unconfigured_employee_does_not_get_configured_salary():
@@ -248,9 +280,29 @@ def test_attendance_excel_parser_reads_valid_rows_and_excel_times():
     assert rows[0]["overtime_minutes"] == 30
     assert rows[0]["punch_in"].date() == date(2026, 10, 5)
     assert rows[0]["punch_in"].hour == 3
-    assert rows[0]["punch_out"].hour == 17
+    assert rows[0]["punch_out"].hour == 11
+    assert rows[0]["punch_out"].minute == 30
     assert rows[1]["status"] == "half_day"
     assert rows[1]["work_date"] == date(2026, 10, 6)
+
+
+def test_attendance_excel_parser_uses_the_timezone_selected_for_each_import():
+    workbook = _attendance_workbook([
+        ["EMP-001", date(2026, 10, 5), "present", 0, time_type(8, 30), time_type(17, 0), ""],
+    ])
+    employees = {
+        "EMP-001": SimpleNamespace(id="emp-1", emp_code="EMP-001", active=True),
+    }
+
+    rows = _parse_attendance_workbook(
+        workbook, 2026, 10, employees, ZoneInfo("America/New_York")
+    )
+
+    # 5 October 2026 is in daylight-saving time in New York (UTC-04:00).
+    assert rows[0]["punch_in"].hour == 12
+    assert rows[0]["punch_in"].minute == 30
+    assert rows[0]["punch_out"].hour == 21
+    assert rows[0]["punch_out"].minute == 0
 
 
 def test_attendance_excel_parser_rejects_entire_file_on_unknown_employee_or_bad_period():
@@ -404,3 +456,399 @@ def test_unknown_joining_date_is_reported_and_full_month_attendance_is_required(
     finally:
         db.close()
         engine.dispose()
+
+
+def test_monthly_attendance_is_filtered_by_historical_employee_scope():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app import models
+    from app.api.routes.hr_payroll import get_monthly_attendance
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        branch_a = models.HRBranch(code="A", name="Branch A", timezone="Asia/Kolkata")
+        branch_b = models.HRBranch(code="B", name="Branch B", timezone="Asia/Kolkata")
+        manager = models.Employee(
+            id="monthly-manager", emp_code="M001", name="Manager",
+            joining_date=date(2026, 1, 1), active=True,
+        )
+        target = models.Employee(
+            id="monthly-target", emp_code="M002", name="Transferred employee",
+            joining_date=date(2026, 1, 1), active=True,
+        )
+        user = models.User(
+            id="monthly-user", username="monthly-manager", full_name="Manager",
+            password_hash="test", role=models.Role.hr, active=True,
+            must_change_password=False,
+        )
+        db.add_all([branch_a, branch_b, manager, target, user])
+        db.flush()
+        db.add_all([
+            models.EmployeeUserLink(user_id=user.id, employee_id=manager.id, created_by="admin"),
+            models.RolePermissionGrant(
+                role="HR", module="hr", feature="employees", action="read",
+                data_scope="branch", allowed=True, updated_by="test",
+            ),
+            models.RolePermissionGrant(
+                role="HR", module="hr", feature="employees", action="update",
+                data_scope="branch", allowed=True, updated_by="test",
+            ),
+            models.EmployeeOrgAssignment(
+                employee_id=manager.id, branch_id=branch_a.id, department="Ops",
+                valid_from=date(2026, 1, 1), created_by="admin",
+            ),
+            models.EmployeeOrgAssignment(
+                employee_id=target.id, branch_id=branch_a.id, department="Ops",
+                valid_from=date(2026, 1, 1), valid_to=date(2026, 1, 15), created_by="admin",
+            ),
+            models.EmployeeOrgAssignment(
+                employee_id=target.id, branch_id=branch_b.id, department="Ops",
+                valid_from=date(2026, 1, 16), created_by="admin",
+            ),
+            models.HRPayrollSettings(id=1, week_off_days="5,6", timezone="Asia/Kolkata"),
+            models.EmployeeAttendance(
+                employee_id=target.id, work_date=date(2026, 1, 10), status="present",
+            ),
+            models.EmployeeAttendance(
+                employee_id=target.id, work_date=date(2026, 1, 20), status="present",
+            ),
+        ])
+        db.commit()
+
+        result = get_monthly_attendance(target.id, 2026, 1, db, user)
+
+        from fastapi import HTTPException
+        from app.api.routes.hr_payroll import _ensure_attendance_employee_scope
+
+        _ensure_attendance_employee_scope(db, user, target.id, date(2026, 1, 10), "update")
+        with pytest.raises(HTTPException) as outside_scope:
+            _ensure_attendance_employee_scope(db, user, target.id, date(2026, 1, 20), "update")
+        assert outside_scope.value.status_code == 403
+
+        assert len(result) == 15
+        assert result[0]["work_date"] == date(2026, 1, 1)
+        assert result[-1]["work_date"] == date(2026, 1, 15)
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def _branch_attendance_db():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from app import models
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    settings = models.HRPayrollSettings(id=1, timezone="Asia/Kolkata")
+    branch_a = models.HRBranch(code="PUN", name="Pune", timezone="Asia/Kolkata", active=True)
+    branch_b = models.HRBranch(code="NYC", name="New York", timezone="America/New_York", active=True)
+    emp_a = models.Employee(id="tz-emp-a", emp_code="TZA", name="TZ A", joining_date=date(2026, 1, 1), active=True)
+    emp_b = models.Employee(id="tz-emp-b", emp_code="TZB", name="TZ B", joining_date=date(2026, 1, 1), active=True)
+    db.add_all([settings, branch_a, branch_b, emp_a, emp_b])
+    db.flush()
+    db.add_all([
+        models.EmployeeOrgAssignment(employee_id=emp_a.id, branch_id=branch_a.id, department="Ops", valid_from=date(2026, 1, 1), created_by="test"),
+        models.EmployeeOrgAssignment(employee_id=emp_b.id, branch_id=branch_b.id, department="Ops", valid_from=date(2026, 1, 1), created_by="test"),
+    ])
+    db.commit()
+    return engine, db, branch_a, branch_b, emp_a, emp_b
+
+
+def test_branch_context_resolves_effective_branch_timezone_and_tenant_fallback():
+    from app.modules.hr.shift_assignment import resolve_employee_work_context
+
+    engine, db, branch_a, branch_b, emp_a, emp_b = _branch_attendance_db()
+    try:
+        pune = resolve_employee_work_context(db, emp_a.id, date(2026, 4, 1))
+        new_york = resolve_employee_work_context(db, emp_b.id, date(2026, 4, 1))
+        assert pune.branch_id == branch_a.id
+        assert pune.timezone_name == "Asia/Kolkata"
+        assert new_york.branch_id == branch_b.id
+        assert new_york.timezone_name == "America/New_York"
+
+        unassigned = models.Employee(id="tz-legacy", emp_code="TZL", name="Legacy", joining_date=date(2026, 1, 1), active=True)
+        db.add(unassigned)
+        db.commit()
+        fallback = resolve_employee_work_context(db, unassigned.id, date(2026, 4, 1))
+        assert fallback.branch_id is None
+        assert fallback.timezone_name == "Asia/Kolkata"
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_branch_context_uses_effective_branch_after_employee_transfer():
+    from app.modules.hr.shift_assignment import resolve_employee_work_context
+
+    engine, db, branch_a, branch_b, emp_a, _ = _branch_attendance_db()
+    try:
+        first = db.query(models.EmployeeOrgAssignment).filter_by(employee_id=emp_a.id).one()
+        first.valid_to = date(2026, 5, 31)
+        db.add(models.EmployeeOrgAssignment(
+            employee_id=emp_a.id, branch_id=branch_b.id, department="Ops",
+            valid_from=date(2026, 6, 1), created_by="test",
+        ))
+        db.commit()
+
+        may = resolve_employee_work_context(db, emp_a.id, date(2026, 5, 31))
+        june = resolve_employee_work_context(db, emp_a.id, date(2026, 6, 1))
+        assert may.branch_id == branch_a.id
+        assert may.timezone_name == "Asia/Kolkata"
+        assert june.branch_id == branch_b.id
+        assert june.timezone_name == "America/New_York"
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_attendance_work_date_resolves_branch_timezone_on_transfer_midnight():
+    from datetime import datetime, timezone
+    from app.modules.hr.shift_assignment import resolve_attendance_work_date
+
+    engine, db, branch_a, branch_b, emp_a, _ = _branch_attendance_db()
+    try:
+        first = db.query(models.EmployeeOrgAssignment).filter_by(employee_id=emp_a.id).one()
+        first.valid_to = date(2026, 5, 31)
+        db.add(models.EmployeeOrgAssignment(
+            employee_id=emp_a.id, branch_id=branch_b.id, department="Ops",
+            valid_from=date(2026, 6, 1), created_by="test",
+        ))
+        db.commit()
+
+        # 00:30 in New York on transfer day; UTC date/time is still early June 1.
+        context, work_date = resolve_attendance_work_date(
+            db, emp_a.id, datetime(2026, 6, 1, 4, 30, tzinfo=timezone.utc),
+        )
+        assert work_date == date(2026, 6, 1)
+        assert context.branch_id == branch_b.id
+        assert context.timezone_name == "America/New_York"
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_attendance_localization_rejects_dst_gaps_and_folds():
+    from datetime import datetime
+    from app.modules.hr.shift_assignment import (
+        ShiftAssignmentConfigurationError,
+        localize_attendance_datetime,
+    )
+
+    with pytest.raises(ShiftAssignmentConfigurationError, match="does not exist"):
+        localize_attendance_datetime(datetime(2026, 3, 8, 2, 30), "America/New_York")
+    with pytest.raises(ShiftAssignmentConfigurationError, match="ambiguous"):
+        localize_attendance_datetime(datetime(2026, 11, 1, 1, 30), "America/New_York")
+
+
+def test_attendance_import_parser_rejects_multiple_branches_atomically():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from app import models
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        branch_a = models.HRBranch(code="A", name="A", timezone="Asia/Kolkata", active=True)
+        branch_b = models.HRBranch(code="B", name="B", timezone="America/New_York", active=True)
+        emp_a = models.Employee(id="multi-a", emp_code="MULTIA", name="A", joining_date=date(2026, 1, 1), active=True)
+        emp_b = models.Employee(id="multi-b", emp_code="MULTIB", name="B", joining_date=date(2026, 1, 1), active=True)
+        db.add_all([branch_a, branch_b, emp_a, emp_b])
+        db.flush()
+        db.add_all([
+            models.EmployeeOrgAssignment(employee_id=emp_a.id, branch_id=branch_a.id, department="Ops", valid_from=date(2026, 1, 1), created_by="test"),
+            models.EmployeeOrgAssignment(employee_id=emp_b.id, branch_id=branch_b.id, department="Ops", valid_from=date(2026, 1, 1), created_by="test"),
+        ])
+        db.commit()
+        workbook = _attendance_workbook([
+            ["MULTIA", date(2026, 10, 5), "present", 0, time_type(8, 30), time_type(17, 0), ""],
+            ["MULTIB", date(2026, 10, 5), "present", 0, time_type(8, 30), time_type(17, 0), ""],
+        ])
+        with pytest.raises(ValueError, match="multiple branches"):
+            _parse_attendance_workbook(
+                workbook, 2026, 10,
+                {"MULTIA": emp_a, "MULTIB": emp_b},
+                ZoneInfo("Asia/Kolkata"), db=db, branch_id=None,
+            )
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_manual_attendance_work_date_uses_previous_overnight_roster_day():
+    from datetime import datetime, timezone
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from app import models
+    from app.modules.hr.shift_assignment import resolve_attendance_work_date
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        branch = models.HRBranch(code="NIGHT2", name="Night Branch", timezone="Asia/Kolkata", active=True)
+        employee = models.Employee(id="night-transfer-employee", emp_code="NT001", name="Night", joining_date=date(2040, 1, 1), active=True)
+        db.add_all([branch, employee])
+        db.flush()
+        db.add(models.EmployeeOrgAssignment(
+            employee_id=employee.id, branch_id=branch.id, department="Ops",
+            valid_from=date(2040, 1, 1), created_by="test",
+        ))
+        shift = models.HRShiftType(
+            code="NIGHT", name="Night", start_time=time_type(22, 0),
+            end_time=time_type(6, 0), end_day_offset=1, active=True, created_by="test",
+        )
+        db.add(shift)
+        db.flush()
+        assignment = models.HRShiftAssignment(
+            scope_type="employee", employee_id=employee.id, branch_id=branch.id,
+            shift_type_id=shift.id, weekdays=[0, 1, 2, 3, 4, 5, 6],
+            valid_from=date(2040, 1, 1), created_by="test",
+        )
+        db.add(assignment)
+        db.commit()
+        from app.modules.hr.shift_roster_generation import generate_shift_roster
+        generate_shift_roster(
+            db, start_date=date(2040, 1, 2), end_date=date(2040, 1, 2),
+            employee_ids=[employee.id], created_by="test",
+        )
+        # 06:00 IST on 3 January is 00:30 UTC and remains in the 2 January shift.
+        context, work_date = resolve_attendance_work_date(
+            db, employee.id, datetime(2040, 1, 3, 0, 30, tzinfo=timezone.utc),
+        )
+        assert work_date == date(2040, 1, 2)
+        assert context.branch_id == branch.id
+        assert context.timezone_name == "Asia/Kolkata"
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_overnight_legacy_import_requires_scheduled_overnight_shift():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from app import models
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        branch = models.HRBranch(code="NIGHT", name="Night", timezone="Asia/Kolkata", active=True)
+        employee = models.Employee(id="night-employee", emp_code="NIGHT001", name="Night", joining_date=date(2026, 1, 1), active=True)
+        db.add_all([branch, employee])
+        db.flush()
+        db.add(models.EmployeeOrgAssignment(employee_id=employee.id, branch_id=branch.id, department="Ops", valid_from=date(2026, 1, 1), created_by="test"))
+        db.commit()
+        workbook = _attendance_workbook([
+            ["NIGHT001", date(2026, 10, 5), "present", 0, time_type(22, 0), time_type(6, 0), ""],
+        ])
+        with pytest.raises(ValueError, match="scheduled overnight shift"):
+            _parse_attendance_workbook(
+                workbook, 2026, 10, {"NIGHT001": employee},
+                ZoneInfo("Asia/Kolkata"), db=db, branch_id=branch.id, allow_overnight=True,
+            )
+    finally:
+        db.close()
+        engine.dispose()
+
+def test_overnight_event_uses_shift_start_work_date_across_midnight():
+    from datetime import datetime, timezone
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from app import models
+    from app.modules.hr.shift_assignment import resolve_attendance_work_date
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        branch = models.HRBranch(code="NGT", name="Night", timezone="Asia/Kolkata", active=True)
+        employee = models.Employee(
+            id="ngt-employee", emp_code="NGT001", name="Night Worker",
+            joining_date=date(2040, 1, 1), active=True,
+        )
+        shift = models.HRShiftType(
+            id="ngt-shift", code="NGT", name="Night Shift",
+            start_time=time_type(22, 0), end_time=time_type(6, 0),
+            end_day_offset=1, active=True, created_by="test",
+        )
+        db.add_all([branch, employee, shift, models.HRPayrollSettings(id=1, timezone="Asia/Kolkata")])
+        db.flush()
+        db.add_all([
+            models.EmployeeOrgAssignment(
+                employee_id=employee.id, branch_id=branch.id, department="Ops",
+                valid_from=date(2040, 1, 1), created_by="test",
+            ),
+            models.HRShiftAssignment(
+                id="ngt-assignment", scope_type="employee", employee_id=employee.id,
+                branch_id=branch.id, department=None, shift_type_id=shift.id,
+                weekdays=[0, 1, 2, 3, 4, 5, 6], valid_from=date(2040, 1, 1),
+                valid_to=None, created_by="test",
+            ),
+        ])
+        db.commit()
+        from app.modules.hr.shift_assignment import resolve_shift_window
+        start_utc, end_utc = resolve_shift_window(date(2040, 1, 2), shift, "Asia/Kolkata")
+        db.add(models.HRShiftRosterEntry(
+            employee_id=employee.id, work_date=date(2040, 1, 2), status="scheduled",
+            shift_type_id=shift.id, source_assignment_id="ngt-assignment",
+            is_override=False, override_reason="", branch_id=branch.id,
+            department_snapshot="Ops", timezone_name="Asia/Kolkata",
+            scheduled_start_at_utc=start_utc, scheduled_end_at_utc=end_utc,
+            shift_code_snapshot="NGT", shift_name_snapshot="Night Shift",
+            break_rules_snapshot=[], created_by="test",
+        ))
+        db.commit()
+        # 03:00 IST on 3 January remains attached to 2 January's shift.
+        context, work_date = resolve_attendance_work_date(
+            db, employee.id, datetime(2040, 1, 2, 21, 30, tzinfo=timezone.utc),
+        )
+        assert work_date == date(2040, 1, 2)
+        assert context.branch_id == branch.id
+        assert context.timezone_name == "Asia/Kolkata"
+    finally:
+        db.close()
+        engine.dispose()
+
+def test_branch_timezone_import_normalizes_local_times_and_snapshots_context():
+    engine, db, branch_a, _, emp_a, _ = _branch_attendance_db()
+    try:
+        workbook = _attendance_workbook([
+            ["TZA", date(2026, 10, 5), "present", 0, time_type(8, 30), time_type(17, 0), ""],
+        ])
+        rows = _parse_attendance_workbook(
+            workbook, 2026, 10, {"TZA": emp_a},
+            ZoneInfo("Asia/Kolkata"), db=db, branch_id=branch_a.id,
+        )
+        assert len(rows) == 1
+        assert rows[0]["branch_id"] == branch_a.id
+        assert rows[0]["timezone_name"] == "Asia/Kolkata"
+        assert rows[0]["punch_in"].hour == 3
+        assert rows[0]["punch_in"].minute == 0
+        assert rows[0]["punch_out"].hour == 11
+        assert rows[0]["punch_out"].minute == 30
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_import_rejects_wrong_selected_branch_for_employee_work_date():
+    engine, db, branch_a, branch_b, emp_a, _ = _branch_attendance_db()
+    try:
+        workbook = _attendance_workbook([
+            ["TZA", date(2026, 10, 5), "present", 0, time_type(8, 30), time_type(17, 0), ""],
+        ])
+        with pytest.raises(ValueError, match="not assigned to the selected branch"):
+            _parse_attendance_workbook(
+                workbook, 2026, 10, {"TZA": emp_a},
+                ZoneInfo("Asia/Kolkata"), db=db, branch_id=branch_b.id,
+            )
+    finally:
+        db.close()
+        engine.dispose()
+

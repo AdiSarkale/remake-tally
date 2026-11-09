@@ -3,10 +3,10 @@
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 from app import models
-from app.api.deps import ROLE_PERMISSIONS, require_area
+from app.api.deps import ROLE_PERMISSIONS, _route_feature_action
 
 
 def test_admin_and_hr_have_hr_management_permission():
@@ -20,22 +20,22 @@ def test_hr_role_is_isolated_from_finance_and_system_administration():
     assert ROLE_PERMISSIONS[models.Role.hr] == {"hr"}
 
 
-def test_hr_guard_allows_admin():
-    guard = require_area("hr")
-    user = SimpleNamespace(role=models.Role.admin)
+def test_route_permission_maps_resource_and_action():
+    request = Request({
+        "type": "http", "method": "POST", "path": "/api/v1/finance/customer-payments",
+        "headers": [], "query_string": b"", "server": ("test", 80),
+        "client": ("test", 80), "scheme": "http", "http_version": "1.1",
+    })
+    assert _route_feature_action(request) == ("customer_payments", "create")
 
-    assert guard(user) is user
 
-
-@pytest.mark.parametrize("role", [models.Role.accountant, models.Role.operator])
-def test_hr_guard_rejects_non_admin_roles(role):
-    guard = require_area("hr")
-    user = SimpleNamespace(role=role)
-
-    with pytest.raises(HTTPException) as exc:
-        guard(user)
-
-    assert exc.value.status_code == 403
+def test_route_permission_maps_payroll_state_transition():
+    request = Request({
+        "type": "http", "method": "POST", "path": "/api/v1/hr/payroll/runs/abc/approve",
+        "headers": [], "query_string": b"", "server": ("test", 80),
+        "client": ("test", 80), "scheme": "http", "http_version": "1.1",
+    })
+    assert _route_feature_action(request) == ("payroll", "approve")
 
 
 def test_production_users_retain_production_access_without_hr_management():
@@ -85,9 +85,190 @@ def test_tenant_hr_migration_chain_has_single_latest_head():
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["hr_timezone_006"]
+    assert script.get_heads() == ["p0_hr_att_reconcile_020"]
     assert script.get_revision("hr_role_001").down_revision == "employee_type_001"
     assert script.get_revision("hr_employee_types_002").down_revision == "hr_role_001"
     assert script.get_revision("hr_employee_codes_003").down_revision == "hr_employee_types_002"
     assert script.get_revision("hr_employee_type_code_length_004").down_revision == "hr_employee_codes_003"
     assert script.get_revision("hr_payroll_005").down_revision == "hr_employee_type_code_length_004"
+    assert script.get_revision("p0_authorization_007").down_revision == "hr_timezone_006"
+    assert script.get_revision("p0_hr_leave_008").down_revision == "p0_authorization_007"
+    assert script.get_revision("p0_payroll_009").down_revision == "p0_hr_leave_008"
+    assert script.get_revision("p0_authz_seed_010").down_revision == "p0_payroll_009"
+    assert script.get_revision("p0_org_structure_011").down_revision == "p0_authz_seed_010"
+    assert script.get_revision("p0_granular_authz_012").down_revision == "p0_org_structure_011"
+    assert script.get_revision("p0_leave_accrual_013").down_revision == "p0_granular_authz_012"
+    assert script.get_revision("p0_finance_journal_014").down_revision == "p0_leave_accrual_013"
+    assert script.get_revision("p0_authz_exact_015").down_revision == "p0_finance_journal_014"
+    assert script.get_revision("p0_hr_roster_history_017").down_revision == "p0_hr_shift_roster_016"
+    assert script.get_revision("p0_hr_branch_timezone_018").down_revision == "p0_hr_roster_history_017"
+    assert script.get_revision("p0_hr_attendance_events_019").down_revision == "p0_hr_branch_timezone_018"
+    assert script.get_revision("p0_hr_att_reconcile_020").down_revision == "p0_hr_attendance_events_019"
+
+
+def test_employee_branch_and_hierarchical_team_scopes_are_relationship_backed():
+    from datetime import date
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from fastapi import HTTPException
+    from app.api.deps import employee_scope_ids, enforce_employee_data_scope
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    SessionLocal = sessionmaker(bind=engine)
+    db = SessionLocal()
+    try:
+        today = date.today()
+        branch = models.HRBranch(code="PUN", name="Pune")
+        actor = models.Employee(id="actor", emp_code="A001", name="Manager", department="Ops")
+        report = models.Employee(id="report", emp_code="A002", name="Report", department="Ops")
+        indirect = models.Employee(id="indirect", emp_code="A003", name="Indirect", department="Ops")
+        outsider = models.Employee(id="outsider", emp_code="A004", name="Outsider", department="Ops")
+        db.add_all([branch, actor, report, indirect, outsider])
+        db.flush()
+        user = models.User(
+            id="user-1", username="manager", full_name="Manager",
+            password_hash="test", role=models.Role.hr, active=True,
+            must_change_password=False,
+        )
+        db.add(user)
+        db.add(models.EmployeeUserLink(user_id="user-1", employee_id="actor", created_by="admin"))
+        db.add_all([
+            models.RolePermissionGrant(
+                role="HR", module="hr", feature="employees", action="read",
+                data_scope="branch", allowed=True, updated_by="test",
+            ),
+            models.RolePermissionGrant(
+                role="HR", module="hr", feature="leave_requests", action="read",
+                data_scope="team", allowed=True, updated_by="test",
+            ),
+            models.EmployeeOrgAssignment(employee_id="actor", branch_id=branch.id, manager_employee_id=None, department="Ops", valid_from=today, created_by="admin"),
+            models.EmployeeOrgAssignment(employee_id="report", branch_id=branch.id, manager_employee_id="actor", department="Ops", valid_from=today, created_by="admin"),
+            models.EmployeeOrgAssignment(employee_id="indirect", branch_id=branch.id, manager_employee_id="report", department="Ops", valid_from=today, created_by="admin"),
+        ])
+        other_branch = models.HRBranch(code="MUM", name="Mumbai")
+        db.add(other_branch)
+        db.flush()
+        db.add(models.EmployeeOrgAssignment(employee_id="outsider", branch_id=other_branch.id, manager_employee_id=None, department="Ops", valid_from=today, created_by="admin"))
+        db.commit()
+        user = db.get(models.User, "user-1")
+        branch_ids = set(employee_scope_ids(db, user, "hr", "employees", "read") or [])
+        team_ids = set(employee_scope_ids(db, user, "hr", "leave_requests", "read") or [])
+        assert branch_ids == {"actor", "report", "indirect"}
+        assert team_ids == {"actor", "report", "indirect"}
+
+        enforce_employee_data_scope(db, user, "report", "branch")
+        enforce_employee_data_scope(db, user, "indirect", "team")
+        with pytest.raises(HTTPException) as branch_error:
+            enforce_employee_data_scope(db, user, "outsider", "branch")
+        assert branch_error.value.status_code == 403
+        with pytest.raises(HTTPException) as team_error:
+            enforce_employee_data_scope(db, user, "outsider", "team")
+        assert team_error.value.status_code == 403
+    finally:
+        db.close()
+        engine.dispose()
+
+
+
+def test_attendance_delete_route_has_explicit_payroll_write_permission():
+    import inspect
+    from fastapi import HTTPException
+    from fastapi.params import Depends as DependsParam
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.api.routes.hr_payroll import clear_daily_attendance
+
+    permission_parameter = inspect.signature(clear_daily_attendance).parameters["permission"]
+    dependency = permission_parameter.default
+    assert isinstance(dependency, DependsParam)
+    assert dependency.dependency is not None
+    assert inspect.getclosurevars(dependency.dependency).nonlocals == {
+        "module": "hr", "feature": "payroll", "action": "write", "data_scope": "tenant",
+    }
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        user = models.User(
+            id="delete-user", username="delete-user", full_name="HR User",
+            password_hash="test", role=models.Role.hr, active=True,
+            must_change_password=False,
+        )
+        db.add(user)
+        db.commit()
+
+        with pytest.raises(HTTPException) as denied:
+            dependency.dependency(user=user, db=db)
+        assert denied.value.status_code == 403
+
+        db.add(models.RolePermissionGrant(
+            role="HR", module="hr", feature="payroll", action="write",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ))
+        db.commit()
+        assert dependency.dependency(user=user, db=db) is user
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_employee_scope_resolution_uses_assignment_effective_on_requested_work_date():
+    from datetime import date
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.api.deps import employee_scope_ids
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        branch_a = models.HRBranch(code="A", name="Branch A")
+        branch_b = models.HRBranch(code="B", name="Branch B")
+        actor = models.Employee(id="scope-actor", emp_code="S001", name="Manager")
+        target = models.Employee(id="scope-target", emp_code="S002", name="Transferred employee")
+        user = models.User(
+            id="scope-user", username="scope-user", full_name="Manager",
+            password_hash="test", role=models.Role.hr, active=True,
+            must_change_password=False,
+        )
+        db.add_all([branch_a, branch_b, actor, target, user])
+        db.flush()
+        db.add(models.EmployeeUserLink(
+            user_id=user.id, employee_id=actor.id, created_by="admin",
+        ))
+        db.add(models.RolePermissionGrant(
+            role="HR", module="hr", feature="employees", action="read",
+            data_scope="branch", allowed=True, updated_by="test",
+        ))
+        db.add_all([
+            models.EmployeeOrgAssignment(
+                employee_id=actor.id, branch_id=branch_a.id, department="Ops",
+                valid_from=date(2026, 1, 1), created_by="admin",
+            ),
+            models.EmployeeOrgAssignment(
+                employee_id=target.id, branch_id=branch_a.id, department="Ops",
+                valid_from=date(2026, 1, 1), valid_to=date(2026, 6, 30), created_by="admin",
+            ),
+            models.EmployeeOrgAssignment(
+                employee_id=target.id, branch_id=branch_b.id, department="Ops",
+                valid_from=date(2026, 7, 1), created_by="admin",
+            ),
+        ])
+        db.commit()
+
+        historical_ids = set(employee_scope_ids(
+            db, user, "hr", "employees", "read", as_of_date=date(2026, 6, 30),
+        ) or [])
+        current_ids = set(employee_scope_ids(
+            db, user, "hr", "employees", "read", as_of_date=date(2026, 7, 1),
+        ) or [])
+
+        assert historical_ids == {actor.id, target.id}
+        assert current_ids == {actor.id}
+    finally:
+        db.close()
+        engine.dispose()

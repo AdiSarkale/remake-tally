@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import calendar
+import hashlib
 import io
-from datetime import date, datetime, time as time_type, timezone
+from datetime import date, datetime, time as time_type, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
@@ -18,17 +19,67 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.utils.datetime import from_excel
 from openpyxl.utils.exceptions import InvalidFileException
 from zipfile import BadZipFile
+from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.api.deps import require_area
+from app.api.deps import current_user, employee_scope_ids, require_area, require_permission
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
+from app.modules.finance.payroll_posting import post_payroll_journal, reverse_payroll_journal
+from app.modules.hr.shift_assignment import (
+    ShiftAssignmentConfigurationError,
+    localize_attendance_datetime,
+    resolve_employee_work_context,
+    resolve_attendance_work_date,
+    resolve_shift_for_work_date,
+)
+from app.modules.hr.attendance_events import (
+    AttendanceEventError,
+    append_attendance_event,
+    build_event_source_reference,
+)
 
 router = APIRouter(prefix="/hr", tags=["hr", "payroll"])
-hr_access = Depends(require_area("hr"))
+hr_access = Depends(require_permission("hr", "payroll", "read", "tenant"))
 _CENT = Decimal("0.01")
+
+
+
+
+def _ensure_attendance_employee_scope(
+    db: Session, user: models.User, employee_id: str, work_date: date, action: str,
+) -> None:
+    scoped_ids = employee_scope_ids(
+        db, user, "hr", "employees", action, as_of_date=work_date,
+    )
+    if scoped_ids is not None and employee_id not in scoped_ids:
+        raise HTTPException(status_code=403, detail="Employee is outside your configured attendance access scope")
+
+
+def _ensure_period_not_prepared(db: Session, year: int, month: int) -> None:
+    frozen = db.query(models.HRPayrollRun).filter(
+        models.HRPayrollRun.year == year,
+        models.HRPayrollRun.month == month,
+        models.HRPayrollRun.status.in_(["prepared", "approved", "finalized", "locked"]),
+    ).first()
+    if frozen is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="This payroll period has a prepared or finalized snapshot. Reverse it through the controlled payroll workflow before changing its attendance or calendar inputs.",
+        )
+
+
+def _ensure_no_pending_payroll_snapshot(db: Session) -> None:
+    frozen = db.query(models.HRPayrollRun).filter(
+        models.HRPayrollRun.status.in_(["prepared", "approved"])
+    ).first()
+    if frozen is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="A prepared or approved payroll snapshot exists. Finalize or reverse it before changing salary profiles or payroll settings.",
+        )
 
 
 def _dec(value: Any) -> Decimal:
@@ -64,6 +115,17 @@ def _tenant_timezone(db: Session) -> ZoneInfo:
         return ZoneInfo(settings.timezone or "Asia/Kolkata")
     except ZoneInfoNotFoundError as exc:
         raise HTTPException(status_code=500, detail="Tenant timezone is invalid; update HR payroll settings") from exc
+
+
+def _attendance_context(db: Session, employee_id: str, work_date: date):
+    try:
+        return resolve_employee_work_context(db, employee_id, work_date)
+    except ShiftAssignmentConfigurationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _attendance_timezone(db: Session, employee_id: str, work_date: date) -> ZoneInfo:
+    return ZoneInfo(_attendance_context(db, employee_id, work_date).timezone_name)
 
 
 def _to_utc(value: datetime | None, tenant_tz: ZoneInfo) -> datetime | None:
@@ -208,10 +270,9 @@ def _calculate_employee_monthly_payroll(
             work_date is not None and employment_active
             and employment_start <= work_date <= employment_end
         )
-        scheduled_workday = (
-            in_employment_period
-            and _calendar_type(work_date, week_off_days, calendar_overrides) == "working_day"
-        )
+        if not in_employment_period:
+            continue
+        scheduled_workday = _calendar_type(work_date, week_off_days, calendar_overrides) == "working_day"
         if row.status == "present":
             present_days += Decimal("1")
         elif row.status == "half_day":
@@ -228,6 +289,14 @@ def _calculate_employee_monthly_payroll(
             unpaid_leave_days += Decimal("1")
             if scheduled_workday:
                 unpaid_equivalent_days += Decimal("1")
+        elif row.status == "paid_half_day":
+            half_days += Decimal("1")
+            paid_leave_days += Decimal("0.5")
+        elif row.status == "unpaid_half_day":
+            half_days += Decimal("1")
+            unpaid_leave_days += Decimal("0.5")
+            if scheduled_workday:
+                unpaid_equivalent_days += Decimal("0.5")
         if in_employment_period and row.status in {"present", "half_day"}:
             overtime_minutes += max(0, int(row.overtime_minutes or 0))
 
@@ -338,6 +407,8 @@ def _run_output(db: Session, run: models.HRPayrollRun, include_items: bool = Tru
     result: dict[str, Any] = {
         "id": run.id, "year": run.year, "month": run.month, "status": run.status,
         "created_by": run.created_by, "created_at": run.created_at, "finalized_at": run.finalized_at,
+        "revision": run.revision, "approved_by": run.approved_by, "approved_at": run.approved_at,
+        "locked_at": run.locked_at, "reversed_at": run.reversed_at, "reversal_reason": run.reversal_reason,
         "employee_count": len(items), "net_total": round(sum(float(item.net_pay) for item in items), 2),
     }
     if include_items:
@@ -348,13 +419,19 @@ def _run_output(db: Session, run: models.HRPayrollRun, include_items: bool = Tru
 def _attendance_output(
     employee: models.Employee, work_date: date, row: models.EmployeeAttendance | None,
     calendar_type: str, calendar_description: str, tenant_tz: ZoneInfo,
+    work_timezone: ZoneInfo | None = None,
 ) -> dict[str, Any]:
+    timezone_name = (
+        row.timezone_name if row and row.timezone_name
+        else (work_timezone.key if work_timezone else tenant_tz.key)
+    )
+    display_tz = ZoneInfo(timezone_name)
     return {
         "id": row.id if row else None, "employee_id": employee.id, "employee_code": employee.emp_code,
         "employee_name": employee.name, "work_date": work_date,
         "status": row.status if row else (calendar_type if calendar_type in {"holiday", "week_off"} else "unmarked"),
         "calendar_type": calendar_type, "calendar_description": calendar_description,
-        "punch_in": _to_local(row.punch_in, tenant_tz) if row else None, "punch_out": _to_local(row.punch_out, tenant_tz) if row else None,
+        "punch_in": _to_local(row.punch_in, display_tz) if row else None, "punch_out": _to_local(row.punch_out, display_tz) if row else None,
         "overtime_minutes": row.overtime_minutes if row else 0, "note": row.note if row else "",
     }
 
@@ -363,7 +440,7 @@ def _attendance_output(
 _ATTENDANCE_EXCEL_HEADERS = [
     "Employee Code", "Work Date", "Status", "Overtime Minutes", "Punch In", "Punch Out", "Note",
 ]
-_ATTENDANCE_EXCEL_STATUSES = {"present", "half_day", "absent", "paid_leave", "unpaid_leave", "unmarked"}
+_ATTENDANCE_EXCEL_STATUSES = {"present", "half_day", "absent", "paid_leave", "unpaid_leave", "paid_half_day", "unpaid_half_day", "unmarked"}
 _MAX_ATTENDANCE_IMPORT_BYTES = 5 * 1024 * 1024
 _MAX_ATTENDANCE_IMPORT_ROWS = 10000
 
@@ -389,7 +466,7 @@ def _attendance_template_workbook(year: int, month: int) -> io.BytesIO:
         sheet.cell(row=row_number, column=6).number_format = "hh:mm"
     status_validation = DataValidation(
         type="list",
-        formula1='"present,half_day,absent,paid_leave,unpaid_leave,unmarked"',
+        formula1='"present,half_day,absent,paid_leave,unpaid_leave,paid_half_day,unpaid_half_day,unmarked"',
         allow_blank=False,
     )
     status_validation.errorTitle = "Invalid attendance status"
@@ -408,7 +485,7 @@ def _attendance_template_workbook(year: int, month: int) -> io.BytesIO:
         ["Use one row per employee per work date. Do not upload duplicate employee/date pairs."],
         ["Employee Code: exact code of an active employee, for example EMP-001."],
         ["Work Date: an Excel date or YYYY-MM-DD; every date must belong to the selected period."],
-        ["Status: present, half_day, absent, paid_leave, unpaid_leave, or unmarked."],
+        ["Status: present, half_day, absent, paid_leave, unpaid_leave, paid_half_day, unpaid_half_day, or unmarked."],
         ["Overtime Minutes: whole number from 0 to 1440; leave blank or enter 0 if none."],
         ["Punch In / Punch Out: optional Excel times (HH:MM). Punch Out must be after Punch In."],
         ["Note: optional text describing the attendance entry."],
@@ -421,6 +498,8 @@ def _attendance_template_workbook(year: int, month: int) -> io.BytesIO:
     ]
     for row in lines:
         instructions.append(row)
+    instructions.append(["Branch-aware import: choose one branch and one IANA timezone for the whole workbook. The branch timezone is the default; an authorized importer may override it."])
+    instructions.append(["Punch In / Punch Out must be within the selected timezone. For overnight rows, use a scheduled overnight shift; punch-out time may be earlier than punch-in time only for that scheduled shift."])
     instructions["A1"].font = Font(bold=True, size=15, color="244062")
     instructions.column_dimensions["A"].width = 110
     for cell in instructions[16]:
@@ -484,14 +563,19 @@ def _parse_attendance_workbook(
     month: int,
     employees_by_code: dict[str, Any],
     tenant_tz: ZoneInfo | None = None,
+    *,
+    db: Session | None = None,
+    branch_id: str | None = None,
+    allow_overnight: bool = False,
 ) -> list[dict[str, Any]]:
-    """Validate the entire workbook before the caller makes any database changes."""
+    """Validate all workbook rows and normalize timestamps using one batch timezone."""
     _validate_period(year, month)
-    tenant_tz = tenant_tz or ZoneInfo("Asia/Kolkata")
+    selected_tz = tenant_tz or ZoneInfo("Asia/Kolkata")
     try:
         workbook = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
     except (InvalidFileException, BadZipFile, OSError, ValueError) as exc:
         raise ValueError("The file is not a readable Excel .xlsx workbook. Download the MiniTally template and try again.") from exc
+
     try:
         if "Attendance" not in workbook.sheetnames:
             raise ValueError('Workbook must contain a worksheet named "Attendance".')
@@ -507,7 +591,9 @@ def _parse_attendance_workbook(
         parsed: list[dict[str, Any]] = []
         errors: list[str] = []
         seen: set[tuple[str, date]] = set()
+        batch_branch_ids: set[str | None] = set()
         nonempty_count = 0
+
         for row_number, values in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
             cells = list(values[:len(_ATTENDANCE_EXCEL_HEADERS)])
             cells.extend([None] * (len(_ATTENDANCE_EXCEL_HEADERS) - len(cells)))
@@ -517,6 +603,7 @@ def _parse_attendance_workbook(
             if nonempty_count > _MAX_ATTENDANCE_IMPORT_ROWS:
                 errors.append(f"More than {_MAX_ATTENDANCE_IMPORT_ROWS} attendance rows were supplied.")
                 break
+
             row_error_start = len(errors)
             raw_code, raw_date, raw_status, raw_overtime, raw_punch_in, raw_punch_out, raw_note = cells
             code = str(raw_code).strip().upper() if raw_code is not None else ""
@@ -534,6 +621,18 @@ def _parse_attendance_workbook(
             except ValueError as exc:
                 errors.append(f"Row {row_number}: {exc}.")
 
+            context = None
+            if employee is not None and work_date is not None and db is not None:
+                try:
+                    context = resolve_employee_work_context(db, employee.id, work_date)
+                    batch_branch_ids.add(context.branch_id)
+                except ShiftAssignmentConfigurationError as exc:
+                    errors.append(f"Row {row_number}: {exc}.")
+                if branch_id is not None and (context is None or context.branch_id != branch_id):
+                    errors.append(f"Row {row_number}: employee {code} is not assigned to the selected branch on {work_date}.")
+                if branch_id is None and context is not None and context.branch_id is not None:
+                    errors.append(f"Row {row_number}: employee {code} is assigned to branch {context.branch_id}; select that branch for this batch.")
+
             status = str(raw_status).strip().lower().replace("-", "_").replace(" ", "_") if raw_status is not None else ""
             if status not in _ATTENDANCE_EXCEL_STATUSES:
                 errors.append(f"Row {row_number}: Status must be one of {', '.join(sorted(_ATTENDANCE_EXCEL_STATUSES))}.")
@@ -549,18 +648,46 @@ def _parse_attendance_workbook(
                     errors.append(f"Row {row_number}: Overtime Minutes must be a whole number from 0 to 1440.")
 
             punch_in = punch_out = None
+            punch_in_local = punch_out_local = None
             try:
-                parsed_time = _parse_attendance_excel_time(raw_punch_in)
-                if parsed_time is not None and work_date is not None:
-                    punch_in = datetime.combine(work_date, parsed_time, tzinfo=tenant_tz).astimezone(timezone.utc)
-            except ValueError as exc:
+                punch_time = _parse_attendance_excel_time(raw_punch_in)
+                if punch_time is not None and work_date is not None:
+                    punch_in_local = datetime.combine(work_date, punch_time)
+                    punch_in = localize_attendance_datetime(punch_in_local, selected_tz.key)
+            except (ValueError, ShiftAssignmentConfigurationError) as exc:
                 errors.append(f"Row {row_number}: Punch In {exc}.")
+
             try:
-                parsed_time = _parse_attendance_excel_time(raw_punch_out)
-                if parsed_time is not None and work_date is not None:
-                    punch_out = datetime.combine(work_date, parsed_time).replace(tzinfo=timezone.utc)
-            except ValueError as exc:
+                punch_time = _parse_attendance_excel_time(raw_punch_out)
+                if punch_time is not None and work_date is not None:
+                    punch_out_local = datetime.combine(work_date, punch_time)
+                    if punch_in_local is not None and punch_out_local <= punch_in_local:
+                        scheduled = None
+                        if allow_overnight and db is not None and employee is not None:
+                            try:
+                                scheduled = resolve_shift_for_work_date(db, employee.id, work_date)
+                            except ShiftAssignmentConfigurationError as exc:
+                                errors.append(f"Row {row_number}: {exc}.")
+                        punch_in_instant = (
+                            localize_attendance_datetime(punch_in_local, selected_tz.key)
+                            if punch_in_local is not None else None
+                        )
+                        if (
+                            scheduled is not None
+                            and scheduled.scheduled_start_at_utc is not None
+                            and scheduled.scheduled_end_at_utc is not None
+                            and scheduled.scheduled_end_at_utc > scheduled.scheduled_start_at_utc
+                            and scheduled.timezone_name == selected_tz.key
+                            and punch_in_instant is not None
+                            and scheduled.scheduled_start_at_utc <= punch_in_instant <= scheduled.scheduled_end_at_utc
+                        ):
+                            punch_out_local += timedelta(days=1)
+                        else:
+                            errors.append(f"Row {row_number}: Punch Out is earlier than Punch In; a matching scheduled overnight shift in the selected batch timezone is required. If the overnight date is ambiguous, use the v2 event workbook.")
+                    punch_out = localize_attendance_datetime(punch_out_local, selected_tz.key)
+            except (ValueError, ShiftAssignmentConfigurationError) as exc:
                 errors.append(f"Row {row_number}: Punch Out {exc}.")
+
             if punch_in is not None and punch_out is not None and punch_out <= punch_in:
                 errors.append(f"Row {row_number}: Punch Out must be after Punch In.")
 
@@ -579,6 +706,8 @@ def _parse_attendance_workbook(
                     "employee_id": employee.id,
                     "employee_code": code,
                     "work_date": work_date,
+                    "branch_id": context.branch_id if context else None,
+                    "timezone_name": selected_tz.key,
                     "status": status,
                     "overtime_minutes": overtime_minutes,
                     "punch_in": punch_in,
@@ -588,6 +717,8 @@ def _parse_attendance_workbook(
 
         if nonempty_count == 0:
             errors.append("Attendance worksheet has no attendance rows.")
+        if len(batch_branch_ids) > 1:
+            errors.append("Attendance workbook contains employees from multiple branches. Split the workbook into one import per branch.")
         if errors:
             shown = errors[:30]
             suffix = f"\n…and {len(errors) - len(shown)} additional issue(s)." if len(errors) > len(shown) else ""
@@ -604,8 +735,10 @@ def get_payroll_settings(db: Session = Depends(get_db), user: models.User = hr_a
 
 @router.put("/payroll/settings", response_model=schemas.PayrollSettingsOut)
 def update_payroll_settings(
-    payload: schemas.PayrollSettingsIn, db: Session = Depends(get_db), user: models.User = hr_access
+    payload: schemas.PayrollSettingsIn, db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "write", "tenant")),
 ):
+    _ensure_no_pending_payroll_snapshot(db)
     row = _ensure_settings(db)
     row.salary_count_mode = payload.salary_count_mode
     row.monthly_salary_days = payload.monthly_salary_days
@@ -645,7 +778,9 @@ def get_hr_calendar(
 def update_hr_calendar_day(
     work_date: date, payload: schemas.CalendarDayIn,
     db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "write", "tenant")),
 ):
+    _ensure_period_not_prepared(db, work_date.year, work_date.month)
     _ensure_settings(db)
     row = db.query(models.HRCalendarDay).filter_by(work_date=work_date).first()
     if row is None:
@@ -662,8 +797,10 @@ def update_hr_calendar_day(
 
 @router.delete("/calendar/{work_date}", status_code=204)
 def delete_hr_calendar_override(
-    work_date: date, db: Session = Depends(get_db), user: models.User = hr_access
+    work_date: date, db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "write", "tenant")),
 ):
+    _ensure_period_not_prepared(db, work_date.year, work_date.month)
     row = db.query(models.HRCalendarDay).filter_by(work_date=work_date).first()
     if row is not None:
         db.delete(row)
@@ -711,10 +848,12 @@ def list_employee_salaries(db: Session = Depends(get_db), user: models.User = hr
 def upsert_employee_salary(
     employee_id: str, payload: schemas.EmployeeSalaryIn,
     db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "write", "tenant")),
 ):
     employee = db.get(models.Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
+    _ensure_no_pending_payroll_snapshot(db)
     annual = _dec(payload.annual_salary)
     gross = annual / Decimal("12")
     basic = gross * _dec(payload.basic_pct) / Decimal("100")
@@ -758,10 +897,37 @@ def get_monthly_attendance(
     descriptions = {row.work_date: row.description for row in calendar_rows}
     week_off_days = _week_offs(settings)
     tenant_tz = _tenant_timezone(db)
-    return [
-        _attendance_output(employee, day, by_date.get(day), _calendar_type(day, week_off_days, overrides), descriptions.get(day, ""), tenant_tz)
-        for day in (date(year, month, number) for number in range(1, end.day + 1))
-    ]
+    visible_days = []
+    for day in (date(year, month, number) for number in range(1, end.day + 1)):
+        scoped_ids = employee_scope_ids(
+            db, user, "hr", "employees", "read", as_of_date=day,
+        )
+        if scoped_ids is None or employee_id in scoped_ids:
+            visible_days.append(day)
+    if not visible_days:
+        raise HTTPException(status_code=403, detail="Employee is outside your configured attendance access scope")
+    output = []
+    for day in visible_days:
+        record = by_date.get(day)
+        if record is not None and record.timezone_name:
+            display_tz = ZoneInfo(record.timezone_name)
+        else:
+            try:
+                context = _attendance_context(db, employee.id, day)
+                display_tz = ZoneInfo(context.timezone_name)
+            except HTTPException as exc:
+                if exc.status_code != 422:
+                    raise
+                # Days outside the employee's effective assignment/employment
+                # range can still appear as unmarked calendar cells in a month.
+                display_tz = tenant_tz
+        output.append(
+            _attendance_output(
+                employee, day, record, _calendar_type(day, week_off_days, overrides),
+                descriptions.get(day, ""), tenant_tz, display_tz,
+            )
+        )
+    return output
 
 
 
@@ -786,17 +952,38 @@ def download_attendance_template(
 async def import_attendance_from_excel(
     year: int = Query(ge=2000, le=2100),
     month: int = Query(ge=1, le=12),
+    branch_id: str | None = Query(default=None, min_length=1, max_length=36),
+    import_timezone: str | None = Query(default=None, min_length=1, max_length=64),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "write", "tenant")),
 ):
     _validate_period(year, month)
+    _ensure_period_not_prepared(db, year, month)
+    settings = _ensure_settings(db)
+    if branch_id is not None:
+        branch = db.get(models.HRBranch, branch_id)
+        if branch is None or not branch.active:
+            raise HTTPException(status_code=422, detail="Select an active branch for this attendance import")
+        branch_timezone = (branch.timezone or "").strip()
+        default_timezone = branch_timezone or (settings.timezone or "Asia/Kolkata")
+    else:
+        default_timezone = settings.timezone or "Asia/Kolkata"
+    selected_timezone = import_timezone or default_timezone
+    try:
+        import_tz = ZoneInfo(selected_timezone)
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(status_code=422, detail="Import timezone must be a valid IANA timezone identifier") from exc
+
     if not file.filename or not file.filename.lower().endswith(".xlsx"):
         raise HTTPException(status_code=415, detail="Upload an .xlsx Excel workbook using the MiniTally attendance template.")
     content = await file.read(_MAX_ATTENDANCE_IMPORT_BYTES + 1)
     await file.close()
     if len(content) > _MAX_ATTENDANCE_IMPORT_BYTES:
         raise HTTPException(status_code=413, detail="Attendance workbook must be 5 MB or smaller.")
+    file_hash = hashlib.sha256(content).hexdigest()
+    file_name = (file.filename or "attendance.xlsx").replace("\\", "/").split("/")[-1][:255]
 
     employees_by_code = {
         row.emp_code.strip().upper(): row
@@ -807,13 +994,107 @@ async def import_attendance_from_excel(
         ).all()
     }
     try:
-        rows = _parse_attendance_workbook(content, year, month, employees_by_code, _tenant_timezone(db))
+        rows = _parse_attendance_workbook(
+            content, year, month, employees_by_code, import_tz,
+            db=db, branch_id=branch_id, allow_overnight=True,
+        )
     except ValueError as exc:
+        rejected_batch = models.HRAttendanceImportBatch(
+            branch_id=branch_id,
+            import_timezone=selected_timezone,
+            template_version="legacy_summary_v1",
+            file_name=file_name,
+            file_hash=file_hash,
+            uploaded_by=user.username[:64],
+            status="rejected",
+            rows_total=0,
+            rows_imported=0,
+            rows_rejected=1,
+            error_summary=str(exc)[:4000],
+        )
+        db.add(rejected_batch)
+        log_audit(db, user.username, "REJECT", "hr_attendance_import_batch", f"legacy_summary_v1:{file_hash}:{str(exc)[:400]}")
+        db.commit()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    resolved_branches = {item["branch_id"] for item in rows}
+    if len(resolved_branches) > 1:
+        raise HTTPException(
+            status_code=422,
+            detail="Attendance workbook contains employees from multiple branches. Split the workbook into one import per branch.",
+        )
+    actual_branch = next(iter(resolved_branches), None)
+    if actual_branch != branch_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Selected batch branch does not match every employee's effective branch for the imported work dates.",
+        )
+
+    scope_cache: dict[date, list[str] | None] = {}
+    for item in rows:
+        work_date = item["work_date"]
+        if work_date not in scope_cache:
+            scope_cache[work_date] = employee_scope_ids(
+                db, user, "hr", "employees", "update", as_of_date=work_date,
+            )
+        scoped_ids = scope_cache[work_date]
+        if scoped_ids is not None and item["employee_id"] not in scoped_ids:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Attendance import includes an employee outside your access scope on {work_date}",
+            )
+
+    batch = models.HRAttendanceImportBatch(
+        branch_id=actual_branch,
+        import_timezone=selected_timezone,
+        template_version="legacy_summary_v1",
+        file_name=file_name,
+        file_hash=file_hash,
+        uploaded_by=user.username[:64],
+        status="validated",
+        rows_total=len(rows),
+        rows_imported=0,
+        rows_rejected=0,
+        error_summary="",
+    )
+    db.add(batch)
+    log_audit(db, user.username, "VALIDATE", "hr_attendance_import_batch", f"legacy_summary_v1:{file_hash}:{len(rows)} rows")
+    db.commit()
+    db.refresh(batch)
+
     created = updated = cleared = 0
+    created_events = 0
     try:
         for item in rows:
+            roster = db.query(models.HRShiftRosterEntry).filter_by(
+                employee_id=item["employee_id"], work_date=item["work_date"],
+            ).first()
+            for event_type, instant in (
+                ("punch_in", item["punch_in"]),
+                ("punch_out", item["punch_out"]),
+            ):
+                if instant is None:
+                    continue
+                source_reference = build_event_source_reference(
+                    "legacy_summary_v1", file_hash, item["employee_id"],
+                    item["work_date"], event_type,
+                )
+                _, event_created = append_attendance_event(
+                    db,
+                    employee_id=item["employee_id"],
+                    work_date=item["work_date"],
+                    event_type=event_type,
+                    occurred_at_utc=instant,
+                    timezone_name=item["timezone_name"],
+                    source_type="excel_import",
+                    source_reference=source_reference,
+                    recorded_by=user.username,
+                    import_batch_id=batch.id,
+                    roster_entry_id=roster.id if roster else None,
+                    note=item["note"],
+                )
+                created_events += int(event_created)
+
             existing = db.query(models.EmployeeAttendance).filter_by(
                 employee_id=item["employee_id"], work_date=item["work_date"]
             ).first()
@@ -825,43 +1106,90 @@ async def import_attendance_from_excel(
             if existing is None:
                 existing = models.EmployeeAttendance(
                     employee_id=item["employee_id"], work_date=item["work_date"],
+                    branch_id=item["branch_id"], timezone_name=item["timezone_name"],
                     status=item["status"], overtime_minutes=item["overtime_minutes"],
                     punch_in=item["punch_in"], punch_out=item["punch_out"], note=item["note"],
                 )
                 db.add(existing)
                 created += 1
             else:
+                existing.branch_id = item["branch_id"]
+                existing.timezone_name = item["timezone_name"]
                 existing.status = item["status"]
                 existing.overtime_minutes = item["overtime_minutes"]
                 existing.punch_in = item["punch_in"]
                 existing.punch_out = item["punch_out"]
                 existing.note = item["note"]
                 updated += 1
+        batch.status = "imported"
+        batch.rows_imported = len(rows)
+        batch.rows_rejected = 0
+        log_audit(
+            db, user.username, "IMPORT", "hr_attendance_import_batch",
+            f"{batch.id}: rows={len(rows)}; new_events={created_events}",
+        )
         log_audit(
             db, user.username, "IMPORT", "employee_attendance",
-            f"{year}-{month:02d}: rows={len(rows)}, created={created}, updated={updated}, cleared={cleared}",
+            f"{year}-{month:02d}: branch={actual_branch or 'unassigned'}; timezone={selected_timezone}; rows={len(rows)}; created={created}; updated={updated}; cleared={cleared}",
         )
         db.commit()
-    except IntegrityError as exc:
+    except (IntegrityError, AttendanceEventError) as exc:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Attendance changed concurrently. Refresh the month and import again.") from exc
+        failed_batch = db.get(models.HRAttendanceImportBatch, batch.id)
+        if failed_batch is not None:
+            failed_batch.status = "rejected"
+            failed_batch.rows_rejected = len(rows)
+            failed_batch.error_summary = str(exc)[:4000]
+            log_audit(db, user.username, "REJECT", "hr_attendance_import_batch", f"{batch.id}: {str(exc)[:400]}")
+            db.commit()
+        raise HTTPException(status_code=409, detail="Attendance import could not be applied atomically. Review the batch and retry.") from exc
 
     return {
-        "year": year, "month": month, "rows_processed": len(rows),
+        "batch_id": batch.id,
+        "template_version": batch.template_version,
+        "batch_status": batch.status,
+        "year": year, "month": month, "branch_id": actual_branch,
+        "timezone": selected_timezone, "rows_processed": len(rows),
         "created": created, "updated": updated, "cleared": cleared,
     }
 
 
 @router.put("/attendance", response_model=schemas.EmployeeAttendanceOut)
 def upsert_daily_attendance(
-    payload: schemas.EmployeeAttendanceIn, db: Session = Depends(get_db), user: models.User = hr_access
+    payload: schemas.EmployeeAttendanceIn, db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "write", "tenant")),
 ):
+    _ensure_period_not_prepared(db, payload.work_date.year, payload.work_date.month)
     employee = db.get(models.Employee, payload.employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
-    tenant_tz = _tenant_timezone(db)
-    punch_in = _to_utc(payload.punch_in, tenant_tz)
-    punch_out = _to_utc(payload.punch_out, tenant_tz)
+    _ensure_attendance_employee_scope(db, user, payload.employee_id, payload.work_date, "update")
+    context = _attendance_context(db, employee.id, payload.work_date)
+    try:
+        punch_in = (
+            localize_attendance_datetime(payload.punch_in, context.timezone_name)
+            if payload.punch_in is not None else None
+        )
+        punch_out = (
+            localize_attendance_datetime(payload.punch_out, context.timezone_name)
+            if payload.punch_out is not None else None
+        )
+    except ShiftAssignmentConfigurationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if punch_in is not None:
+        try:
+            resolved_context, resolved_work_date = resolve_attendance_work_date(db, employee.id, punch_in)
+        except ShiftAssignmentConfigurationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if resolved_work_date != payload.work_date:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Punch In belongs to local work date {resolved_work_date}, not the supplied work date {payload.work_date}",
+            )
+        context = resolved_context
+    attendance_tz = ZoneInfo(context.timezone_name)
+    if payload.status != "unmarked" and punch_out is not None and punch_in is None:
+        raise HTTPException(status_code=422, detail="Punch In is required when Punch Out is supplied")
     if punch_in and punch_out and punch_out <= punch_in:
         raise HTTPException(status_code=422, detail="Punch-out must be after punch-in")
     row = db.query(models.EmployeeAttendance).filter_by(employee_id=payload.employee_id, work_date=payload.work_date).first()
@@ -870,32 +1198,77 @@ def upsert_daily_attendance(
             db.delete(row)
     elif row is None:
         row = models.EmployeeAttendance(
-            employee_id=payload.employee_id, work_date=payload.work_date, status=payload.status,
-            punch_in=punch_in, punch_out=punch_out, overtime_minutes=payload.overtime_minutes, note=payload.note.strip(),
+            employee_id=payload.employee_id, work_date=payload.work_date,
+            branch_id=context.branch_id, timezone_name=context.timezone_name,
+            status=payload.status, punch_in=punch_in, punch_out=punch_out,
+            overtime_minutes=payload.overtime_minutes, note=payload.note.strip(),
         )
         db.add(row)
     else:
+        row.branch_id = context.branch_id
+        row.timezone_name = context.timezone_name
         row.status = payload.status
         row.punch_in = punch_in
         row.punch_out = punch_out
         row.overtime_minutes = payload.overtime_minutes
         row.note = payload.note.strip()
-    log_audit(db, user.username, "UPSERT", "employee_attendance", f"{employee.emp_code}:{payload.work_date}:{payload.status}")
+    roster = db.query(models.HRShiftRosterEntry).filter_by(
+        employee_id=employee.id, work_date=payload.work_date,
+    ).first()
+    try:
+        for event_type, instant in (("punch_in", punch_in), ("punch_out", punch_out)):
+            if instant is None:
+                continue
+            source_reference = build_event_source_reference(
+                "manual_daily_summary", employee.id, payload.work_date,
+                event_type, instant.isoformat(),
+            )
+            event, event_created = append_attendance_event(
+                db,
+                employee_id=employee.id,
+                work_date=payload.work_date,
+                event_type=event_type,
+                occurred_at_utc=instant,
+                timezone_name=context.timezone_name,
+                source_type="manual_hr",
+                source_reference=source_reference,
+                recorded_by=user.username,
+                roster_entry_id=roster.id if roster else None,
+                note=payload.note.strip(),
+            )
+            if event_created:
+                log_audit(
+                    db, user.username, "CREATE", "hr_attendance_event",
+                    f"{event.id}:{event.event_type}:{event.employee_id}:{event.work_date}",
+                )
+    except AttendanceEventError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    log_audit(
+        db, user.username, "UPSERT", "employee_attendance",
+        f"{employee.emp_code}:{payload.work_date}:{payload.status}; branch={context.branch_id or 'unassigned'}; timezone={context.timezone_name}",
+    )
     db.commit()
     row = db.query(models.EmployeeAttendance).filter_by(employee_id=payload.employee_id, work_date=payload.work_date).first()
     settings = _ensure_settings(db)
     override = db.query(models.HRCalendarDay).filter_by(work_date=payload.work_date).first()
     calendar_type = _calendar_type(payload.work_date, _week_offs(settings), {payload.work_date: override.day_type} if override else {})
-    return _attendance_output(employee, payload.work_date, row, calendar_type, override.description if override else "", tenant_tz)
+    return _attendance_output(
+        employee, payload.work_date, row, calendar_type,
+        override.description if override else "", attendance_tz,
+    )
 
 
 @router.delete("/attendance/{employee_id}/{work_date}", status_code=204)
 def clear_daily_attendance(
-    employee_id: str, work_date: date, db: Session = Depends(get_db), user: models.User = hr_access
+    employee_id: str, work_date: date, db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "write", "tenant")),
 ):
     employee = db.get(models.Employee, employee_id)
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
+    _ensure_attendance_employee_scope(db, user, employee_id, work_date, "update")
     row = db.query(models.EmployeeAttendance).filter_by(employee_id=employee_id, work_date=work_date).first()
     if row is not None:
         db.delete(row)
@@ -914,7 +1287,10 @@ def preview_monthly_payroll(
 
 @router.get("/payroll/runs", response_model=list[schemas.PayrollRunSummaryOut])
 def list_payroll_runs(db: Session = Depends(get_db), user: models.User = hr_access):
-    runs = db.query(models.HRPayrollRun).order_by(models.HRPayrollRun.year.desc(), models.HRPayrollRun.month.desc()).all()
+    runs = db.query(models.HRPayrollRun).order_by(
+        models.HRPayrollRun.year.desc(), models.HRPayrollRun.month.desc(),
+        models.HRPayrollRun.revision.desc(),
+    ).all()
     return [_run_output(db, run, include_items=False) for run in runs]
 
 
@@ -923,9 +1299,9 @@ def get_payroll_run(
     year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
 ):
     _validate_period(year, month)
-    run = db.query(models.HRPayrollRun).filter_by(year=year, month=month).first()
+    run = _latest_payroll_run(db, year, month)
     if run is None:
-        raise HTTPException(status_code=404, detail="Finalized payroll run not found")
+        raise HTTPException(status_code=404, detail="Payroll run not found")
     return _run_output(db, run)
 
 
@@ -959,7 +1335,7 @@ def _missing_payroll_attendance(
         (row.employee_id, row.work_date): row.status
         for row in attendance_rows
     }
-    explicit_statuses = {"present", "half_day", "absent", "paid_leave", "unpaid_leave"}
+    explicit_statuses = {"present", "half_day", "absent", "paid_leave", "unpaid_leave", "paid_half_day", "unpaid_half_day"}
     missing: list[tuple[str, date]] = []
     for employee in salaried_employees:
         # Unknown legacy joining dates are not guessed. They are reported above,
@@ -976,23 +1352,21 @@ def _missing_payroll_attendance(
                 missing.append((employee.emp_code, work_date))
     return missing, unknown_joining_dates
 
-@router.post("/payroll/runs/{year}/{month}/finalize", response_model=schemas.PayrollRunOut)
-def finalize_monthly_payroll(
-    year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
-):
-    _validate_period(year, month)
-    existing = db.query(models.HRPayrollRun).filter_by(year=year, month=month).first()
-    if existing is not None and existing.status == "finalized":
-        return _run_output(db, existing)
+def _latest_payroll_run(db: Session, year: int, month: int) -> models.HRPayrollRun | None:
+    return db.query(models.HRPayrollRun).filter_by(year=year, month=month).order_by(
+        models.HRPayrollRun.revision.desc()
+    ).first()
+
+
+def _payroll_readiness(db: Session, year: int, month: int) -> tuple[dict[str, Any], list[str]]:
     preview = _preview_data(db, year, month)
     configured_items = [item for item in preview["items"] if item["configured"] and item["annual_salary"] > 0]
+    issues: list[str] = []
     if not configured_items:
-        raise HTTPException(status_code=409, detail="Configure annual salary for at least one active employee before finalizing payroll")
-
+        issues.append("Configure annual salary for at least one active employee")
     missing_attendance, unknown_joining_dates = _missing_payroll_attendance(db, year, month)
-    readiness_issues: list[str] = []
     if unknown_joining_dates:
-        readiness_issues.append(
+        issues.append(
             "Joining dates are missing for active salaried employee(s): "
             + ", ".join(unknown_joining_dates[:20])
             + ("; additional employees require review" if len(unknown_joining_dates) > 20 else "")
@@ -1004,56 +1378,182 @@ def finalize_monthly_payroll(
         )
         remaining = len(missing_attendance) - min(len(missing_attendance), 20)
         suffix = f"; and {remaining} more" if remaining else ""
-        readiness_issues.append(
+        issues.append(
             f"{len(missing_attendance)} scheduled employee-day attendance record(s) are missing. "
             f"Record an explicit status for each working day. Missing: {examples}{suffix}"
         )
-    if readiness_issues:
-        raise HTTPException(
-            status_code=409,
-            detail="Payroll cannot be finalized: " + " | ".join(readiness_issues),
-        )
+    return preview, issues
 
+
+def _snapshot_payroll_run(
+    db: Session, year: int, month: int, user: models.User, revision: int,
+) -> models.HRPayrollRun:
+    preview, issues = _payroll_readiness(db, year, month)
+    if issues:
+        raise HTTPException(status_code=409, detail="Payroll preparation blocked: " + " | ".join(issues))
     now = datetime.now(timezone.utc)
-    run = existing or models.HRPayrollRun(year=year, month=month, status="finalized", created_by=user.username, finalized_at=now)
-    run.status, run.finalized_at = "finalized", now
-    if existing is None:
-        db.add(run)
+    run = models.HRPayrollRun(
+        year=year, month=month, revision=revision, status="prepared",
+        created_by=user.username, finalized_at=None,
+    )
+    db.add(run)
+    db.flush()
+    configured_items = [item for item in preview["items"] if item["configured"] and item["annual_salary"] > 0]
+    for item in configured_items:
+        db.add(models.HRPayrollItem(
+            payroll_run_id=run.id, employee_id=item["employee_id"],
+            employee_code=item["employee_code"], employee_name=item["employee_name"],
+            department=item["department"], annual_salary=item["annual_salary"],
+            monthly_gross=item["monthly_gross"], basic=item["basic"], hra=item["hra"], da=item["da"],
+            conveyance=item["conveyance"], medical_allowance=item["medical_allowance"],
+            special_allowance=item["special_allowance"], employee_pf=item["employee_pf"],
+            professional_tax=item["professional_tax"], tds=item["tds"],
+            absence_deduction=item["absence_deduction"], overtime_pay=item["overtime_pay"],
+            net_pay=item["net_pay"], present_days=item["present_days"], half_days=item["half_days"],
+            absent_days=item["absent_days"], paid_leave_days=item["paid_leave_days"],
+            unpaid_leave_days=item["unpaid_leave_days"], overtime_minutes=item["overtime_minutes"],
+        ))
+    log_audit(db, user.username, "PREPARE", "hr_payroll_run", f"{year}-{month:02d}; revision={revision}")
+    db.commit()
+    db.refresh(run)
+    return run
+
+
+@router.post("/payroll/runs/{year}/{month}/prepare", response_model=schemas.PayrollRunOut)
+def prepare_monthly_payroll(
+    year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "prepare", "tenant")),
+):
+    _validate_period(year, month)
+    existing = _latest_payroll_run(db, year, month)
+    if existing is not None:
+        if existing.status == "prepared":
+            return _run_output(db, existing)
+        if existing.status != "reversed":
+            raise HTTPException(409, f"Payroll period already has a {existing.status} run; use the appropriate approval or reversal action")
+        revision = existing.revision + 1
+    else:
+        revision = 1
     try:
-        db.flush()
-        if existing is not None:
-            db.query(models.HRPayrollItem).filter_by(payroll_run_id=run.id).delete(synchronize_session=False)
-        for item in configured_items:
-            db.add(models.HRPayrollItem(
-                payroll_run_id=run.id, employee_id=item["employee_id"],
-                employee_code=item["employee_code"], employee_name=item["employee_name"],
-                department=item["department"], annual_salary=item["annual_salary"],
-                monthly_gross=item["monthly_gross"], basic=item["basic"], hra=item["hra"], da=item["da"],
-                conveyance=item["conveyance"], medical_allowance=item["medical_allowance"],
-                special_allowance=item["special_allowance"], employee_pf=item["employee_pf"],
-                professional_tax=item["professional_tax"], tds=item["tds"],
-                absence_deduction=item["absence_deduction"], overtime_pay=item["overtime_pay"],
-                net_pay=item["net_pay"], present_days=item["present_days"], half_days=item["half_days"],
-                absent_days=item["absent_days"], paid_leave_days=item["paid_leave_days"],
-                unpaid_leave_days=item["unpaid_leave_days"], overtime_minutes=item["overtime_minutes"],
-            ))
-        log_audit(db, user.username, "FINALIZE", "hr_payroll_run", f"{year}-{month:02d}")
-        db.commit()
-        db.refresh(run)
+        run = _snapshot_payroll_run(db, year, month, user, revision)
     except IntegrityError as exc:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Payroll was finalized concurrently for this month; refresh the payroll run list") from exc
+        raise HTTPException(409, detail="Payroll preparation conflicted with another request; refresh and retry") from exc
+    return _run_output(db, run)
+
+
+@router.post("/payroll/runs/{run_id}/approve", response_model=schemas.PayrollRunOut)
+def approve_monthly_payroll(
+    run_id: str, db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "approve", "tenant")),
+):
+    run = db.query(models.HRPayrollRun).filter_by(id=run_id).with_for_update().first()
+    if run is None:
+        raise HTTPException(404, "Payroll run not found")
+    if run.status != "prepared":
+        raise HTTPException(409, "Only prepared payroll runs can be approved")
+    if run.created_by == user.username:
+        raise HTTPException(403, "Payroll preparer cannot approve their own payroll run")
+    run.status = "approved"
+    run.approved_by = user.username
+    run.approved_at = datetime.now(timezone.utc)
+    log_audit(db, user.username, "APPROVE", "hr_payroll_run", f"{run.year}-{run.month:02d}; revision={run.revision}")
+    db.commit()
+    db.refresh(run)
+    return _run_output(db, run)
+
+
+@router.post("/payroll/runs/{year}/{month}/finalize", response_model=schemas.PayrollRunOut)
+def finalize_monthly_payroll(
+    year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "finalize", "tenant")),
+):
+    _validate_period(year, month)
+    run = _latest_payroll_run(db, year, month)
+    if run is None:
+        raise HTTPException(409, "Prepare payroll and obtain a separate approval before finalization")
+    if run.status in {"finalized", "locked"}:
+        return _run_output(db, run)
+    if run.status != "approved":
+        raise HTTPException(409, "Payroll must be prepared and approved by a different authorized user before finalization")
+    now = datetime.now(timezone.utc)
+    try:
+        journal = post_payroll_journal(db, run, user.username)
+        db.flush()
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+    run.status = "finalized"
+    run.finalized_at = now
+    log_audit(db, user.username, "FINALIZE", "hr_payroll_run", f"{year}-{month:02d}; revision={run.revision}; finance_journal={journal.journal_no}")
+    db.commit()
+    db.refresh(run)
+    return _run_output(db, run)
+
+
+@router.post("/payroll/runs/{run_id}/lock", response_model=schemas.PayrollRunOut)
+def lock_monthly_payroll(
+    run_id: str, db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "lock", "tenant")),
+):
+    run = db.query(models.HRPayrollRun).filter_by(id=run_id).with_for_update().first()
+    if run is None:
+        raise HTTPException(404, "Payroll run not found")
+    if run.status != "finalized":
+        raise HTTPException(409, "Only finalized payroll can be locked")
+    run.status = "locked"
+    run.locked_at = datetime.now(timezone.utc)
+    log_audit(db, user.username, "LOCK", "hr_payroll_run", f"{run.year}-{run.month:02d}; revision={run.revision}")
+    db.commit()
+    db.refresh(run)
+    return _run_output(db, run)
+
+
+class PayrollReversalPayload(BaseModel):
+    reason: str = Field(min_length=10, max_length=2000)
+
+
+@router.post("/payroll/runs/{run_id}/reverse", response_model=schemas.PayrollRunOut)
+def reverse_monthly_payroll(
+    run_id: str, payload: PayrollReversalPayload,
+    db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "reverse", "tenant")),
+):
+    reason = payload.reason.strip()
+    if len(reason) < 10 or len(reason) > 2000:
+        raise HTTPException(422, "A reversal reason of 10 to 2000 characters is required")
+    run = db.query(models.HRPayrollRun).filter_by(id=run_id).with_for_update().first()
+    if run is None:
+        raise HTTPException(404, "Payroll run not found")
+    if run.status not in {"finalized", "locked"}:
+        raise HTTPException(409, "Only finalized or locked payroll can be reversed")
+    try:
+        reversal_journal = reverse_payroll_journal(db, run, user.username, reason)
+        db.flush()
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(409, str(exc)) from exc
+    run.status = "reversed"
+    run.reversed_at = datetime.now(timezone.utc)
+    run.reversal_reason = reason
+    log_audit(db, user.username, "REVERSE", "hr_payroll_run", f"{run.year}-{run.month:02d}; revision={run.revision}; reason={reason}; finance_reversal={reversal_journal.journal_no}")
+    db.commit()
+    db.refresh(run)
     return _run_output(db, run)
 
 
 @router.get("/payroll/slips/{employee_id}/{year}/{month}")
 def download_salary_slip(
-    employee_id: str, year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access
+    employee_id: str, year: int, month: int, db: Session = Depends(get_db), user: models.User = Depends(current_user)
 ):
     _validate_period(year, month)
-    run = db.query(models.HRPayrollRun).filter_by(year=year, month=month, status="finalized").first()
-    if run is None:
+    run = _latest_payroll_run(db, year, month)
+    if run is None or run.status not in {"finalized", "locked"}:
         raise HTTPException(status_code=404, detail="Finalize payroll for this month before downloading salary slips")
+    if user.role not in (models.Role.admin, models.Role.hr):
+        link = db.query(models.EmployeeUserLink).filter_by(user_id=user.id).first()
+        if link is None or link.employee_id != employee_id:
+            raise HTTPException(status_code=403, detail="Salary slips are available only to HR or the linked employee")
     item = db.query(models.HRPayrollItem).filter_by(payroll_run_id=run.id, employee_id=employee_id).first()
     if item is None:
         raise HTTPException(status_code=404, detail="Salary slip not found for this employee and period")

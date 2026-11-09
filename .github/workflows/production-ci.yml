@@ -2,7 +2,7 @@ name: Minitally CI
 
 on:
   push:
-    branches: ["main", "production", "phase-*"]
+    branches: ["main", "production", "phase-*", "feat/p0-hr-leave-payroll-authorization"]
     paths:
       - "backend/**"
       - "frontend/**"
@@ -105,3 +105,21 @@ jobs:
       - name: Production build
         working-directory: frontend
         run: npm run build
+      - name: Install Playwright for browser smoke tests
+        working-directory: frontend
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Start frontend for browser smoke tests
+        working-directory: frontend
+        run: |
+          npm run dev -- --host 127.0.0.1 > /tmp/nexora-vite.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5173/ >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/nexora-vite.log
+          exit 1
+      - name: Verify employee, HR, Admin and Finance browser workflows
+        working-directory: frontend
+        run: node tests/e2e/smoke.mjs

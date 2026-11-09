@@ -1,0 +1,599 @@
+"""Tenant-scoped HR leave policy, balance and approval workflows."""
+from __future__ import annotations
+
+import calendar
+from datetime import date, datetime
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel, Field
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from app import models
+from app.api.deps import current_user, employee_scope_ids, enforce_employee_data_scope, require_employee_scope_grant, require_permission
+from app.db.session import get_db
+from app.modules.core.audit import log_audit
+from app.modules.core.authorization import RolePermissionGrant
+from app.modules.hr.leave import HRLeaveAccrualLedger, HRLeaveBalance, HRLeaveRequest, HRLeaveType
+from app.modules.hr.payroll import EmployeeAttendance, HRCalendarDay, HRPayrollSettings
+from app.api.routes.approvals import Department
+
+router = APIRouter(prefix="/hr/leave", tags=["hr", "leave"])
+
+
+class LeaveTypeIn(BaseModel):
+    code: str = Field(min_length=1, max_length=32)
+    name: str = Field(min_length=1, max_length=80)
+    is_paid: bool = True
+    annual_entitlement: float = Field(default=0, ge=0, le=366)
+    accrual_method: Literal["annual_upfront", "monthly", "monthly_prorated"] = "annual_upfront"
+    accrual_effective_from: date = date(2000, 1, 1)
+    carry_forward_limit: float = Field(default=0, ge=0, le=366)
+    count_week_offs: bool = False
+    count_holidays: bool = False
+    allow_half_day: bool = False
+    active: bool = True
+
+
+class LeaveTypeOut(LeaveTypeIn):
+    id: str
+    model_config = {"from_attributes": True}
+
+
+class LeaveBalanceIn(BaseModel):
+    employee_id: str
+    leave_type_id: str
+    year: int = Field(ge=2000, le=2100)
+    opening_balance: float = Field(default=0, ge=0, le=366)
+    accrued: float = Field(default=0, ge=0, le=366)
+    adjusted: float = Field(default=0, ge=-366, le=366)
+
+
+class LeaveBalanceOut(BaseModel):
+    id: str
+    employee_id: str
+    leave_type_id: str
+    year: int
+    opening_balance: float
+    accrued: float
+    adjusted: float
+    used: float
+    available: float
+
+
+class LeaveRequestIn(BaseModel):
+    leave_type_id: str
+    start_date: date
+    end_date: date
+    half_day: bool = False
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class LeaveDecisionIn(BaseModel):
+    status: Literal["approved", "rejected"]
+    decision_note: str = Field(default="", max_length=2000)
+
+
+class LeaveRequestOut(BaseModel):
+    model_config = {"from_attributes": True}
+
+    id: str
+    employee_id: str
+    leave_type_id: str
+    start_date: date
+    end_date: date
+    total_days: float
+    half_day: bool
+    reason: str
+    status: str
+    requested_by: str
+    approver_username: str
+    decided_by: str
+    decision_note: str
+    decided_at: datetime | None
+    created_at: datetime | None
+
+
+def _require_grant(db: Session, user: models.User, feature: str, action: str, scope: str) -> None:
+    grant = db.query(RolePermissionGrant).filter_by(
+        role=user.role.value, module="hr", feature=feature, action=action,
+        data_scope=scope, allowed=True,
+    ).first()
+    if grant is None:
+        raise HTTPException(403, f"Missing permission: hr.{feature}.{action} ({scope})")
+
+
+def _is_hr(user: models.User) -> bool:
+    return user.role in (models.Role.admin, models.Role.hr)
+
+
+def _balance_output(row: HRLeaveBalance) -> dict:
+    available = row.opening_balance + row.accrued + row.adjusted - row.used
+    return {
+        "id": row.id, "employee_id": row.employee_id, "leave_type_id": row.leave_type_id,
+        "year": row.year, "opening_balance": row.opening_balance, "accrued": row.accrued,
+        "adjusted": row.adjusted, "used": row.used, "available": round(available, 2),
+    }
+
+
+def _leave_days(db: Session, leave_type: HRLeaveType, start: date, end: date) -> float:
+    settings = db.get(models.HRPayrollSettings, 1)
+    week_offs = {5, 6}
+    if settings and settings.week_off_days:
+        try:
+            week_offs = {int(value) for value in settings.week_off_days.split(",") if value != ""}
+        except ValueError:
+            raise HTTPException(500, "HR week-off configuration is invalid")
+    overrides = {
+        row.work_date: row.day_type
+        for row in db.query(HRCalendarDay).filter(
+            HRCalendarDay.work_date >= start, HRCalendarDay.work_date <= end
+        ).all()
+    }
+    total = 0
+    current = start
+    while current <= end:
+        day_type = overrides.get(current)
+        if day_type == "holiday":
+            if leave_type.count_holidays:
+                total += 1
+        elif day_type == "week_off" or (day_type is None and current.weekday() in week_offs):
+            if leave_type.count_week_offs:
+                total += 1
+        else:
+            total += 1
+        current = date.fromordinal(current.toordinal() + 1)
+    return float(total)
+
+
+def _employee_for_user(db: Session, user: models.User) -> models.Employee:
+    link = db.query(models.EmployeeUserLink).filter_by(user_id=user.id).first()
+    if link is None:
+        raise HTTPException(403, "Your login is not linked to an employee record")
+    employee = db.get(models.Employee, link.employee_id)
+    if employee is None or not employee.active:
+        raise HTTPException(403, "Your linked employee record is inactive")
+    return employee
+
+
+@router.get("/types", response_model=list[LeaveTypeOut])
+def list_leave_types(db: Session = Depends(get_db), user: models.User = Depends(require_permission("hr", "leave_types", "read", "self"))):
+    query = db.query(HRLeaveType)
+    if not _is_hr(user):
+        query = query.filter(HRLeaveType.active.is_(True))
+    return query.order_by(HRLeaveType.code).all()
+
+
+@router.post("/types", response_model=LeaveTypeOut, status_code=201)
+def create_leave_type(payload: LeaveTypeIn, db: Session = Depends(get_db), user: models.User = Depends(require_permission("hr", "leave_types", "write", "tenant"))):
+    if not _is_hr(user):
+        raise HTTPException(403, "Only HR or Admin can manage leave types")
+    row = HRLeaveType(**payload.model_dump())
+    db.add(row)
+    log_audit(db, user.username, "CREATE", "hr_leave_type", payload.code)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Leave type code already exists") from exc
+    db.refresh(row)
+    return row
+
+
+@router.put("/types/{leave_type_id}", response_model=LeaveTypeOut)
+def update_leave_type(leave_type_id: str, payload: LeaveTypeIn, db: Session = Depends(get_db), user: models.User = Depends(require_permission("hr", "leave_types", "write", "tenant"))):
+    if not _is_hr(user):
+        raise HTTPException(403, "Only HR or Admin can manage leave types")
+    row = db.get(HRLeaveType, leave_type_id)
+    if row is None:
+        raise HTTPException(404, "Leave type not found")
+    referenced = db.query(HRLeaveRequest.id).filter_by(leave_type_id=leave_type_id).first() or db.query(HRLeaveBalance.id).filter_by(leave_type_id=leave_type_id).first()
+    if referenced:
+        raise HTTPException(409, "A leave policy already used by balances or requests is immutable; create a new leave type code for the revised policy")
+    for key, value in payload.model_dump().items():
+        setattr(row, key, value)
+    log_audit(db, user.username, "UPDATE", "hr_leave_type", row.code)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.get("/balances", response_model=list[LeaveBalanceOut])
+def list_leave_balances(
+    employee_id: str | None = None, year: int = Query(ge=2000, le=2100),
+    db: Session = Depends(get_db), user: models.User = Depends(current_user),
+):
+    if _is_hr(user):
+        require_employee_scope_grant(db, user, "hr", "leave_balances", "read")
+        scoped_ids = employee_scope_ids(db, user, "hr", "leave_balances", "read")
+        query = db.query(HRLeaveBalance).filter(HRLeaveBalance.year == year)
+        if scoped_ids is not None:
+            query = query.filter(HRLeaveBalance.employee_id.in_(scoped_ids))
+        if employee_id:
+            if scoped_ids is not None and employee_id not in scoped_ids:
+                raise HTTPException(403, "Employee is outside your configured leave-balance scope")
+            query = query.filter(HRLeaveBalance.employee_id == employee_id)
+    else:
+        _require_grant(db, user, "leave_balances", "read", "self")
+        employee = _employee_for_user(db, user)
+        query = db.query(HRLeaveBalance).filter(
+            HRLeaveBalance.year == year, HRLeaveBalance.employee_id == employee.id
+        )
+    return [_balance_output(row) for row in query.order_by(HRLeaveBalance.employee_id).all()]
+
+
+@router.put("/balances", response_model=LeaveBalanceOut)
+def upsert_leave_balance(payload: LeaveBalanceIn, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
+    if not _is_hr(user):
+        raise HTTPException(403, "Only HR or Admin can allocate or adjust leave balances")
+    require_employee_scope_grant(db, user, "hr", "leave_balances", "write")
+    scoped_ids = employee_scope_ids(db, user, "hr", "leave_balances", "write")
+    if scoped_ids is not None and payload.employee_id not in scoped_ids:
+        raise HTTPException(403, "Employee is outside your configured leave-balance write scope")
+    employee = db.get(models.Employee, payload.employee_id)
+    leave_type = db.get(HRLeaveType, payload.leave_type_id)
+    if employee is None or leave_type is None:
+        raise HTTPException(404, "Employee or leave type not found")
+    row = db.query(HRLeaveBalance).filter_by(
+        employee_id=payload.employee_id, leave_type_id=payload.leave_type_id, year=payload.year
+    ).with_for_update().first()
+    if row is None:
+        row = HRLeaveBalance(**payload.model_dump(), updated_by=user.username, used=0)
+        db.add(row)
+    else:
+        if payload.opening_balance + payload.accrued + payload.adjusted < row.used:
+            raise HTTPException(409, "New balance cannot be lower than leave already used")
+        row.opening_balance = payload.opening_balance
+        row.accrued = payload.accrued
+        row.adjusted = payload.adjusted
+        row.updated_by = user.username
+    log_audit(db, user.username, "UPSERT", "hr_leave_balance",
+              f"{payload.employee_id}:{payload.leave_type_id}:{payload.year}")
+    db.commit()
+    db.refresh(row)
+    return _balance_output(row)
+
+
+@router.post("/balances/carry-forward/{year}", response_model=list[LeaveBalanceOut])
+def carry_forward_leave_balances(
+    year: int, db: Session = Depends(get_db), user: models.User = Depends(current_user),
+):
+    if not _is_hr(user):
+        raise HTTPException(403, "Only HR or Admin can carry forward leave balances")
+    _require_grant(db, user, "leave_balances", "write", "tenant")
+    if year < 2000 or year >= 2100:
+        raise HTTPException(422, "Carry-forward source year must be between 2000 and 2099")
+    source_rows = db.query(HRLeaveBalance).filter_by(year=year).with_for_update().all()
+    created: list[HRLeaveBalance] = []
+    for source in source_rows:
+        leave_type = db.get(HRLeaveType, source.leave_type_id)
+        employee = db.get(models.Employee, source.employee_id)
+        if leave_type is None or not leave_type.active or employee is None or not employee.active:
+            continue
+        if leave_type.carry_forward_limit <= 0:
+            continue
+        existing = db.query(HRLeaveBalance).filter_by(
+            employee_id=source.employee_id, leave_type_id=source.leave_type_id, year=year + 1
+        ).first()
+        if existing is not None:
+            continue
+        available = source.opening_balance + source.accrued + source.adjusted - source.used
+        carry = min(max(available, 0), leave_type.carry_forward_limit)
+        row = HRLeaveBalance(
+            employee_id=source.employee_id, leave_type_id=source.leave_type_id,
+            year=year + 1, opening_balance=carry, accrued=0, adjusted=0, used=0,
+            updated_by=user.username,
+        )
+        db.add(row)
+        created.append(row)
+    log_audit(db, user.username, "CARRY_FORWARD", "hr_leave_balance",
+              f"source_year={year}; destination_year={year + 1}; rows={len(created)}")
+    db.commit()
+    for row in created:
+        db.refresh(row)
+    return [_balance_output(row) for row in created]
+
+
+def _monthly_accrual_amount(
+    annual_entitlement: float,
+    accrual_method: str,
+    eligible_start: date,
+    eligible_end: date,
+    period_end: date,
+) -> float:
+    """Calculate a calendar-month accrual, optionally prorated by eligible days."""
+    if eligible_start > eligible_end:
+        return 0.0
+    monthly = Decimal(str(annual_entitlement)) / Decimal("12")
+    if accrual_method == "monthly_prorated":
+        eligible_days = (eligible_end - eligible_start).days + 1
+        monthly *= Decimal(eligible_days) / Decimal(period_end.day)
+    return float(monthly.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+class LeaveAccrualRunOut(BaseModel):
+    year: int
+    month: int
+    created_count: int
+    total_accrued: float
+    skipped_existing: int
+
+
+@router.post("/accruals/run/{year}/{month}", response_model=LeaveAccrualRunOut)
+def run_monthly_leave_accrual(
+    year: int, month: int, db: Session = Depends(get_db),
+    user: models.User = Depends(current_user),
+):
+    if not _is_hr(user):
+        raise HTTPException(403, "Only HR or Admin can run leave accrual")
+    _require_grant(db, user, "leave_balances", "write", "tenant")
+    if year < 2000 or year > 2100 or month < 1 or month > 12:
+        raise HTTPException(422, "Invalid accrual period")
+    settings = db.get(models.HRPayrollSettings, 1)
+    try:
+        today = datetime.now(ZoneInfo(settings.timezone if settings else "Asia/Kolkata")).date()
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(500, "Tenant payroll timezone is invalid") from exc
+    if date(year, month, 1) > today.replace(day=1):
+        raise HTTPException(422, "Leave accrual cannot be run for a future month")
+    period_start = date(year, month, 1)
+    period_end = date(year, month, calendar.monthrange(year, month)[1])
+    types = db.query(HRLeaveType).filter(
+        HRLeaveType.active.is_(True),
+        HRLeaveType.accrual_method.in_(["monthly", "monthly_prorated"]),
+        HRLeaveType.accrual_effective_from <= period_end,
+    ).with_for_update().all()
+    employees = db.query(models.Employee).filter(models.Employee.joining_date.is_not(None)).all()
+    created_count = 0
+    skipped_existing = 0
+    total_accrued = 0.0
+    for leave_type in types:
+        for employee in employees:
+            if employee.joining_date is None:
+                continue
+            # An inactive employee without a verified end date is not eligible.
+            # A known end date is respected even if the legacy active flag was not updated.
+            if (not employee.active and employee.end_date is None) or (
+                employee.end_date is not None and employee.end_date < period_start
+            ):
+                continue
+            eligible_start = max(period_start, employee.joining_date, leave_type.accrual_effective_from)
+            eligible_end = min(period_end, employee.end_date) if employee.end_date else period_end
+            if eligible_start > eligible_end:
+                continue
+            existing = db.query(HRLeaveAccrualLedger).filter_by(
+                employee_id=employee.id, leave_type_id=leave_type.id, year=year, month=month,
+            ).with_for_update().first()
+            if existing is not None:
+                skipped_existing += 1
+                continue
+            amount = _monthly_accrual_amount(
+                leave_type.annual_entitlement,
+                leave_type.accrual_method,
+                eligible_start,
+                eligible_end,
+                period_end,
+            )
+            if amount <= 0:
+                continue
+            balance = db.query(HRLeaveBalance).filter_by(
+                employee_id=employee.id, leave_type_id=leave_type.id, year=year,
+            ).with_for_update().first()
+            if balance is None:
+                balance = HRLeaveBalance(
+                    employee_id=employee.id, leave_type_id=leave_type.id, year=year,
+                    opening_balance=0, accrued=0, adjusted=0, used=0, updated_by=user.username,
+                )
+                db.add(balance)
+                db.flush()
+            balance.accrued = round(balance.accrued + amount, 2)
+            balance.updated_by = user.username
+            db.add(HRLeaveAccrualLedger(
+                employee_id=employee.id, leave_type_id=leave_type.id,
+                year=year, month=month, amount=amount, run_by=user.username,
+            ))
+            created_count += 1
+            total_accrued += amount
+    log_audit(
+        db, user.username, "RUN_ACCRUAL", "hr_leave_accrual",
+        f"period={year}-{month:02d}; created={created_count}; total={total_accrued:.2f}; skipped={skipped_existing}",
+    )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(409, "Concurrent leave accrual run detected; retry to read the committed result") from exc
+    return LeaveAccrualRunOut(
+        year=year, month=month, created_count=created_count,
+        total_accrued=round(total_accrued, 2), skipped_existing=skipped_existing,
+    )
+
+
+@router.post("/requests", response_model=LeaveRequestOut, status_code=201)
+def create_leave_request(payload: LeaveRequestIn, db: Session = Depends(get_db), user: models.User = Depends(require_permission("hr", "leave_requests", "create", "self"))):
+    employee = _employee_for_user(db, user)
+    if payload.end_date < payload.start_date:
+        raise HTTPException(422, "End date cannot be earlier than start date")
+    if payload.start_date.year != payload.end_date.year:
+        raise HTTPException(422, "A leave request must stay within one calendar year")
+    leave_type = db.get(HRLeaveType, payload.leave_type_id)
+    if leave_type is None or not leave_type.active:
+        raise HTTPException(404, "Active leave type not found")
+    if payload.half_day and (not leave_type.allow_half_day or payload.start_date != payload.end_date):
+        raise HTTPException(422, "This leave type does not permit the requested half-day format")
+    total_days = _leave_days(db, leave_type, payload.start_date, payload.end_date)
+    if payload.half_day:
+        if total_days <= 0:
+            raise HTTPException(422, "Half-day leave must fall on a date that counts under the leave policy")
+        total_days = 0.5
+    if total_days <= 0:
+        raise HTTPException(422, "The selected dates do not contain any leave-counting days")
+    overlap = db.query(HRLeaveRequest).filter(
+        HRLeaveRequest.employee_id == employee.id,
+        HRLeaveRequest.status.in_(["pending", "approved"]),
+        HRLeaveRequest.start_date <= payload.end_date,
+        HRLeaveRequest.end_date >= payload.start_date,
+    ).first()
+    if overlap:
+        raise HTTPException(409, "This request overlaps an existing pending or approved leave")
+    balance = db.query(HRLeaveBalance).filter_by(
+        employee_id=employee.id, leave_type_id=leave_type.id, year=payload.start_date.year
+    ).with_for_update().first()
+    if balance is None:
+        raise HTTPException(409, "Leave balance has not been allocated for this employee and year")
+    available = balance.opening_balance + balance.accrued + balance.adjusted - balance.used
+    if available < total_days:
+        raise HTTPException(409, "Insufficient leave balance")
+    department = db.query(Department).filter(
+        func.lower(Department.name) == employee.department.strip().lower(),
+        Department.active.is_(True),
+    ).first()
+    if department is None or not department.hod_username:
+        raise HTTPException(409, "No active department approver is configured for this employee")
+    approver = db.query(models.User).filter_by(username=department.hod_username, active=True).first()
+    if approver is None:
+        raise HTTPException(409, "The configured department approver is missing or inactive")
+    if department.hod_username == user.username:
+        raise HTTPException(409, "A department approver cannot approve their own leave; configure an alternate approver")
+    row = HRLeaveRequest(
+        employee_id=employee.id, leave_type_id=leave_type.id,
+        start_date=payload.start_date, end_date=payload.end_date, total_days=total_days,
+        half_day=payload.half_day, reason=payload.reason.strip(), status="pending",
+        requested_by=user.username, approver_username=department.hod_username,
+    )
+    db.add(row)
+    log_audit(db, user.username, "CREATE", "hr_leave_request", f"{employee.emp_code}:{payload.start_date}:{payload.end_date}")
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.get("/requests", response_model=list[LeaveRequestOut])
+def list_leave_requests(
+    status_filter: str | None = None, db: Session = Depends(get_db),
+    user: models.User = Depends(current_user),
+):
+    query = db.query(HRLeaveRequest)
+    if _is_hr(user):
+        require_employee_scope_grant(db, user, "hr", "leave_requests", "read")
+        scoped_ids = employee_scope_ids(db, user, "hr", "leave_requests", "read")
+        if scoped_ids is not None:
+            query = query.filter(HRLeaveRequest.employee_id.in_(scoped_ids))
+    else:
+        _require_grant(db, user, "leave_requests", "read", "self")
+        employee = _employee_for_user(db, user)
+        enforce_employee_data_scope(db, user, employee.id, "self")
+        query = query.filter(
+            (HRLeaveRequest.employee_id == employee.id) |
+            (HRLeaveRequest.approver_username == user.username)
+        )
+    if status_filter:
+        if status_filter not in {"pending", "approved", "rejected"}:
+            raise HTTPException(422, "Invalid leave status filter")
+        query = query.filter(HRLeaveRequest.status == status_filter)
+    return query.order_by(HRLeaveRequest.created_at.desc()).all()
+
+
+@router.patch("/requests/{request_id}", response_model=LeaveRequestOut)
+def decide_leave_request(
+    request_id: str, payload: LeaveDecisionIn,
+    db: Session = Depends(get_db), user: models.User = Depends(current_user),
+):
+    row = db.query(HRLeaveRequest).filter_by(id=request_id).with_for_update().first()
+    if row is None:
+        raise HTTPException(404, "Leave request not found")
+    if row.status != "pending":
+        raise HTTPException(409, "Only pending leave requests can be decided")
+    if row.requested_by == user.username:
+        raise HTTPException(403, "A requester cannot approve or reject their own leave")
+    if user.role in (models.Role.admin, models.Role.hr):
+        require_employee_scope_grant(db, user, "hr", "leave_requests", "approve")
+        scoped_ids = employee_scope_ids(db, user, "hr", "leave_requests", "approve")
+        if scoped_ids is not None and row.employee_id not in scoped_ids:
+            raise HTTPException(403, "Leave request is outside your configured approval scope")
+    else:
+        _require_grant(db, user, "leave_requests", "approve", "department")
+        if row.approver_username != user.username:
+            raise HTTPException(403, "Only the assigned department approver can decide this request")
+    employee = db.get(models.Employee, row.employee_id)
+    leave_type = db.get(HRLeaveType, row.leave_type_id)
+    if employee is None or leave_type is None:
+        raise HTTPException(409, "Leave request references missing employee or leave type")
+    if user.role not in (models.Role.admin, models.Role.hr):
+        enforce_employee_data_scope(db, user, employee.id, "department")
+    if payload.status == "approved":
+        frozen_payroll = db.query(models.HRPayrollRun).filter(
+            models.HRPayrollRun.year == row.start_date.year,
+            models.HRPayrollRun.month == row.start_date.month,
+            models.HRPayrollRun.status.in_(["prepared", "approved", "finalized", "locked"]),
+        ).first()
+        if frozen_payroll is not None:
+            raise HTTPException(409, "Payroll snapshot exists for this period; leave cannot be approved after payroll preparation")
+        balance = db.query(HRLeaveBalance).filter_by(
+            employee_id=row.employee_id, leave_type_id=row.leave_type_id, year=row.start_date.year
+        ).with_for_update().first()
+        if balance is None:
+            raise HTTPException(409, "Leave balance is missing")
+        available = balance.opening_balance + balance.accrued + balance.adjusted - balance.used
+        if available < row.total_days:
+            raise HTTPException(409, "Leave balance is no longer sufficient")
+        settings = db.get(models.HRPayrollSettings, 1)
+        week_offs = {5, 6}
+        if settings and settings.week_off_days:
+            week_offs = {int(value) for value in settings.week_off_days.split(",") if value != ""}
+        calendar_rows = db.query(HRCalendarDay).filter(
+            HRCalendarDay.work_date >= row.start_date, HRCalendarDay.work_date <= row.end_date
+        ).all()
+        overrides = {item.work_date: item.day_type for item in calendar_rows}
+        current = row.start_date
+        while current <= row.end_date:
+            day_type = overrides.get(current)
+            is_working = day_type == "working_day" or (
+                day_type is None and current.weekday() not in week_offs
+            )
+            if is_working:
+                attendance = db.query(EmployeeAttendance).filter_by(
+                    employee_id=row.employee_id, work_date=current
+                ).with_for_update().first()
+                if attendance is not None and attendance.status not in {"unmarked", "absent", "paid_leave", "unpaid_leave"}:
+                    raise HTTPException(409, f"Attendance already exists for {current}; resolve it before approving leave")
+                status = ("paid_half_day" if leave_type.is_paid else "unpaid_half_day") if row.half_day else ("paid_leave" if leave_type.is_paid else "unpaid_leave")
+                if attendance is None:
+                    attendance = EmployeeAttendance(
+                        employee_id=row.employee_id, work_date=current, status=status,
+                        overtime_minutes=0, note=f"Leave request {row.id}",
+                    )
+                    db.add(attendance)
+                else:
+                    attendance.status = status
+                    attendance.note = f"Leave request {row.id}"
+            current = date.fromordinal(current.toordinal() + 1)
+        balance.used += row.total_days
+    row.status = payload.status
+    row.decided_by = user.username
+    row.decision_note = payload.decision_note.strip()
+    row.decided_at = datetime.utcnow()
+    log_audit(db, user.username, payload.status.upper(), "hr_leave_request", row.id)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.delete("/requests/{request_id}", status_code=204)
+def cancel_leave_request(request_id: str, db: Session = Depends(get_db), user: models.User = Depends(current_user)):
+    row = db.query(HRLeaveRequest).filter_by(id=request_id).with_for_update().first()
+    if row is None:
+        raise HTTPException(404, "Leave request not found")
+    employee = _employee_for_user(db, user)
+    if row.employee_id != employee.id:
+        raise HTTPException(403, "You can cancel only your own leave request")
+    if row.status != "pending":
+        raise HTTPException(409, "Only pending requests can be cancelled; approved leave requires an HR reversal workflow")
+    row.status = "cancelled"
+    log_audit(db, user.username, "CANCEL", "hr_leave_request", row.id)
+    db.commit()
+    return Response(status_code=204)
