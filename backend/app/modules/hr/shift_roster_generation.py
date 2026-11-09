@@ -277,11 +277,10 @@ def generate_shift_roster(
                 authorize_employee_date(employee.id, work_date)
 
             key = (employee.id, work_date)
-            if key in existing_keys:
-                skipped_existing_count += 1
-                continue
-
             try:
+                # Resolve before the idempotency skip so even an already-materialized
+                # historical row cannot make a historical generation request appear valid.
+                # Existing overrides carry their original timezone snapshot through the resolver.
                 resolution = resolve_shift_for_work_date(db, employee.id, work_date)
             except ShiftAssignmentConfigurationError as exc:
                 raise ShiftRosterGenerationError(str(exc)) from exc
@@ -302,6 +301,10 @@ def generate_shift_roster(
                 raise ShiftRosterGenerationError(
                     f"Historical roster generation is not allowed: {employee.emp_code} on {work_date}"
                 )
+
+            if key in existing_keys:
+                skipped_existing_count += 1
+                continue
 
             calendar_row = calendar_by_date.get(work_date)
             calendar_type = calendar_row.day_type if calendar_row else None
