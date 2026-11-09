@@ -143,7 +143,8 @@ def _record_rejected_batch(
         error_summary=error[:4000],
     )
     db.add(batch)
-    log_audit(db, user.username, "REJECT", "hr_attendance_import_batch", f"{batch.id or 'new'}: {error[:500]}")
+    db.flush()
+    log_audit(db, user.username, "REJECT", "hr_attendance_import_batch", f"{batch.id}: {error[:500]}")
     db.commit()
     db.refresh(batch)
     return batch
@@ -392,7 +393,7 @@ async def import_attendance_event_workbook(
             )
             created_count += int(created)
         batch.status = "imported"
-        batch.rows_imported = created_count
+        batch.rows_imported = len(rows)
         batch.rows_rejected = 0
         log_audit(db, user.username, "IMPORT", "hr_attendance_import_batch", f"{batch.id}: rows={len(rows)}; new_events={created_count}")
         db.commit()
