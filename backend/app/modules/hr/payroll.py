@@ -107,6 +107,26 @@ class HRPayrollItem(Base):
     overtime_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
+class HRShiftRosterEntryHistory(Base):
+    """Immutable prior roster snapshot captured before a controlled override."""
+
+    __tablename__ = "hr_shift_roster_entry_history"
+    __table_args__ = (
+        UniqueConstraint("roster_entry_id", "version", name="uq_hr_shift_roster_history_version"),
+        CheckConstraint("version > 0", name="ck_hr_shift_roster_history_version_positive"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    roster_entry_id: Mapped[str] = mapped_column(
+        ForeignKey("hr_shift_roster_entries.id", ondelete="RESTRICT"), nullable=False, index=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    change_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    changed_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class HRWorkforcePolicyVersion(Base):
     """Versioned tenant workforce policy snapshot used by roster generation."""
 
@@ -241,6 +261,7 @@ class HRShiftRosterEntry(Base):
     shift_name_snapshot: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     break_rules_snapshot: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     policy_version_id: Mapped[str | None] = mapped_column(ForeignKey("hr_workforce_policy_versions.id", ondelete="RESTRICT"), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_by: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
