@@ -1,13 +1,13 @@
 """Add tenant-configured attendance source reconciliation and anomalies.
 
-Revision ID: p0_hr_attendance_reconciliation_020
+Revision ID: p0_hr_att_reconcile_020
 Revises: p0_hr_attendance_events_019
 """
 from alembic import op
 import sqlalchemy as sa
 import uuid
 
-revision = "p0_hr_attendance_reconciliation_020"
+revision = "p0_hr_att_reconcile_020"
 down_revision = "p0_hr_attendance_events_019"
 branch_labels = None
 depends_on = None
@@ -76,7 +76,7 @@ def upgrade() -> None:
             "action": action,
             "data_scope": scope,
             "allowed": True,
-            "updated_by": "migration:p0_hr_attendance_reconciliation_020",
+            "updated_by": "migration:p0_hr_att_reconcile_020",
         })
     if rows:
         op.bulk_insert(grants, rows)
@@ -86,7 +86,7 @@ def downgrade() -> None:
     bind = op.get_bind()
     grants = sa.Table("role_permission_grants", sa.MetaData(), autoload_with=bind)
     op.execute(sa.delete(grants).where(
-        grants.c.updated_by == "migration:p0_hr_attendance_reconciliation_020",
+        grants.c.updated_by == "migration:p0_hr_att_reconcile_020",
     ))
     op.drop_index("ix_hr_attendance_anomalies_policy_version_id", table_name="hr_attendance_anomalies")
     op.drop_index("ix_hr_attendance_anomalies_status", table_name="hr_attendance_anomalies")
