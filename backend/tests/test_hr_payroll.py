@@ -692,12 +692,12 @@ def test_manual_attendance_work_date_uses_previous_overnight_roster_day():
     db = Session(engine)
     try:
         branch = models.HRBranch(code="NIGHT2", name="Night Branch", timezone="Asia/Kolkata", active=True)
-        employee = models.Employee(id="night-transfer-employee", emp_code="NT001", name="Night", joining_date=date(2026, 1, 1), active=True)
+        employee = models.Employee(id="night-transfer-employee", emp_code="NT001", name="Night", joining_date=date(2040, 1, 1), active=True)
         db.add_all([branch, employee])
         db.flush()
         db.add(models.EmployeeOrgAssignment(
             employee_id=employee.id, branch_id=branch.id, department="Ops",
-            valid_from=date(2026, 1, 1), created_by="test",
+            valid_from=date(2040, 1, 1), created_by="test",
         ))
         shift = models.HRShiftType(
             code="NIGHT", name="Night", start_time=time_type(22, 0),
@@ -708,20 +708,20 @@ def test_manual_attendance_work_date_uses_previous_overnight_roster_day():
         assignment = models.HRShiftAssignment(
             scope_type="employee", employee_id=employee.id, branch_id=branch.id,
             shift_type_id=shift.id, weekdays=[0, 1, 2, 3, 4, 5, 6],
-            valid_from=date(2026, 1, 1), created_by="test",
+            valid_from=date(2040, 1, 1), created_by="test",
         )
         db.add(assignment)
         db.commit()
         from app.modules.hr.shift_roster_generation import generate_shift_roster
         generate_shift_roster(
-            db, start_date=date(2026, 10, 5), end_date=date(2026, 10, 5),
+            db, start_date=date(2040, 1, 2), end_date=date(2040, 1, 2),
             employee_ids=[employee.id], created_by="test",
         )
         # 06:00 IST on 6 October is 00:30 UTC and remains in the 5 October shift.
         context, work_date = resolve_attendance_work_date(
-            db, employee.id, datetime(2026, 10, 6, 0, 30, tzinfo=timezone.utc),
+            db, employee.id, datetime(2040, 1, 3, 0, 30, tzinfo=timezone.utc),
         )
-        assert work_date == date(2026, 10, 5)
+        assert work_date == date(2040, 1, 2)
         assert context.branch_id == branch.id
         assert context.timezone_name == "Asia/Kolkata"
     finally:
