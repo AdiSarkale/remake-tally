@@ -675,7 +675,7 @@ def test_manual_attendance_work_date_uses_previous_overnight_roster_day():
         ))
         shift = models.HRShiftType(
             code="NIGHT", name="Night", start_time=time_type(22, 0),
-            end_time=time_type(6, 0), end_day_offset=1, active=True,
+            end_time=time_type(6, 0), end_day_offset=1, active=True, created_by="test",
         )
         db.add(shift)
         db.flush()
