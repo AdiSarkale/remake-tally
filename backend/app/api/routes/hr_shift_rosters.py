@@ -86,7 +86,7 @@ def generate_rosters(
         db.rollback()
         message = str(exc)
         status_code = 409 if any(token in message.lower() for token in (
-            "overlap", "conflict", "blocked", "policy", "historical", "already exists",
+            "overlap", "conflict", "blocked", "policy", "already exists",
         )) else 422
         raise HTTPException(status_code, message) from exc
     except IntegrityError as exc:
@@ -138,7 +138,7 @@ def override_roster_date(
         db.rollback()
         message = str(exc)
         status_code = 409 if any(token in message.lower() for token in (
-            "blocked", "policy", "historical", "overlap", "conflict",
+            "blocked", "policy", "overlap", "conflict",
         )) else 422
         raise HTTPException(status_code, message) from exc
     except IntegrityError as exc:
