@@ -1223,7 +1223,7 @@ def upsert_daily_attendance(
                 "manual_daily_summary", employee.id, payload.work_date,
                 event_type, instant.isoformat(),
             )
-            append_attendance_event(
+            event, event_created = append_attendance_event(
                 db,
                 employee_id=employee.id,
                 work_date=payload.work_date,
@@ -1236,6 +1236,11 @@ def upsert_daily_attendance(
                 roster_entry_id=roster.id if roster else None,
                 note=payload.note.strip(),
             )
+            if event_created:
+                log_audit(
+                    db, user.username, "CREATE", "hr_attendance_event",
+                    f"{event.id}:{event.event_type}:{event.employee_id}:{event.work_date}",
+                )
     except AttendanceEventError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
