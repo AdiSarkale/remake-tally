@@ -8,6 +8,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app import models
+from app.api.routes.hr_attendance_events import EmployeeSelfPunchCreate
+from pydantic import ValidationError
 from app.modules.hr.attendance_events import (
     AttendanceEventError,
     append_attendance_event,
@@ -179,6 +181,17 @@ def test_event_workbook_v2_rejects_timezone_aware_cells_and_bad_rows_atomically(
     finally:
         db.close()
         engine.dispose()
+
+
+def test_employee_self_punch_payload_rejects_client_supplied_employee_id():
+    with pytest.raises(ValidationError):
+        EmployeeSelfPunchCreate(
+            work_date=date(2026, 11, 10),
+            event_type="punch_in",
+            occurred_at=datetime(2026, 11, 10, 9, 0),
+            source_reference="self-punch-001",
+            employee_id="some-other-employee",
+        )
 
 
 def test_import_batch_model_preserves_rejected_attempt_metadata():
