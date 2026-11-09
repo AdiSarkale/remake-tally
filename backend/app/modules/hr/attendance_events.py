@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from zipfile import BadZipFile
 
 from app.modules.hr.models import Employee
+from app.modules.hr.attendance_reconciliation import reconcile_attendance_event
 from app.modules.hr.payroll import (
     HRAttendanceEvent,
     HRShiftBreakRule,
@@ -111,6 +112,7 @@ def append_attendance_event(
     )
     db.add(event)
     db.flush()
+    reconcile_attendance_event(db, event)
     return event, True
 
 
