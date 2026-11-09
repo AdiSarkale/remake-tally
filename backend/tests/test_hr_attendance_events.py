@@ -154,6 +154,36 @@ def test_event_workbook_v2_parses_local_datetime_using_batch_timezone():
         engine.dispose()
 
 
+def test_event_workbook_v2_accepts_only_required_columns():
+    engine, db = _db()
+    try:
+        employee = _employee(db)
+        content = _event_workbook(
+            [[
+                "EMP-ATT-001", date(2026, 11, 10), "punch_in",
+                datetime(2026, 11, 10, 9, 0),
+            ]],
+            headers=[
+                "Employee Code", "Work Date", "Event Type", "Event DateTime (Local)",
+            ],
+        )
+        rows = parse_event_workbook(
+            content,
+            db=db,
+            employees_by_code={employee.emp_code: employee},
+            import_timezone="Asia/Kolkata",
+            branch_id=None,
+            file_hash="d" * 64,
+        )
+        assert len(rows) == 1
+        assert rows[0]["source_reference"]
+        assert rows[0]["break_rule_id"] is None
+        assert rows[0]["note"] == ""
+    finally:
+        db.close()
+        engine.dispose()
+
+
 def test_event_workbook_v2_rejects_timezone_aware_cells_and_bad_rows_atomically():
     engine, db = _db()
     try:
