@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import date
+from datetime import date, timezone
 from decimal import Decimal, InvalidOperation
 from itertools import combinations
 
@@ -45,6 +45,11 @@ def configured_attendance_margin(
     if not value.is_finite() or value < 0 or value != value.to_integral_value():
         return None
     return policy, int(value)
+
+
+def _as_utc(value):
+    """Normalize database-returned naive timestamps as UTC before comparison."""
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
 def _comparison_key(event_ids: list[str]) -> str:
@@ -93,7 +98,7 @@ def reconcile_attendance_event(
             continue
 
         delta_seconds = abs(
-            (event.occurred_at_utc - other.occurred_at_utc).total_seconds()
+            (_as_utc(event.occurred_at_utc) - _as_utc(other.occurred_at_utc)).total_seconds()
         )
         if Decimal(str(delta_seconds)) <= Decimal(threshold_minutes) * Decimal(60):
             continue
