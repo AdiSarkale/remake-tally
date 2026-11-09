@@ -390,6 +390,14 @@ def resolve_attendance_anomaly(
         raise HTTPException(status_code=422, detail="A meaningful resolution reason is required")
     if payload.selected_event_id not in anomaly.source_event_ids:
         raise HTTPException(status_code=422, detail="Selected event must be one of the anomaly's compared source events")
+    selected_event = db.get(models.HRAttendanceEvent, payload.selected_event_id)
+    if selected_event is None or selected_event.voided_at is not None:
+        raise HTTPException(status_code=409, detail="A voided or unavailable source event cannot be selected as the reviewed result")
+    if db.query(models.HRAttendanceEvent.id).filter(
+        models.HRAttendanceEvent.supersedes_event_id == selected_event.id,
+        models.HRAttendanceEvent.voided_at.is_(None),
+    ).first():
+        raise HTTPException(status_code=409, detail="A superseded source event cannot be selected as the reviewed result")
     anomaly.status = "resolved"
     anomaly.resolution_reason = reason
     anomaly.resolution_result = {"selected_event_id": payload.selected_event_id}
@@ -465,7 +473,7 @@ def reconcile_attendance_anomalies(
     for event in events:
         if event.work_date not in scope_cache:
             scoped = employee_scope_ids(
-                db, user, "hr", "employees", "update", as_of_date=event.work_date,
+                db, user, "hr", "employees", "read", as_of_date=event.work_date,
             )
             scope_cache[event.work_date] = None if scoped is None else set(scoped)
         allowed = scope_cache[event.work_date]
