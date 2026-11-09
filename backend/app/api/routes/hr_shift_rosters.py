@@ -16,7 +16,10 @@ from app.modules.hr.shift_roster_generation import (
     generate_shift_roster,
     apply_shift_roster_override,
 )
-from app.modules.hr.shift_roster_schemas import (\n    ShiftRosterGenerateIn, ShiftRosterGenerateOut,\n    ShiftRosterOverrideIn, ShiftRosterOverrideOut,\n)
+from app.modules.hr.shift_roster_schemas import (
+    ShiftRosterGenerateIn, ShiftRosterGenerateOut,
+    ShiftRosterOverrideIn, ShiftRosterOverrideOut,
+)
 
 router = APIRouter(prefix="/hr/shift-rosters", tags=["hr", "shift-rosters"])
 write_access = Depends(require_permission("hr", "shift_rosters", "write", "tenant"))
