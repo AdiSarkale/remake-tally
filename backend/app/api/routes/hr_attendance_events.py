@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import hashlib
-import io
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
@@ -309,7 +308,7 @@ async def import_attendance_event_workbook(
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Attendance workbook must be 5 MB or smaller")
     file_hash = hashlib.sha256(content).hexdigest()
-    file_name = Path(file.filename).name[:255]
+    file_name = Path(file.filename.replace('\\\\', '/')).name[:255]
 
     settings = db.get(models.HRPayrollSettings, 1)
     selected_branch = None
