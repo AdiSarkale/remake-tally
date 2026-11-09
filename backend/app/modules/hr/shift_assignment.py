@@ -483,10 +483,30 @@ def resolve_attendance_work_date(
             organization_assignment_id=context.organization_assignment_id,
         ), roster.work_date
 
-    # No roster applies: preserve legacy local-calendar attribution using the
-    # effective branch timezone (or tenant fallback).
-    context = resolve_employee_work_context(db, employee_id, instant.date())
-    local_date = instant.astimezone(ZoneInfo(context.timezone_name)).date()
-    if local_date != instant.date():
-        context = resolve_employee_work_context(db, employee_id, local_date)
-    return context, local_date
+    # No roster applies: resolve against candidate local dates around the UTC
+    # date. This avoids using the wrong effective assignment when a branch
+    # transfer or employment start/end occurs near local midnight.
+    matches: list[tuple[EmployeeWorkContext, date]] = []
+    resolution_errors: list[str] = []
+    for candidate_date in (
+        utc_date - timedelta(days=1),
+        utc_date,
+        utc_date + timedelta(days=1),
+    ):
+        try:
+            context = resolve_employee_work_context(db, employee_id, candidate_date)
+        except ShiftAssignmentConfigurationError as exc:
+            resolution_errors.append(str(exc))
+            continue
+        local_date = instant.astimezone(ZoneInfo(context.timezone_name)).date()
+        if local_date == candidate_date:
+            matches.append((context, candidate_date))
+
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise ShiftAssignmentConfigurationError(
+            f"Punch-in local work date is ambiguous across effective timezone assignments for employee {employee_id}"
+        )
+    detail = resolution_errors[0] if resolution_errors else "No effective timezone maps this punch-in to a valid local work date"
+    raise ShiftAssignmentConfigurationError(detail)
