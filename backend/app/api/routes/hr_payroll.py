@@ -27,6 +27,12 @@ from app.api.deps import current_user, employee_scope_ids, require_area, require
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
 from app.modules.finance.payroll_posting import post_payroll_journal, reverse_payroll_journal
+from app.modules.hr.shift_assignment import (
+    ShiftAssignmentConfigurationError,
+    localize_attendance_datetime,
+    resolve_employee_work_context,
+    resolve_shift_for_work_date,
+)
 
 router = APIRouter(prefix="/hr", tags=["hr", "payroll"])
 hr_access = Depends(require_permission("hr", "payroll", "read", "tenant"))
@@ -395,13 +401,19 @@ def _run_output(db: Session, run: models.HRPayrollRun, include_items: bool = Tru
 def _attendance_output(
     employee: models.Employee, work_date: date, row: models.EmployeeAttendance | None,
     calendar_type: str, calendar_description: str, tenant_tz: ZoneInfo,
+    work_timezone: ZoneInfo | None = None,
 ) -> dict[str, Any]:
+    timezone_name = (
+        row.timezone_name if row and row.timezone_name
+        else (work_timezone.key if work_timezone else tenant_tz.key)
+    )
+    display_tz = ZoneInfo(timezone_name)
     return {
         "id": row.id if row else None, "employee_id": employee.id, "employee_code": employee.emp_code,
         "employee_name": employee.name, "work_date": work_date,
         "status": row.status if row else (calendar_type if calendar_type in {"holiday", "week_off"} else "unmarked"),
         "calendar_type": calendar_type, "calendar_description": calendar_description,
-        "punch_in": _to_local(row.punch_in, tenant_tz) if row else None, "punch_out": _to_local(row.punch_out, tenant_tz) if row else None,
+        "punch_in": _to_local(row.punch_in, display_tz) if row else None, "punch_out": _to_local(row.punch_out, display_tz) if row else None,
         "overtime_minutes": row.overtime_minutes if row else 0, "note": row.note if row else "",
     }
 
