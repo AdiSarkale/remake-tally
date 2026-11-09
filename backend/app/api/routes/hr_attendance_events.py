@@ -427,7 +427,7 @@ def list_attendance_import_batches(
     status: Literal["validated", "imported", "rejected"] | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_permission("hr", "attendance", "import", "read", "tenant")),
+    user: models.User = Depends(require_permission("hr", "attendance", "view", "tenant")),
 ):
     query = db.query(models.HRAttendanceImportBatch)
     if status:
