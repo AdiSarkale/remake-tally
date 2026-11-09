@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.18  
+**Version:** 1.19  
 **Status:** Active implementation tracker  
 **Baseline:** 9 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -415,7 +415,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - Date-specific override endpoint: `PUT /api/v1/hr/shift-rosters/{employee_id}/{work_date}/override`. It supports scheduled, weekly-off and cancelled states, requires a reason, blocks historical/frozen-period changes, and records immutable prior versions in `hr_shift_roster_entry_history`.
 - Exact permission: `hr.shift_rosters.write`; employee update scope is enforced for every employee/work date in generation and for individual overrides. Core audit events are written in the same transaction.
 - **Corrections made in this work session:** override response schema now uses the shared ORM-enabled schema base; historical generation is checked before the idempotency skip; missing override employees map to HTTP 404. Regression tests cover each correction.
-- **Verification status:** the earlier P0.1 baseline CI included the initial roster engine; the latest correction commits have not yet produced a CI result. Do not mark these corrections CI-verified until fresh backend, tenant-isolation and integrated CI workflows pass.
+- **Verification status:** the initial roster engine and its original regression tests were present in the passing P0.1-03 integrated CI baseline (#42522229984, #42522230145 and #42522229991; 141 passed, 5 skipped, 7 warnings). The latest response-serialization, historical-date, 404 mapping and branch-scope regression changes have not produced a fresh CI result yet. Do not mark these corrections CI-verified until fresh backend, tenant-isolation and integrated CI workflows pass.
 - **Remaining boundary:** this package does not add roster list/read APIs or frontend roster screens; those belong to the roster view/report UI work package. No raw attendance or payroll shift integration is included here.
 
 **Next action:** Run fresh backend, tenant-isolation and integrated CI for the P0.1-04 corrections. After passing, proceed to P0.1-05 — branch-aware timezone and attendance context. Keep roster read/view UI tracked for P0.1-11, and do not implement deferred T-01 to T-14 by assumption.
@@ -445,6 +445,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 | 1.16 | 9 November 2026 | Extends assignment validation across future employee branch transfers, adds scoped department-default and audit assertions, and adds the assignment read endpoint to two-tenant route-isolation coverage; CI pending. |
 | 1.17 | 9 November 2026 | Records successful P0.1-03 rerun: Backend Tests, tenant isolation and integrated Minitally CI passed; 141 passed, 5 skipped, 7 warnings; PostgreSQL migration/provisioning, frontend and browser smoke passed. Corrects test fixture isolation before the successful rerun. |
 | 1.18 | 9 November 2026 | Audits the existing P0.1-04 roster engine, generation/override APIs and migration 017; fixes ORM response validation, historical-date idempotency bypass and missing-employee HTTP status; adds regression tests. Fresh CI pending. |
+| 1.19 | 9 November 2026 | Adds branch-scoped denial regression coverage for both roster generation and date-specific overrides; confirms the latest correction commits still await fresh CI. |
 
 ## 11. Integration and verification record
 
