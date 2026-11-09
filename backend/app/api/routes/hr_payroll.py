@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import calendar
 import io
-from datetime import date, datetime, time as time_type, timezone
+from datetime import date, datetime, time as time_type, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
@@ -1080,16 +1080,17 @@ def upsert_daily_attendance(
         )
     except ShiftAssignmentConfigurationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    try:
-        resolved_context, resolved_work_date = resolve_attendance_work_date(db, employee.id, punch_in)
-    except ShiftAssignmentConfigurationError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if resolved_work_date != payload.work_date:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Punch In belongs to local work date {resolved_work_date}, not the supplied work date {payload.work_date}",
-        )
-    context = resolved_context
+    if punch_in is not None:
+        try:
+            resolved_context, resolved_work_date = resolve_attendance_work_date(db, employee.id, punch_in)
+        except ShiftAssignmentConfigurationError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if resolved_work_date != payload.work_date:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Punch In belongs to local work date {resolved_work_date}, not the supplied work date {payload.work_date}",
+            )
+        context = resolved_context
     attendance_tz = ZoneInfo(context.timezone_name)
     if punch_in and punch_out and punch_out <= punch_in:
         raise HTTPException(status_code=422, detail="Punch-out must be after punch-in")
