@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import hashlib
+import io
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -19,6 +21,7 @@ from app.modules.core.audit import log_audit
 from app.modules.hr.attendance_events import (
     AttendanceEventError,
     append_attendance_event,
+    attendance_event_template_workbook,
     build_event_source_reference,
     parse_event_workbook,
 )
@@ -277,6 +280,18 @@ def create_employee_self_punch(
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(status_code=409, detail="Attendance event source reference was submitted concurrently") from exc
+
+
+@router.get("/event-template")
+def download_attendance_event_template(
+    user: models.User = Depends(require_permission("hr", "attendance", "import", "tenant")),
+):
+    workbook = attendance_event_template_workbook()
+    return StreamingResponse(
+        workbook,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="nexora-attendance-event-template-v2.xlsx"'},
+    )
 
 
 @router.post("/import-events")
