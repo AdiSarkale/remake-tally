@@ -385,7 +385,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - Shift code and break-rule code are immutable identifiers. Shift schedule changes are rejected once assignments or rosters reference the shift; create a new shift code for revised hours. Break schedules must fit within the shift's local-time window.
 - Added shift catalog API tests for authorization, CRUD, duplicate handling, soft deactivation, immutable identifiers, schedule locking, overnight break validation and invalid shift durations.
 - **Backend implemented:** employee/department assignment APIs, idempotent future roster generation, weekly-off/holiday materialization, date-specific overrides with immutable version history, exact write authorization, effective-date employee scope checks and audit events. Migrations 016 and 017 provide the roster and override-history persistence.
-- **Still pending:** CI verification of the latest P0.1-04 corrections; roster read/list endpoints and roster UI; shift catalog and assignment UI; raw attendance events/import batches/anomalies/corrections/overtime/comp-leave/payroll daily snapshots; and branch-aware attendance import.
+- **Still pending:** roster read/list endpoints and roster UI; shift catalog and assignment UI; raw attendance events/import batches/anomalies/corrections/overtime/comp-leave/payroll daily snapshots. Branch-aware attendance import is being implemented under P0.1-05, recorded below; it is not part of the raw-event/P0.1-06 workstream.
 
 **Verification evidence:**
 
@@ -418,7 +418,19 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - **Verification: P0.1-04 backend corrections CI-verified on 9 November 2026.** [Backend Tests #42563454496](https://github.com/AdiSarkale/remake-tally/actions/runs/42563454496), [Backend tenant isolation #42563454509](https://github.com/AdiSarkale/remake-tally/actions/runs/42563454509) and [Minitally CI #42563454579](https://github.com/AdiSarkale/remake-tally/actions/runs/42563454579) all passed. Each backend run reported **157 passed, 5 skipped, 7 warnings**. Integrated CI passed PostgreSQL control-plane/tenant migration and provisioning tests (5 passed), frontend typecheck/build and existing Playwright smoke. The Playwright smoke remains API-mocked and does not constitute roster UI verification; roster read/view UI remains pending.
 - **Remaining boundary:** this package does not add roster list/read APIs or frontend roster screens; those belong to the roster view/report UI work package. No raw attendance or payroll shift integration is included here.
 
-**Next action:** Proceed to P0.1-05 — branch-aware timezone and attendance context. Keep roster read/view UI tracked for P0.1-11, and do not implement deferred T-01 to T-14 by assumption.
+**P0.1-05 — Branch-aware timezone engine and daily attendance context (9 November 2026):**
+
+- Reuses the approved effective-dated organization assignment and shift/roster resolver; it does not create a second branch-assignment model.
+- `resolve_employee_work_context` resolves employee employment eligibility, effective branch, department snapshot and IANA timezone for a work date. Branch timezone is preferred; tenant timezone is the fallback where branch timezone is blank or employee has no branch.
+- Daily attendance import now requires one selected branch for branch-assigned employees and rejects mixed-branch workbooks. One selected IANA timezone applies to the entire batch; branch timezone is the default and the existing authorized `import_timezone` override remains available. Full workbook validation runs before writes; employee scope is evaluated for each work date.
+- Imported local punch times are converted to UTC using the selected batch timezone. DST gaps and ambiguous local times fail closed through the existing shift localizer.
+- `employee_attendance` now stores nullable `branch_id` and `timezone_name` provenance beside UTC punch instants. Migration 018 adds these columns and a branch index. Existing historical rows remain NULL; no branch/timezone is guessed from the employee's current assignment and no historical UTC data is rewritten.
+- Manual daily attendance uses the employee's effective branch timezone, validates punch-in against the resolved local work date/shift window, and preserves entries without punches (e.g. absence/leave). Monthly attendance displays stored rows in their recorded timezone snapshot.
+- The existing seven-column time-only attendance workbook is retained. Overnight punch-out is accepted only where an effective scheduled overnight roster exists and the punch-in falls inside that roster's UTC window. Raw punch events, batch lifecycle, anomalies, corrections, overtime/comp-leave and payroll daily snapshots remain P0.1-06/deferred scope.
+- Added regression coverage for effective branch timezone, tenant fallback, effective-dated transfer, DST gap/fold rejection, branch import normalization, wrong-branch and mixed-branch rejection, overnight shift-start work-date attribution, and missing scheduled overnight shift rejection.
+- **Verification status: implementation committed to the integration branch; fresh CI and PostgreSQL migration verification are pending.** Do not treat P0.1-05 as CI-verified until Backend Tests, tenant isolation and Minitally CI pass on the latest branch head.
+
+**Next action:** Run the complete P0.1-05 backend, tenant-isolation and PostgreSQL migration pipelines; resolve any regressions before moving to P0.1-06. Keep roster read/view UI tracked for P0.1-11, and do not implement deferred T-01 to T-14 by assumption.
 
 ---
 
@@ -447,6 +459,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 | 1.18 | 9 November 2026 | Audits the existing P0.1-04 roster engine, generation/override APIs and migration 017; fixes ORM response validation, historical-date idempotency bypass and missing-employee HTTP status; adds regression tests. Fresh CI pending. |
 | 1.19 | 9 November 2026 | Adds branch-scoped denial regression coverage for both roster generation and date-specific overrides; confirms the latest correction commits still await fresh CI. |
 | 1.20 | 9 November 2026 | Records passing P0.1-04 CI: backend and tenant-isolation suites 157 passed, 5 skipped, 7 warnings; PostgreSQL migrations/provisioning, frontend typecheck/build and existing Playwright smoke passed. Marks roster backend corrections CI-verified; roster read/view UI remains pending. |
+| 1.21 | 9 November 2026 | Records P0.1-05 branch-aware daily attendance context: effective branch/timezone resolution, single-branch/single-timezone import batches, UTC normalization, attendance provenance migration 018, historical snapshot behavior, manual attendance timezone handling, and regression tests. Fresh CI and PostgreSQL migration verification remain pending. |
 
 ## 11. Integration and verification record
 
