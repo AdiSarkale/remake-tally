@@ -1,11 +1,16 @@
 """Tests for deterministic and safe P0.1-04 roster generation."""
 from datetime import date, time, timedelta
+import inspect
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
+from fastapi import HTTPException
+from fastapi.params import Depends as DependsParam
 
 from app import models
+from app.api.routes import hr_shift_rosters
+from app.modules.hr.shift_roster_schemas import ShiftRosterGenerateIn, ShiftRosterOverrideIn
 from app.modules.hr.shift_roster_generation import (
     ShiftRosterGenerationError,
     generate_shift_roster,
@@ -281,3 +286,53 @@ def test_manual_schedule_override_on_holiday_requires_roster_wins_policy(db):
     assert row.status == "scheduled"
     assert row.is_override is True
     assert row.policy_version_id == policy.id
+
+
+
+def test_roster_generation_route_requires_exact_write_permission_and_employee_scope(db):
+    user = models.User(
+        id="roster-admin", username="roster-admin", full_name="Roster Admin",
+        password_hash="test", role=models.Role.admin, active=True,
+        must_change_password=False,
+    )
+    db.add(user)
+    db.commit()
+    dependency = inspect.signature(hr_shift_rosters.generate_rosters).parameters["user"].default
+    assert isinstance(dependency, DependsParam)
+    with pytest.raises(HTTPException) as denied:
+        dependency.dependency(user=user, db=db)
+    assert denied.value.status_code == 403
+
+    db.add(models.RolePermissionGrant(
+        role="Admin", module="hr", feature="shift_rosters", action="write",
+        data_scope="tenant", allowed=True, updated_by="test",
+    ))
+    db.add(models.RolePermissionGrant(
+        role="Admin", module="hr", feature="employees", action="update",
+        data_scope="tenant", allowed=True, updated_by="test",
+    ))
+    db.commit()
+    assert dependency.dependency(user=user, db=db) is user
+
+    employee, _, _ = _seed(db)
+    response = hr_shift_rosters.generate_rosters(
+        ShiftRosterGenerateIn(
+            start_date=date(2040, 1, 2), end_date=date(2040, 1, 8),
+            employee_ids=[employee.id],
+        ),
+        db,
+        user,
+    )
+    assert response.created_count == 7
+
+
+def test_roster_override_request_requires_a_reason_and_valid_shift_shape():
+    with pytest.raises(ValueError):
+        ShiftRosterOverrideIn(status="scheduled", shift_type_id=None, reason="Short")
+    with pytest.raises(ValueError):
+        ShiftRosterOverrideIn(status="weekly_off", shift_type_id="shift", reason="Approved maintenance day")
+    valid = ShiftRosterOverrideIn(
+        status="cancelled", shift_type_id=None,
+        reason="Approved line shutdown for maintenance",
+    )
+    assert valid.reason.startswith("Approved")
