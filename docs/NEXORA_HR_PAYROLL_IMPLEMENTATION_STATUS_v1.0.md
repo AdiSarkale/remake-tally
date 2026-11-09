@@ -442,7 +442,9 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 | 1.13 | 9 November 2026 | Adds the P0.1 shift catalog and break-rule API slice, exact permission requirements, audit behavior, immutable identifiers and assignment/roster schedule-lock safeguards. CI for this slice is pending. |
 | 1.14 | 9 November 2026 | Records passing integrated CI, PostgreSQL migration checks, backend and tenant-isolation tests (132 passed, 5 skipped each), and clarifies that shift catalog UI and assignment/roster workflows remain pending. |
 | 1.15 | 9 November 2026 | Adds P0.1-03 employee/department shift assignment APIs, effective-dated successor/end lifecycle, branch/team scope checks, exact permissions, transactional audit events and API regression tests; CI pending. |
-| 1.16 | 9 November 2026 | Extends assignment validation across future employee branch transfers, adds scoped department-default and audit assertions, and adds the assignment read endpoint to two-tenant route-isolation coverage; CI pending. |\n| 1.17 | 9 November 2026 | Records successful P0.1-03 rerun: Backend Tests, tenant isolation and integrated Minitally CI passed; 141 passed, 5 skipped, 7 warnings; PostgreSQL migration/provisioning, frontend and browser smoke passed. Corrects test fixture isolation before the successful rerun. |
+| 1.16 | 9 November 2026 | Extends assignment validation across future employee branch transfers, adds scoped department-default and audit assertions, and adds the assignment read endpoint to two-tenant route-isolation coverage; CI pending. |
+| 1.17 | 9 November 2026 | Records successful P0.1-03 rerun: Backend Tests, tenant isolation and integrated Minitally CI passed; 141 passed, 5 skipped, 7 warnings; PostgreSQL migration/provisioning, frontend and browser smoke passed. Corrects test fixture isolation before the successful rerun. |
+| 1.18 | 9 November 2026 | Audits the existing P0.1-04 roster engine, generation/override APIs and migration 017; fixes ORM response validation, historical-date idempotency bypass and missing-employee HTTP status; adds regression tests. Fresh CI pending. |
 
 ## 11. Integration and verification record
 
