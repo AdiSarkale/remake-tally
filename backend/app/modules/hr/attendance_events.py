@@ -166,18 +166,27 @@ def parse_event_workbook(
         headers = [str(value).strip() if value is not None else "" for value in (first_row or ())]
         while headers and not headers[-1]:
             headers.pop()
-        if headers != EVENT_WORKBOOK_HEADERS:
+        required_headers = EVENT_WORKBOOK_HEADERS[:4]
+        optional_headers = set(EVENT_WORKBOOK_HEADERS[4:])
+        if (
+            headers[:4] != required_headers
+            or len(headers) != len(set(headers))
+            or any(header not in optional_headers for header in headers[4:])
+        ):
             raise AttendanceEventError(
-                "Event workbook headers must match exactly: " + ", ".join(EVENT_WORKBOOK_HEADERS)
+                "Event workbook must start with required headers "
+                + ", ".join(required_headers)
+                + "; optional headers are Source Reference, Break Code and Note"
             )
+        header_index = {header: index for index, header in enumerate(headers)}
 
         parsed: list[dict[str, Any]] = []
         errors: list[str] = []
         seen_references: set[str] = set()
         row_count = 0
         for row_number, values in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
-            cells = list(values[:len(EVENT_WORKBOOK_HEADERS)])
-            cells.extend([None] * (len(EVENT_WORKBOOK_HEADERS) - len(cells)))
+            cells = list(values[:len(headers)])
+            cells.extend([None] * (len(headers) - len(cells)))
             if not any(value is not None and (not isinstance(value, str) or value.strip()) for value in cells):
                 continue
             row_count += 1
@@ -185,7 +194,18 @@ def parse_event_workbook(
                 errors.append(f"More than {MAX_EVENT_IMPORT_ROWS} attendance events were supplied")
                 break
             row_error_start = len(errors)
-            raw_code, raw_work_date, raw_type, raw_datetime, raw_reference, raw_break_code, raw_note = cells
+
+            def cell(header: str):
+                index = header_index.get(header)
+                return cells[index] if index is not None else None
+
+            raw_code = cell("Employee Code")
+            raw_work_date = cell("Work Date")
+            raw_type = cell("Event Type")
+            raw_datetime = cell("Event DateTime (Local)")
+            raw_reference = cell("Source Reference")
+            raw_break_code = cell("Break Code")
+            raw_note = cell("Note")
             code = str(raw_code).strip().upper() if raw_code is not None else ""
             employee = employees_by_code.get(code)
             if not code:
