@@ -54,7 +54,7 @@ class EmployeeAttendance(Base):
     # Work date and timezone are a snapshot of the local attendance context.
     # UTC punch instants remain canonical and are never recalculated on transfers.
     branch_id: Mapped[str | None] = mapped_column(ForeignKey("hr_branches.id", ondelete="RESTRICT"), nullable=True, index=True)
-    timezone_name: Mapped[str] = mapped_column(String(64), default="Asia/Kolkata", nullable=False)
+    timezone_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     punch_in: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     punch_out: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     overtime_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
