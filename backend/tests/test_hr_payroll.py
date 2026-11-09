@@ -726,3 +726,64 @@ def test_overnight_legacy_import_requires_scheduled_overnight_shift():
     finally:
         db.close()
         engine.dispose()
+
+def test_overnight_event_uses_shift_start_work_date_across_midnight():
+    from datetime import datetime, timezone
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from app import models
+    from app.modules.hr.shift_assignment import resolve_attendance_work_date
+
+    engine = create_engine("sqlite:///:memory:")
+    models.Base.metadata.create_all(engine)
+    db = Session(engine)
+    try:
+        branch = models.HRBranch(code="NGT", name="Night", timezone="Asia/Kolkata", active=True)
+        employee = models.Employee(
+            id="ngt-employee", emp_code="NGT001", name="Night Worker",
+            joining_date=date(2040, 1, 1), active=True,
+        )
+        shift = models.HRShiftType(
+            id="ngt-shift", code="NGT", name="Night Shift",
+            start_time=time_type(22, 0), end_time=time_type(6, 0),
+            end_day_offset=1, active=True, created_by="test",
+        )
+        db.add_all([branch, employee, shift, models.HRPayrollSettings(id=1, timezone="Asia/Kolkata")])
+        db.flush()
+        db.add_all([
+            models.EmployeeOrgAssignment(
+                employee_id=employee.id, branch_id=branch.id, department="Ops",
+                valid_from=date(2040, 1, 1), created_by="test",
+            ),
+            models.HRShiftAssignment(
+                id="ngt-assignment", scope_type="employee", employee_id=employee.id,
+                branch_id=branch.id, department=None, shift_type_id=shift.id,
+                weekdays=[0, 1, 2, 3, 4, 5, 6], valid_from=date(2040, 1, 1),
+                valid_to=None, created_by="test",
+            ),
+        ])
+        db.commit()
+        from app.modules.hr.shift_assignment import resolve_shift_window
+        start_utc, end_utc = resolve_shift_window(date(2040, 1, 2), shift, "Asia/Kolkata")
+        db.add(models.HRShiftRosterEntry(
+            employee_id=employee.id, work_date=date(2040, 1, 2), status="scheduled",
+            shift_type_id=shift.id, source_assignment_id="ngt-assignment",
+            is_override=False, override_reason="", branch_id=branch.id,
+            department_snapshot="Ops", timezone_name="Asia/Kolkata",
+            scheduled_start_at_utc=start_utc, scheduled_end_at_utc=end_utc,
+            shift_code_snapshot="NGT", shift_name_snapshot="Night Shift",
+            break_rules_snapshot=[], created_by="test",
+        ))
+        db.commit()
+        # 03:00 IST on 3 January remains attached to 2 January's shift.
+        context, work_date = resolve_attendance_work_date(
+            db, employee.id, datetime(2040, 1, 2, 21, 30, tzinfo=timezone.utc),
+        )
+        assert work_date == date(2040, 1, 2)
+        assert context.branch_id == branch.id
+        assert context.timezone_name == "Asia/Kolkata"
+    finally:
+        db.close()
+        engine.dispose()
+
+
