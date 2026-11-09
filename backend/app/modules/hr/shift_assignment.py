@@ -427,7 +427,7 @@ def localize_attendance_datetime(value: datetime, timezone_name: str) -> datetim
 def resolve_attendance_work_date(
     db: Session, employee_id: str, punch_in_utc: datetime | None,
 ) -> tuple[EmployeeWorkContext, date]:
-    """Attribute punch-in to its local date, preferring an overnight roster start date."""
+    """Resolve event attribution by matching local punch-in to a persisted roster window."""
     if punch_in_utc is None:
         raise ShiftAssignmentConfigurationError("Punch In is required to resolve an attendance work date")
     instant = (
@@ -435,28 +435,43 @@ def resolve_attendance_work_date(
         if punch_in_utc.tzinfo is None else punch_in_utc.astimezone(timezone.utc)
     )
 
-    # First derive the employee's current local date from effective branch context.
-    provisional = instant.date()
-    try:
-        first_context = resolve_employee_work_context(db, employee_id, provisional)
-        provisional = instant.astimezone(ZoneInfo(first_context.timezone_name)).date()
-    except ShiftAssignmentConfigurationError:
-        pass
+    # Roster boundaries are stored as UTC instants. Find the unique roster
+    # whose window contains the event, including shifts crossing midnight.
+    roster_rows = db.query(HRShiftRosterEntry).filter(
+        HRShiftRosterEntry.employee_id == employee_id,
+        HRShiftRosterEntry.scheduled_start_at_utc.is_not(None),
+        HRShiftRosterEntry.scheduled_end_at_utc.is_not(None),
+        HRShiftRosterEntry.scheduled_start_at_utc <= instant,
+        HRShiftRosterEntry.scheduled_end_at_utc >= instant,
+    ).all()
+    if len(roster_rows) > 1:
+        raise ShiftAssignmentConfigurationError(
+            f"More than one scheduled shift contains the punch-in instant for employee {employee_id}"
+        )
+    if roster_rows:
+        roster = roster_rows[0]
+        context = resolve_employee_work_context(db, employee_id, roster.work_date)
+        if context.branch_id != roster.branch_id:
+            raise ShiftAssignmentConfigurationError(
+                f"Roster branch does not match effective employee branch on {roster.work_date}"
+            )
+        try:
+            zone = ZoneInfo(roster.timezone_name)
+        except ZoneInfoNotFoundError as exc:
+            raise ShiftAssignmentConfigurationError(
+                f"Roster has an invalid IANA timezone: {roster.timezone_name}"
+            ) from exc
+        return EmployeeWorkContext(
+            branch_id=roster.branch_id,
+            department=context.department,
+            timezone_name=zone.key,
+            organization_assignment_id=context.organization_assignment_id,
+        ), roster.work_date
 
-    # A punch shortly after midnight can belong to the previous local shift-start day.
-    previous_date = provisional - timedelta(days=1)
-    try:
-        previous_context = resolve_employee_work_context(db, employee_id, previous_date)
-        previous_shift = resolve_shift_for_work_date(db, employee_id, previous_date)
-        if (
-            previous_shift is not None
-            and previous_shift.scheduled_start_at_utc is not None
-            and previous_shift.scheduled_end_at_utc is not None
-            and previous_shift.scheduled_start_at_utc <= instant <= previous_shift.scheduled_end_at_utc
-        ):
-            return previous_context, previous_date
-    except ShiftAssignmentConfigurationError:
-        pass
-
-    context = resolve_employee_work_context(db, employee_id, provisional)
-    return context, provisional
+    # No roster applies: preserve legacy local-calendar attribution using the
+    # effective branch timezone (or tenant fallback).
+    context = resolve_employee_work_context(db, employee_id, instant.date())
+    local_date = instant.astimezone(ZoneInfo(context.timezone_name)).date()
+    if local_date != instant.date():
+        context = resolve_employee_work_context(db, employee_id, local_date)
+    return context, local_date
