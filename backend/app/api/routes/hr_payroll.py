@@ -1209,6 +1209,34 @@ def upsert_daily_attendance(
         row.punch_out = punch_out
         row.overtime_minutes = payload.overtime_minutes
         row.note = payload.note.strip()
+    roster = db.query(models.HRShiftRosterEntry).filter_by(
+        employee_id=employee.id, work_date=payload.work_date,
+    ).first()
+    try:
+        for event_type, instant in (("punch_in", punch_in), ("punch_out", punch_out)):
+            if instant is None:
+                continue
+            source_reference = build_event_source_reference(
+                "manual_daily_summary", employee.id, payload.work_date,
+                event_type, instant.isoformat(),
+            )
+            append_attendance_event(
+                db,
+                employee_id=employee.id,
+                work_date=payload.work_date,
+                event_type=event_type,
+                occurred_at_utc=instant,
+                timezone_name=context.timezone_name,
+                source_type="manual_hr",
+                source_reference=source_reference,
+                recorded_by=user.username,
+                roster_entry_id=roster.id if roster else None,
+                note=payload.note.strip(),
+            )
+    except AttendanceEventError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     log_audit(
         db, user.username, "UPSERT", "employee_attendance",
         f"{employee.emp_code}:{payload.work_date}:{payload.status}; branch={context.branch_id or 'unassigned'}; timezone={context.timezone_name}",
