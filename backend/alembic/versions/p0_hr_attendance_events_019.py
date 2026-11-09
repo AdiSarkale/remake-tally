@@ -5,6 +5,7 @@ Revises: p0_hr_branch_timezone_018
 """
 from alembic import op
 import sqlalchemy as sa
+import uuid
 
 revision = "p0_hr_attendance_events_019"
 down_revision = "p0_hr_branch_timezone_018"
@@ -94,7 +95,7 @@ def upgrade() -> None:
         if key in existing:
             continue
         rows.append({
-            "id": str(__import__("uuid").uuid4()),
+            "id": str(uuid.uuid4()),
             "role": role,
             "module": "hr",
             "feature": feature,
