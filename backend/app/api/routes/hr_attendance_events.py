@@ -77,6 +77,11 @@ def _event_output(event: models.HRAttendanceEvent) -> dict:
         "import_batch_id": event.import_batch_id,
         "break_rule_id": event.break_rule_id,
         "recorded_by": event.recorded_by,
+        "supersedes_event_id": event.supersedes_event_id,
+        "voided_at": event.voided_at,
+        "voided_by": event.voided_by,
+        "void_reason": event.void_reason,
+        "note": event.note,
         "created_at": event.created_at,
     }
 
