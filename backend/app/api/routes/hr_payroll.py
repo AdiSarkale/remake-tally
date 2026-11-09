@@ -683,7 +683,7 @@ def _parse_attendance_workbook(
                         ):
                             punch_out_local += timedelta(days=1)
                         else:
-                            errors.append(f"Row {row_number}: Punch Out is earlier than Punch In; a matching scheduled overnight shift in the selected batch timezone is required.")
+                            errors.append(f"Row {row_number}: Punch Out is earlier than Punch In; a matching scheduled overnight shift in the selected batch timezone is required. If the overnight date is ambiguous, use the v2 event workbook.")
                     punch_out = localize_attendance_datetime(punch_out_local, selected_tz.key)
             except (ValueError, ShiftAssignmentConfigurationError) as exc:
                 errors.append(f"Row {row_number}: Punch Out {exc}.")
