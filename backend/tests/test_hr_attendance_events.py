@@ -1,5 +1,5 @@
 """Regression tests for append-only HR attendance events and v2 imports."""
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from io import BytesIO
 
 import pytest
@@ -143,7 +143,7 @@ def test_event_workbook_v2_parses_local_datetime_using_batch_timezone():
         assert len(rows) == 1
         assert rows[0]["event_type"] == "punch_in"
         assert rows[0]["work_date"] == date(2026, 11, 10)
-        assert rows[0]["occurred_at_utc"] == datetime(2026, 11, 10, 3, 30)
+        assert rows[0]["occurred_at_utc"] == datetime(2026, 11, 10, 3, 30, tzinfo=timezone.utc)
         assert rows[0]["timezone_name"] == "Asia/Kolkata"
         assert rows[0]["source_reference"] == "source-001"
         assert rows[0]["note"] == "Gate 1"
