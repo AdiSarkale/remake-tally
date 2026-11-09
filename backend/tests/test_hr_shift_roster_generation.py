@@ -201,6 +201,29 @@ def test_generation_rejects_historical_dates(db):
     assignment = db.query(models.HRShiftAssignment).filter_by(employee_id=employee.id).one()
     assignment.valid_from = yesterday - timedelta(days=30)
     db.commit()
+    # An existing historical row must not bypass the future-only guard via
+    # the generator's idempotency skip.
+    db.add(models.HRShiftRosterEntry(
+        employee_id=employee.id,
+        work_date=yesterday,
+        status="scheduled",
+        shift_type_id=assignment.shift_type_id,
+        source_assignment_id=assignment.id,
+        is_override=False,
+        override_reason="",
+        branch_id=org.branch_id,
+        department_snapshot="Production",
+        timezone_name="Asia/Kolkata",
+        scheduled_start_at_utc=__import__("datetime").datetime.combine(yesterday, time(3, 30)),
+        scheduled_end_at_utc=__import__("datetime").datetime.combine(yesterday, time(11, 30)),
+        shift_code_snapshot="DAY",
+        shift_name_snapshot="Day Shift",
+        break_rules_snapshot=[],
+        policy_version_id=None,
+        created_by="test",
+    ))
+    db.commit()
+
     with pytest.raises(ShiftRosterGenerationError, match="Historical roster generation"):
         _generate(db, employee, start=yesterday, end=yesterday)
 
