@@ -348,14 +348,17 @@ class EmployeeWorkContext:
 
 
 def resolve_employee_work_context(
-    db: Session, employee_id: str, work_date: date,
+    db: Session,
+    employee_id: str,
+    work_date: date,
+    *,
+    timezone_override: str | None = None,
 ) -> EmployeeWorkContext:
-    """Resolve branch/timezone independently of whether a shift is assigned.
+    """Resolve effective branch membership and one local timezone for a work date.
 
-    Branch membership is always taken from the effective-dated organization
-    assignment. Existing roster snapshots are authoritative for the timezone
-    used when that roster was materialized, but must agree with the effective
-    branch for the work date.
+    A caller may supply an authorized batch timezone override. The branch
+    membership remains independently resolved from the effective organization
+    assignment and is never inferred from the timezone string.
     """
     employee = db.get(Employee, employee_id)
     if employee is None:
@@ -370,6 +373,7 @@ def resolve_employee_work_context(
 
     org = _effective_org_assignment(db, employee_id, work_date)
     branch_id = org.branch_id if org else None
+    branch_timezone = ""
     if branch_id:
         branch = db.get(HRBranch, branch_id)
         if branch is None or not branch.active:
@@ -377,34 +381,27 @@ def resolve_employee_work_context(
                 f"Employee {employee_id} has no active effective branch on {work_date}"
             )
         branch_timezone = (branch.timezone or "").strip()
-    else:
-        branch_timezone = ""
 
     settings = db.get(HRPayrollSettings, 1)
     tenant_timezone = (settings.timezone if settings else None) or "Asia/Kolkata"
-    timezone_name = branch_timezone or tenant_timezone
+    timezone_name = timezone_override or branch_timezone or tenant_timezone
+
+    roster = db.query(HRShiftRosterEntry).filter_by(
+        employee_id=employee_id, work_date=work_date,
+    ).first()
+    if roster is not None and timezone_override is None:
+        if roster.branch_id != branch_id:
+            raise ShiftAssignmentConfigurationError(
+                f"Roster branch does not match the employee's effective branch on {work_date}"
+            )
+        timezone_name = roster.timezone_name
+
     try:
         zone = ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError as exc:
         raise ShiftAssignmentConfigurationError(
             f"Invalid IANA timezone for employee {employee_id} on {work_date}: {timezone_name}"
         ) from exc
-
-    roster = db.query(HRShiftRosterEntry).filter_by(
-        employee_id=employee_id, work_date=work_date,
-    ).first()
-    if roster is not None:
-        if roster.branch_id != branch_id:
-            raise ShiftAssignmentConfigurationError(
-                f"Roster branch does not match the employee's effective branch on {work_date}"
-            )
-        try:
-            roster_zone = ZoneInfo(roster.timezone_name)
-        except ZoneInfoNotFoundError as exc:
-            raise ShiftAssignmentConfigurationError(
-                f"Roster has an invalid IANA timezone: {roster.timezone_name}"
-            ) from exc
-        zone = roster_zone
 
     return EmployeeWorkContext(
         branch_id=branch_id,
