@@ -427,6 +427,10 @@ def localize_attendance_datetime(value: datetime, timezone_name: str) -> datetim
     return _localize_unambiguous(value, zone).astimezone(timezone.utc)
 
 
+def _as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
+
+
 def resolve_attendance_work_date(
     db: Session, employee_id: str, punch_in_utc: datetime | None,
 ) -> tuple[EmployeeWorkContext, date]:
@@ -440,13 +444,21 @@ def resolve_attendance_work_date(
 
     # Roster boundaries are stored as UTC instants. Find the unique roster
     # whose window contains the event, including shifts crossing midnight.
+    # Use a bounded local-date window rather than comparing timezone-aware
+    # columns in SQLite, where offsets may be discarded by the test dialect.
+    utc_date = instant.date()
     roster_rows = db.query(HRShiftRosterEntry).filter(
         HRShiftRosterEntry.employee_id == employee_id,
-        HRShiftRosterEntry.scheduled_start_at_utc.is_not(None),
-        HRShiftRosterEntry.scheduled_end_at_utc.is_not(None),
-        HRShiftRosterEntry.scheduled_start_at_utc <= instant,
-        HRShiftRosterEntry.scheduled_end_at_utc >= instant,
+        HRShiftRosterEntry.work_date >= utc_date - timedelta(days=1),
+        HRShiftRosterEntry.work_date <= utc_date + timedelta(days=1),
+        HRShiftRosterEntry.status == "scheduled",
     ).all()
+    roster_rows = [
+        row for row in roster_rows
+        if row.scheduled_start_at_utc is not None
+        and row.scheduled_end_at_utc is not None
+        and _as_utc(row.scheduled_start_at_utc) <= instant <= _as_utc(row.scheduled_end_at_utc)
+    ]
     if len(roster_rows) > 1:
         raise ShiftAssignmentConfigurationError(
             f"More than one scheduled shift contains the punch-in instant for employee {employee_id}"
