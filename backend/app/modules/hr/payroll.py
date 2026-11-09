@@ -62,6 +62,66 @@ class EmployeeAttendance(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
+class HRAttendanceImportBatch(Base):
+    """One immutable upload attempt and its interpretation context."""
+
+    __tablename__ = "hr_attendance_import_batches"
+    __table_args__ = (
+        CheckConstraint("status IN ('validated', 'imported', 'rejected')", name="ck_hr_attendance_import_batch_status"),
+        CheckConstraint("rows_total >= 0 AND rows_imported >= 0 AND rows_rejected >= 0", name="ck_hr_attendance_import_batch_counts"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    branch_id: Mapped[str | None] = mapped_column(ForeignKey("hr_branches.id", ondelete="RESTRICT"), nullable=True, index=True)
+    import_timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    template_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    uploaded_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="validated")
+    rows_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    rows_imported: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    rows_rejected: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+
+class HRAttendanceEvent(Base):
+    """Append-only source attendance event; never use as the payroll daily summary."""
+
+    __tablename__ = "hr_attendance_events"
+    __table_args__ = (
+        UniqueConstraint("source_type", "source_reference", name="uq_hr_attendance_event_source_reference"),
+        CheckConstraint(
+            "event_type IN ('punch_in', 'punch_out', 'break_start', 'break_end')",
+            name="ck_hr_attendance_event_type",
+        ),
+        CheckConstraint(
+            "source_type IN ('manual_hr', 'excel_import', 'employee')",
+            name="ck_hr_attendance_event_source_type",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    employee_id: Mapped[str] = mapped_column(ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False, index=True)
+    roster_entry_id: Mapped[str | None] = mapped_column(ForeignKey("hr_shift_roster_entries.id", ondelete="RESTRICT"), nullable=True, index=True)
+    work_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    occurred_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    timezone_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_reference: Mapped[str] = mapped_column(String(160), nullable=False)
+    import_batch_id: Mapped[str | None] = mapped_column(ForeignKey("hr_attendance_import_batches.id", ondelete="RESTRICT"), nullable=True, index=True)
+    break_rule_id: Mapped[str | None] = mapped_column(ForeignKey("hr_shift_break_rules.id", ondelete="RESTRICT"), nullable=True)
+    recorded_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    supersedes_event_id: Mapped[str | None] = mapped_column(ForeignKey("hr_attendance_events.id", ondelete="RESTRICT"), nullable=True)
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    voided_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    void_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class HRPayrollRun(Base):
     __tablename__ = "hr_payroll_runs"
     __table_args__ = (UniqueConstraint("year", "month", "revision", name="uq_hr_payroll_period_revision"),)
