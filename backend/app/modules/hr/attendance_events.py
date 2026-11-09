@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import hashlib
 from datetime import date, datetime, timedelta, timezone
+from io import BytesIO
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 from sqlalchemy.orm import Session
 from zipfile import BadZipFile
@@ -142,6 +143,43 @@ def _parse_local_datetime(value: Any) -> datetime:
     if parsed.tzinfo is not None:
         raise ValueError("Event DateTime (Local) must be timezone-naive; the batch timezone is authoritative")
     return parsed
+
+
+def attendance_event_template_workbook() -> BytesIO:
+    """Build the v2 one-row-per-event workbook with optional provenance columns."""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Attendance"
+    sheet.append(EVENT_WORKBOOK_HEADERS)
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = f"A1:{chr(64 + len(EVENT_WORKBOOK_HEADERS))}1"
+    widths = [20, 16, 18, 28, 42, 18, 32]
+    for index, width in enumerate(widths, start=1):
+        sheet.column_dimensions[chr(64 + index)].width = width
+
+    instructions = workbook.create_sheet("Instructions")
+    instruction_rows = [
+        ["Nexora Attendance Event Workbook v2"],
+        ["One row represents one raw attendance event. Do not enter daily summary status in this workbook."],
+        ["Required columns: Employee Code, Work Date, Event Type, Event DateTime (Local)."],
+        ["Optional columns: Source Reference, Break Code, Note. Optional columns may be left blank or omitted."],
+        ["Event Type must be punch_in, punch_out, break_start or break_end."],
+        ["Event DateTime (Local) is interpreted using the single timezone selected for the entire import batch."],
+        ["Use a full local date and time for every event; overnight events may fall on the calendar day after Work Date."],
+        ["Work Date is the local shift-start date, not necessarily the calendar date of every event."],
+        ["If Source Reference is blank, the importer creates a stable file/row identity for retry idempotency."],
+        ["Break Code must match an active break rule on the employee's assigned shift."],
+        ["Every row is validated before any event is written. One invalid row rejects the whole batch."],
+        ["The legacy seven-column daily-summary workbook remains available through the legacy attendance import."],
+    ]
+    for row in instruction_rows:
+        instructions.append(row)
+    instructions.column_dimensions["A"].width = 120
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    output.seek(0)
+    return output
 
 
 def parse_event_workbook(
