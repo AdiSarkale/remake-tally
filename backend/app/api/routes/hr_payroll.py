@@ -1037,9 +1037,19 @@ def upsert_daily_attendance(
     if employee is None:
         raise HTTPException(status_code=404, detail="Employee not found")
     _ensure_attendance_employee_scope(db, user, payload.employee_id, payload.work_date, "update")
-    tenant_tz = _tenant_timezone(db)
-    punch_in = _to_utc(payload.punch_in, tenant_tz)
-    punch_out = _to_utc(payload.punch_out, tenant_tz)
+    context = _attendance_context(db, employee.id, payload.work_date)
+    attendance_tz = ZoneInfo(context.timezone_name)
+    try:
+        punch_in = (
+            localize_attendance_datetime(payload.punch_in, context.timezone_name)
+            if payload.punch_in is not None else None
+        )
+        punch_out = (
+            localize_attendance_datetime(payload.punch_out, context.timezone_name)
+            if payload.punch_out is not None else None
+        )
+    except ShiftAssignmentConfigurationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if punch_in and punch_out and punch_out <= punch_in:
         raise HTTPException(status_code=422, detail="Punch-out must be after punch-in")
     row = db.query(models.EmployeeAttendance).filter_by(employee_id=payload.employee_id, work_date=payload.work_date).first()
@@ -1048,23 +1058,33 @@ def upsert_daily_attendance(
             db.delete(row)
     elif row is None:
         row = models.EmployeeAttendance(
-            employee_id=payload.employee_id, work_date=payload.work_date, status=payload.status,
-            punch_in=punch_in, punch_out=punch_out, overtime_minutes=payload.overtime_minutes, note=payload.note.strip(),
+            employee_id=payload.employee_id, work_date=payload.work_date,
+            branch_id=context.branch_id, timezone_name=context.timezone_name,
+            status=payload.status, punch_in=punch_in, punch_out=punch_out,
+            overtime_minutes=payload.overtime_minutes, note=payload.note.strip(),
         )
         db.add(row)
     else:
+        row.branch_id = context.branch_id
+        row.timezone_name = context.timezone_name
         row.status = payload.status
         row.punch_in = punch_in
         row.punch_out = punch_out
         row.overtime_minutes = payload.overtime_minutes
         row.note = payload.note.strip()
-    log_audit(db, user.username, "UPSERT", "employee_attendance", f"{employee.emp_code}:{payload.work_date}:{payload.status}")
+    log_audit(
+        db, user.username, "UPSERT", "employee_attendance",
+        f"{employee.emp_code}:{payload.work_date}:{payload.status}; branch={context.branch_id or 'unassigned'}; timezone={context.timezone_name}",
+    )
     db.commit()
     row = db.query(models.EmployeeAttendance).filter_by(employee_id=payload.employee_id, work_date=payload.work_date).first()
     settings = _ensure_settings(db)
     override = db.query(models.HRCalendarDay).filter_by(work_date=payload.work_date).first()
     calendar_type = _calendar_type(payload.work_date, _week_offs(settings), {payload.work_date: override.day_type} if override else {})
-    return _attendance_output(employee, payload.work_date, row, calendar_type, override.description if override else "", tenant_tz)
+    return _attendance_output(
+        employee, payload.work_date, row, calendar_type,
+        override.description if override else "", attendance_tz,
+    )
 
 
 @router.delete("/attendance/{employee_id}/{work_date}", status_code=204)
