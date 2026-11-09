@@ -122,6 +122,41 @@ class HRAttendanceEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class HRAttendanceAnomaly(Base):
+    """Auditable source discrepancy; never mutates the underlying raw events."""
+
+    __tablename__ = "hr_attendance_anomalies"
+    __table_args__ = (
+        UniqueConstraint("comparison_key", name="uq_hr_attendance_anomaly_comparison"),
+        CheckConstraint(
+            "anomaly_type IN ('source_mismatch')",
+            name="ck_hr_attendance_anomaly_type",
+        ),
+        CheckConstraint(
+            "status IN ('open', 'acknowledged', 'resolved', 'false_positive')",
+            name="ck_hr_attendance_anomaly_status",
+        ),
+        CheckConstraint("threshold_minutes >= 0", name="ck_hr_attendance_anomaly_threshold"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    comparison_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    employee_id: Mapped[str] = mapped_column(ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False, index=True)
+    work_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    roster_entry_id: Mapped[str | None] = mapped_column(ForeignKey("hr_shift_roster_entries.id", ondelete="RESTRICT"), nullable=True)
+    anomaly_type: Mapped[str] = mapped_column(String(32), nullable=False, default="source_mismatch")
+    source_event_ids: Mapped[list] = mapped_column(JSON, nullable=False)
+    observed_delta_minutes: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    threshold_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    policy_version_id: Mapped[str] = mapped_column(ForeignKey("hr_workforce_policy_versions.id", ondelete="RESTRICT"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
+    resolution_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    resolution_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    resolved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class HRPayrollRun(Base):
     __tablename__ = "hr_payroll_runs"
     __table_args__ = (UniqueConstraint("year", "month", "revision", name="uq_hr_payroll_period_revision"),)
