@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from pydantic import BaseModel, Field, model_validator
 
+from app.modules.core.schemas import ORMModel
+
 
 class ShiftRosterGenerateIn(BaseModel):
     start_date: date
@@ -64,7 +66,7 @@ class ShiftRosterOverrideIn(BaseModel):
         return self
 
 
-class ShiftRosterOverrideOut(BaseModel):
+class ShiftRosterOverrideOut(ORMModel):
     id: str
     employee_id: str
     work_date: date
