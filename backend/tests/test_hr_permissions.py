@@ -100,7 +100,7 @@ def test_tenant_hr_migration_chain_has_single_latest_head():
     assert script.get_revision("p0_leave_accrual_013").down_revision == "p0_granular_authz_012"
     assert script.get_revision("p0_finance_journal_014").down_revision == "p0_leave_accrual_013"
     assert script.get_revision("p0_authz_exact_015").down_revision == "p0_finance_journal_014"
-    assert script.get_revision("p0_hr_roster_history_017").down_revision == "p0_authz_exact_015"
+    assert script.get_revision("p0_hr_roster_history_017").down_revision == "p0_hr_shift_roster_016"
 
 
 def test_employee_branch_and_hierarchical_team_scopes_are_relationship_backed():
