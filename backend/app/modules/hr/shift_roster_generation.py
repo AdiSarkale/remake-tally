@@ -469,12 +469,14 @@ def apply_shift_roster_override(
         raise ShiftRosterGenerationError(str(exc)) from exc
 
     branch_id = (
-        existing.branch_id if existing else
-        (resolution.branch_id if resolution and resolution.branch_id else (org.branch_id if org else None))
+        (existing.branch_id if existing and existing.branch_id else None)
+        or (resolution.branch_id if resolution and resolution.branch_id else None)
+        or (org.branch_id if org else None)
     )
     timezone_name = (
-        existing.timezone_name if existing else
-        (resolution.timezone_name if resolution else _timezone_name(db, branch_id, _tenant_timezone_name(db)))
+        (existing.timezone_name if existing and existing.timezone_name else None)
+        or (resolution.timezone_name if resolution else None)
+        or _timezone_name(db, branch_id, _tenant_timezone_name(db))
     )
     local_today = datetime.now(ZoneInfo(timezone_name)).date()
     if work_date < local_today:
@@ -510,12 +512,13 @@ def apply_shift_roster_override(
         break_snapshot = _break_snapshot(db, shift_type.id)
 
     source_assignment_id = (
-        existing.source_assignment_id if existing else
-        (resolution.assignment.id if resolution and resolution.assignment else None)
+        (existing.source_assignment_id if existing else None)
+        or (resolution.assignment.id if resolution and resolution.assignment else None)
     )
     department_snapshot = (
-        existing.department_snapshot if existing else
-        (resolution.department if resolution else (org.department if org else ""))
+        (existing.department_snapshot if existing else None)
+        or (resolution.department if resolution else None)
+        or (org.department if org else "")
     ) or ""
     policy_version_id = policy.id if policy else (existing.policy_version_id if existing else None)
 
