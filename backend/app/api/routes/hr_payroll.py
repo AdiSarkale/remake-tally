@@ -906,8 +906,15 @@ def get_monthly_attendance(
         if record is not None and record.timezone_name:
             display_tz = ZoneInfo(record.timezone_name)
         else:
-            context = _attendance_context(db, employee.id, day)
-            display_tz = ZoneInfo(context.timezone_name)
+            try:
+                context = _attendance_context(db, employee.id, day)
+                display_tz = ZoneInfo(context.timezone_name)
+            except HTTPException as exc:
+                if exc.status_code != 422:
+                    raise
+                # Days outside the employee's effective assignment/employment
+                # range can still appear as unmarked calendar cells in a month.
+                display_tz = tenant_tz
         output.append(
             _attendance_output(
                 employee, day, record, _calendar_type(day, week_off_days, overrides),
