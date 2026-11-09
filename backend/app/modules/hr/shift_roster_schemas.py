@@ -1,7 +1,7 @@
 """Request and response contracts for shift roster generation."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -74,7 +74,7 @@ class ShiftRosterOverrideOut(BaseModel):
     is_override: bool
     override_reason: str
     timezone_name: str
-    scheduled_start_at_utc: object | None
-    scheduled_end_at_utc: object | None
+    scheduled_start_at_utc: datetime | None
+    scheduled_end_at_utc: datetime | None
     shift_code_snapshot: str
     shift_name_snapshot: str
