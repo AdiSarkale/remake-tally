@@ -613,13 +613,12 @@ def _parse_attendance_workbook(
                 errors.append(f"Row {row_number}: {exc}.")
 
             context = None
-            if employee is not None and work_date is not None:
-                if db is not None:
-                    try:
-                        context = resolve_employee_work_context(db, employee.id, work_date)
-                        batch_branch_ids.add(context.branch_id)
-                    except ShiftAssignmentConfigurationError as exc:
-                        errors.append(f"Row {row_number}: {exc}.")
+            if employee is not None and work_date is not None and db is not None:
+                try:
+                    context = resolve_employee_work_context(db, employee.id, work_date)
+                    batch_branch_ids.add(context.branch_id)
+                except ShiftAssignmentConfigurationError as exc:
+                    errors.append(f"Row {row_number}: {exc}.")
                 if branch_id is not None and (context is None or context.branch_id != branch_id):
                     errors.append(f"Row {row_number}: employee {code} is not assigned to the selected branch on {work_date}.")
                 if branch_id is None and context is not None and context.branch_id is not None:
