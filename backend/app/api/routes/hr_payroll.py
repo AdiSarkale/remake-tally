@@ -617,7 +617,6 @@ def _parse_attendance_workbook(
                 try:
                     context = resolve_employee_work_context(db, employee.id, work_date)
                     batch_branch_ids.add(context.branch_id)
-                    event_tz = selected_tz
                     if branch_id is not None and context.branch_id != branch_id:
                         errors.append(f"Row {row_number}: employee {code} is not assigned to the selected branch on {work_date}.")
                     if branch_id is None and context.branch_id is not None:
