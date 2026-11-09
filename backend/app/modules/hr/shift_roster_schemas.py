@@ -44,3 +44,37 @@ class ShiftRosterGenerateOut(BaseModel):
     skipped_existing_count: int
     skipped_outside_employment_count: int
     unassigned_working_day_count: int
+
+
+
+class ShiftRosterOverrideIn(BaseModel):
+    status: str = Field(pattern="^(scheduled|weekly_off|cancelled)$")
+    shift_type_id: str | None = None
+    reason: str = Field(min_length=10, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_shift_target(self):
+        if self.status == "scheduled" and not self.shift_type_id:
+            raise ValueError("A shift_type_id is required for a scheduled roster override")
+        if self.status != "scheduled" and self.shift_type_id is not None:
+            raise ValueError("Non-scheduled roster overrides cannot specify a shift_type_id")
+        if not self.reason.strip():
+            raise ValueError("An override reason is required")
+        self.reason = self.reason.strip()
+        return self
+
+
+class ShiftRosterOverrideOut(BaseModel):
+    id: str
+    employee_id: str
+    work_date: date
+    status: str
+    shift_type_id: str | None
+    version: int
+    is_override: bool
+    override_reason: str
+    timezone_name: str
+    scheduled_start_at_utc: object | None
+    scheduled_end_at_utc: object | None
+    shift_code_snapshot: str
+    shift_name_snapshot: str
