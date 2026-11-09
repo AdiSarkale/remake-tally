@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.deps import current_user, employee_scope_ids, require_permission
+from app.api.deps import employee_scope_ids, require_permission
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
 from app.modules.hr.attendance_events import (
@@ -95,7 +95,7 @@ def _local_event_context(
         local_start = roster.scheduled_start_at_utc.replace(tzinfo=timezone.utc).astimezone(zone)
         local_end = roster.scheduled_end_at_utc.replace(tzinfo=timezone.utc).astimezone(zone)
         if local_end.date() > local_start.date():
-            allowed_dates.add(work_date + __import__("datetime").timedelta(days=1))
+            allowed_dates.add(work_date + timedelta(days=1))
     if local_value.date() not in allowed_dates:
         raise AttendanceEventError(
             f"Event local date {local_value.date()} does not belong to work date {work_date}"
@@ -193,8 +193,8 @@ def create_manual_attendance_event(
     user: models.User = Depends(require_permission("hr", "attendance", "event_create", "tenant")),
 ):
     employee = db.get(models.Employee, payload.employee_id)
-    if employee is None:
-        raise HTTPException(status_code=404, detail="Employee not found")
+    if employee is None or not employee.active:
+        raise HTTPException(status_code=404, detail="Active employee not found")
     if _period_is_frozen(db, payload.work_date):
         raise HTTPException(status_code=409, detail="Attendance cannot be changed while the payroll period is prepared or finalized")
     scoped = employee_scope_ids(db, user, "hr", "employees", "update", as_of_date=payload.work_date)
