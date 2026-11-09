@@ -436,3 +436,64 @@ def test_override_endpoint_returns_not_found_for_employee_outside_tenant(db):
             user,
         )
     assert missing.value.status_code == 404
+
+
+
+def test_branch_scoped_user_cannot_generate_or_override_rosters_outside_scope(db):
+    employee, _, _ = _seed(db)
+    actor_branch = models.HRBranch(code="MUM", name="Mumbai", timezone="Asia/Kolkata")
+    actor = models.Employee(
+        id="roster-scope-actor", emp_code="RSC001", name="Roster Scope Actor",
+        joining_date=date(2039, 1, 1), active=True,
+    )
+    user = models.User(
+        id="roster-scope-user", username="roster-scope-user",
+        full_name="Roster Scope User", password_hash="test",
+        role=models.Role.hr, active=True, must_change_password=False,
+    )
+    db.add_all([actor_branch, actor, user])
+    db.flush()
+    db.add_all([
+        models.EmployeeOrgAssignment(
+            employee_id=actor.id, branch_id=actor_branch.id, department="Production",
+            valid_from=date(2039, 1, 1), created_by="admin",
+        ),
+        models.EmployeeUserLink(
+            user_id=user.id, employee_id=actor.id, created_by="admin",
+        ),
+        models.RolePermissionGrant(
+            role="HR", module="hr", feature="shift_rosters", action="write",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ),
+        models.RolePermissionGrant(
+            role="HR", module="hr", feature="employees", action="update",
+            data_scope="branch", allowed=True, updated_by="test",
+        ),
+    ])
+    db.commit()
+
+    with pytest.raises(HTTPException) as generation_denied:
+        hr_shift_rosters.generate_rosters(
+            ShiftRosterGenerateIn(
+                start_date=date(2040, 1, 2), end_date=date(2040, 1, 2),
+                employee_ids=[employee.id],
+            ),
+            db,
+            user,
+        )
+    assert generation_denied.value.status_code == 403
+    assert db.query(models.HRShiftRosterEntry).filter_by(employee_id=employee.id).count() == 0
+
+    with pytest.raises(HTTPException) as override_denied:
+        hr_shift_rosters.override_roster_date(
+            employee.id,
+            date(2040, 1, 2),
+            ShiftRosterOverrideIn(
+                status="weekly_off",
+                reason="Approved maintenance day outside branch scope",
+            ),
+            db,
+            user,
+        )
+    assert override_denied.value.status_code == 403
+    assert db.query(models.HRShiftRosterEntry).filter_by(employee_id=employee.id).count() == 0
