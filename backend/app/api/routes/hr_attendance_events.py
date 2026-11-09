@@ -17,6 +17,13 @@ from app import models
 from app.api.deps import employee_scope_ids, require_permission
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
+from app.modules.hr.attendance_reconciliation import (
+    MARGIN_CONFIGURATION_KEY,
+    configured_attendance_margin,
+    effective_attendance_policy,
+    reconcile_attendance_event,
+    reconcile_attendance_work_date,
+)
 from app.modules.hr.attendance_events import (
     AttendanceEventError,
     append_attendance_event,
@@ -157,6 +164,333 @@ def _record_rejected_batch(
     db.commit()
     db.refresh(batch)
     return batch
+
+
+
+
+class AttendanceAnomalyResolve(BaseModel):
+    reason: str = Field(min_length=3, max_length=1000)
+    selected_event_id: str = Field(min_length=1, max_length=36)
+
+
+class AttendanceAnomalyFalsePositive(BaseModel):
+    reason: str = Field(min_length=3, max_length=1000)
+
+
+class AttendanceAnomalySettingsCreate(BaseModel):
+    version_code: str = Field(min_length=1, max_length=40)
+    effective_from: date
+    effective_to: date | None = None
+    attendance_source_error_margin_minutes: int = Field(ge=0)
+
+
+def _anomaly_output(db: Session, anomaly: models.HRAttendanceAnomaly) -> dict:
+    events = db.query(models.HRAttendanceEvent).filter(
+        models.HRAttendanceEvent.id.in_(anomaly.source_event_ids),
+    ).all()
+    by_id = {event.id: event for event in events}
+    return {
+        "id": anomaly.id,
+        "employee_id": anomaly.employee_id,
+        "work_date": anomaly.work_date,
+        "roster_entry_id": anomaly.roster_entry_id,
+        "anomaly_type": anomaly.anomaly_type,
+        "source_event_ids": anomaly.source_event_ids,
+        "source_events": [
+            _event_output(by_id[event_id])
+            for event_id in anomaly.source_event_ids
+            if event_id in by_id
+        ],
+        "observed_delta_minutes": float(anomaly.observed_delta_minutes),
+        "threshold_minutes": anomaly.threshold_minutes,
+        "policy_version_id": anomaly.policy_version_id,
+        "status": anomaly.status,
+        "resolution_reason": anomaly.resolution_reason,
+        "resolution_result": anomaly.resolution_result,
+        "resolved_by": anomaly.resolved_by,
+        "resolved_at": anomaly.resolved_at,
+        "created_at": anomaly.created_at,
+    }
+
+
+@router.get("/anomaly-settings")
+def get_attendance_anomaly_settings(
+    as_of: date = Query(default_factory=date.today),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_permission("hr", "workforce_settings", "view", "tenant")),
+):
+    policy = effective_attendance_policy(db, as_of)
+    if policy is None:
+        candidates = db.query(models.HRWorkforcePolicyVersion).filter(
+            models.HRWorkforcePolicyVersion.effective_from <= as_of,
+            (models.HRWorkforcePolicyVersion.effective_to.is_(None))
+            | (models.HRWorkforcePolicyVersion.effective_to >= as_of),
+        ).count()
+        return {
+            "configured": False,
+            "configuration_state": "ambiguous" if candidates else "not_configured",
+            "as_of": as_of,
+            "policy_version_id": None,
+            "version_code": None,
+            "attendance_source_error_margin_minutes": None,
+        }
+    margin = configured_attendance_margin(db, as_of)
+    if margin is None:
+        return {
+            "configured": False,
+            "configuration_state": "margin_missing_or_invalid",
+            "as_of": as_of,
+            "policy_version_id": policy.id,
+            "version_code": policy.version_code,
+            "attendance_source_error_margin_minutes": None,
+        }
+    return {
+        "configured": True,
+        "configuration_state": "configured",
+        "as_of": as_of,
+        "policy_version_id": policy.id,
+        "version_code": policy.version_code,
+        "effective_from": policy.effective_from,
+        "effective_to": policy.effective_to,
+        "attendance_source_error_margin_minutes": margin[1],
+    }
+
+
+@router.post("/anomaly-settings")
+def create_attendance_anomaly_settings(
+    payload: AttendanceAnomalySettingsCreate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_permission("hr", "workforce_settings", "edit", "tenant")),
+):
+    version_code = payload.version_code.strip()
+    if not version_code:
+        raise HTTPException(status_code=422, detail="Policy version code cannot be blank")
+    if payload.effective_to is not None and payload.effective_to < payload.effective_from:
+        raise HTTPException(status_code=422, detail="Policy effective_to cannot be earlier than effective_from")
+
+    new_end = payload.effective_to or date.max
+    policies = db.query(models.HRWorkforcePolicyVersion).order_by(
+        models.HRWorkforcePolicyVersion.effective_from.asc(),
+    ).all()
+    overlaps = [
+        policy for policy in policies
+        if policy.effective_from <= new_end
+        and (policy.effective_to or date.max) >= payload.effective_from
+    ]
+    if len(overlaps) > 1 or any(
+        policy.effective_from >= payload.effective_from for policy in overlaps
+    ):
+        raise HTTPException(status_code=409, detail="The policy effective date overlaps an existing or future workforce policy version")
+
+    prior = max(
+        (policy for policy in policies if policy.effective_from < payload.effective_from),
+        key=lambda policy: policy.effective_from,
+        default=None,
+    )
+    if overlaps:
+        previous = overlaps[0]
+        previous.effective_to = payload.effective_from - timedelta(days=1)
+        log_audit(
+            db, user.username, "UPDATE", "hr_workforce_policy_version",
+            f"{previous.id}: effective_to={previous.effective_to}",
+        )
+        prior = previous
+
+    configuration = dict(prior.configuration or {}) if prior and isinstance(prior.configuration, dict) else {}
+    configuration[MARGIN_CONFIGURATION_KEY] = payload.attendance_source_error_margin_minutes
+    policy = models.HRWorkforcePolicyVersion(
+        version_code=version_code,
+        effective_from=payload.effective_from,
+        effective_to=payload.effective_to,
+        configuration=configuration,
+        created_by=user.username[:64],
+    )
+    db.add(policy)
+    log_audit(
+        db, user.username, "CREATE", "hr_workforce_policy_version",
+        f"{version_code}: {MARGIN_CONFIGURATION_KEY}={payload.attendance_source_error_margin_minutes}; "
+        f"effective_from={payload.effective_from}; effective_to={payload.effective_to}",
+    )
+    try:
+        db.commit()
+        db.refresh(policy)
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Policy version code already exists or conflicts with another policy update") from exc
+    return {
+        "policy_version_id": policy.id,
+        "version_code": policy.version_code,
+        "effective_from": policy.effective_from,
+        "effective_to": policy.effective_to,
+        "attendance_source_error_margin_minutes": payload.attendance_source_error_margin_minutes,
+    }
+
+
+@router.get("/anomalies")
+def list_attendance_anomalies(
+    status: Literal["open", "acknowledged", "resolved", "false_positive"] | None = None,
+    employee_id: str | None = Query(default=None, max_length=36),
+    from_date: date | None = None,
+    to_date: date | None = None,
+    limit: int = Query(default=200, ge=1, le=500),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_permission("hr", "attendance_anomalies", "view", "tenant")),
+):
+    if from_date and to_date and to_date < from_date:
+        raise HTTPException(status_code=422, detail="to_date cannot be earlier than from_date")
+    query = db.query(models.HRAttendanceAnomaly)
+    if status:
+        query = query.filter(models.HRAttendanceAnomaly.status == status)
+    if employee_id:
+        query = query.filter(models.HRAttendanceAnomaly.employee_id == employee_id)
+    if from_date:
+        query = query.filter(models.HRAttendanceAnomaly.work_date >= from_date)
+    if to_date:
+        query = query.filter(models.HRAttendanceAnomaly.work_date <= to_date)
+    rows = query.order_by(
+        models.HRAttendanceAnomaly.work_date.desc(),
+        models.HRAttendanceAnomaly.created_at.desc(),
+    ).limit(limit).all()
+
+    scope_cache: dict[date, set[str] | None] = {}
+    visible = []
+    for anomaly in rows:
+        if anomaly.work_date not in scope_cache:
+            scoped = employee_scope_ids(
+                db, user, "hr", "employees", "read", as_of_date=anomaly.work_date,
+            )
+            scope_cache[anomaly.work_date] = None if scoped is None else set(scoped)
+        allowed = scope_cache[anomaly.work_date]
+        if allowed is None or anomaly.employee_id in allowed:
+            visible.append(_anomaly_output(db, anomaly))
+    if employee_id and rows and not visible:
+        raise HTTPException(status_code=403, detail="Employee is outside your configured attendance access scope")
+    return visible
+
+
+@router.post("/anomalies/{anomaly_id}/resolve")
+def resolve_attendance_anomaly(
+    anomaly_id: str,
+    payload: AttendanceAnomalyResolve,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_permission("hr", "attendance_anomalies", "resolve", "tenant")),
+):
+    anomaly = db.get(models.HRAttendanceAnomaly, anomaly_id)
+    if anomaly is None:
+        raise HTTPException(status_code=404, detail="Attendance anomaly not found")
+    if anomaly.status not in {"open", "acknowledged"}:
+        raise HTTPException(status_code=409, detail="Only open or acknowledged anomalies can be resolved")
+    if _period_is_frozen(db, anomaly.work_date):
+        raise HTTPException(status_code=409, detail="Attendance anomaly cannot be resolved after the payroll period is frozen")
+    scoped = employee_scope_ids(db, user, "hr", "employees", "update", as_of_date=anomaly.work_date)
+    if scoped is not None and anomaly.employee_id not in scoped:
+        raise HTTPException(status_code=403, detail="Employee is outside your configured attendance access scope")
+    reason = payload.reason.strip()
+    if len(reason) < 3:
+        raise HTTPException(status_code=422, detail="A meaningful resolution reason is required")
+    if payload.selected_event_id not in anomaly.source_event_ids:
+        raise HTTPException(status_code=422, detail="Selected event must be one of the anomaly's compared source events")
+    anomaly.status = "resolved"
+    anomaly.resolution_reason = reason
+    anomaly.resolution_result = {"selected_event_id": payload.selected_event_id}
+    anomaly.resolved_by = user.username[:64]
+    anomaly.resolved_at = datetime.now(timezone.utc)
+    log_audit(
+        db, user.username, "RESOLVE", "hr_attendance_anomaly",
+        f"{anomaly.id}: selected_event={payload.selected_event_id}; reason={reason[:300]}",
+    )
+    db.commit()
+    db.refresh(anomaly)
+    return _anomaly_output(db, anomaly)
+
+
+@router.post("/anomalies/{anomaly_id}/false-positive")
+def mark_attendance_anomaly_false_positive(
+    anomaly_id: str,
+    payload: AttendanceAnomalyFalsePositive,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_permission("hr", "attendance_anomalies", "false_positive", "tenant")),
+):
+    anomaly = db.get(models.HRAttendanceAnomaly, anomaly_id)
+    if anomaly is None:
+        raise HTTPException(status_code=404, detail="Attendance anomaly not found")
+    if anomaly.status not in {"open", "acknowledged"}:
+        raise HTTPException(status_code=409, detail="Only open or acknowledged anomalies can be marked false positive")
+    if _period_is_frozen(db, anomaly.work_date):
+        raise HTTPException(status_code=409, detail="Attendance anomaly cannot be changed after the payroll period is frozen")
+    scoped = employee_scope_ids(db, user, "hr", "employees", "update", as_of_date=anomaly.work_date)
+    if scoped is not None and anomaly.employee_id not in scoped:
+        raise HTTPException(status_code=403, detail="Employee is outside your configured attendance access scope")
+    reason = payload.reason.strip()
+    if len(reason) < 3:
+        raise HTTPException(status_code=422, detail="A meaningful false-positive reason is required")
+    anomaly.status = "false_positive"
+    anomaly.resolution_reason = reason
+    anomaly.resolution_result = None
+    anomaly.resolved_by = user.username[:64]
+    anomaly.resolved_at = datetime.now(timezone.utc)
+    log_audit(
+        db, user.username, "FALSE_POSITIVE", "hr_attendance_anomaly",
+        f"{anomaly.id}: reason={reason[:300]}",
+    )
+    db.commit()
+    db.refresh(anomaly)
+    return _anomaly_output(db, anomaly)
+
+
+@router.post("/anomalies/reconcile")
+def reconcile_attendance_anomalies(
+    from_date: date,
+    to_date: date,
+    employee_id: str | None = Query(default=None, max_length=36),
+    db: Session = Depends(get_db),
+    user: models.User = Depends(require_permission("hr", "workforce_settings", "edit", "tenant")),
+):
+    if to_date < from_date:
+        raise HTTPException(status_code=422, detail="to_date cannot be earlier than from_date")
+    if (to_date - from_date).days > 366:
+        raise HTTPException(status_code=422, detail="A reconciliation request cannot exceed 367 calendar days")
+    query = db.query(models.HRAttendanceEvent).filter(
+        models.HRAttendanceEvent.work_date >= from_date,
+        models.HRAttendanceEvent.work_date <= to_date,
+        models.HRAttendanceEvent.voided_at.is_(None),
+    )
+    if employee_id:
+        query = query.filter(models.HRAttendanceEvent.employee_id == employee_id)
+    events = query.order_by(models.HRAttendanceEvent.work_date.asc()).limit(10001).all()
+    if len(events) > 10000:
+        raise HTTPException(status_code=413, detail="Narrow the reconciliation date range; more than 10,000 events matched")
+    scope_cache: dict[date, set[str] | None] = {}
+    groups: set[tuple[str, date]] = set()
+    for event in events:
+        if event.work_date not in scope_cache:
+            scoped = employee_scope_ids(
+                db, user, "hr", "employees", "update", as_of_date=event.work_date,
+            )
+            scope_cache[event.work_date] = None if scoped is None else set(scoped)
+        allowed = scope_cache[event.work_date]
+        if allowed is not None and event.employee_id not in allowed:
+            continue
+        groups.add((event.employee_id, event.work_date))
+    created_ids = []
+    for target_employee_id, work_date in sorted(groups, key=lambda item: (item[1], item[0])):
+        created_ids.extend(
+            anomaly.id for anomaly in reconcile_attendance_work_date(
+                db, target_employee_id, work_date,
+            )
+        )
+    log_audit(
+        db, user.username, "RECONCILE", "hr_attendance_anomaly",
+        f"date_range={from_date}..{to_date}; employees={len(groups)}; created={len(created_ids)}",
+    )
+    db.commit()
+    return {
+        "from_date": from_date,
+        "to_date": to_date,
+        "employee_dates_checked": len(groups),
+        "anomalies_created": len(created_ids),
+        "anomaly_ids": created_ids,
+    }
 
 
 @router.get("/events")
