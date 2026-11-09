@@ -298,6 +298,8 @@ def parse_event_workbook(
 
             break_rule = None
             break_code = str(raw_break_code or "").strip()
+            if break_code and event_type not in {"break_start", "break_end"}:
+                errors.append(f"Row {row_number}: Break Code is only valid for break_start or break_end events")
             if break_code:
                 if roster is None or not roster.shift_type_id:
                     errors.append(f"Row {row_number}: Break Code requires a scheduled shift roster")
