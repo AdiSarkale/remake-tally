@@ -1543,3 +1543,53 @@ def test_feature_action_grant_can_restrict_one_route_without_revoking_module(iso
     # Read access remains granted by its separate explicit read permission.
     readable = client.get("/api/v1/finance/customer-payments", headers=headers)
     assert readable.status_code == 200, readable.text
+
+
+
+def test_shift_roster_generation_cannot_reference_another_tenants_employee(isolated_tenants):
+    client = isolated_tenants["client"]
+    sessions = isolated_tenants["sessions"]
+    tenant_a_session, tenant_b_session = sessions
+
+    for Session, suffix in ((tenant_a_session, "a"), (tenant_b_session, "b")):
+        db = Session()
+        try:
+            db.add(models.Employee(
+                id=f"roster-isolation-{suffix}",
+                emp_code=f"RS-{suffix.upper()}",
+                name=f"Inactive Roster Isolation {suffix.upper()}",
+                joining_date=date(2026, 1, 1),
+                active=False,
+            ))
+            db.add(models.RolePermissionGrant(
+                role="Admin", module="hr", feature="shift_rosters",
+                action="write", data_scope="tenant", allowed=True, updated_by="test",
+            ))
+            db.commit()
+        finally:
+            db.close()
+
+    token_a = _login(client, "AA")
+    headers_a = {"Authorization": f"Bearer {token_a['access_token']}"}
+    cross_tenant = client.post(
+        "/api/v1/hr/shift-rosters/generate",
+        headers=headers_a,
+        json={
+            "start_date": "2040-01-02",
+            "end_date": "2040-01-02",
+            "employee_ids": ["roster-isolation-b"],
+        },
+    )
+    assert cross_tenant.status_code == 404, cross_tenant.text
+
+    same_tenant = client.post(
+        "/api/v1/hr/shift-rosters/generate",
+        headers=headers_a,
+        json={
+            "start_date": "2040-01-02",
+            "end_date": "2040-01-02",
+            "employee_ids": ["roster-isolation-a"],
+        },
+    )
+    assert same_tenant.status_code == 422, same_tenant.text
+    assert "Inactive employees" in same_tenant.text
