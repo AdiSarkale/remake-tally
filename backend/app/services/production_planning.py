@@ -156,8 +156,14 @@ def schedule_order(db: Session, order_id: str, start_at, username: str) -> dict:
             raise HTTPException(409,f"Workcenter unavailable for operation {row.sequence}")
         if wc.capacity_per_hour<=0:
             raise HTTPException(409,f"Workcenter {wc.code} has no positive capacity rate")
+        base_duration=op.setup_minutes+(op.run_minutes_per_unit*row.planned_qty)
+        cursor,_=align_to_shift(db,wc.id,cursor,base_duration)
         machine,duration=select_machine_and_duration(db,wc,row,op,cursor)
-        cursor,end=align_to_shift(db,wc.id,cursor,duration)
+        aligned_start,end=align_to_shift(db,wc.id,cursor,duration)
+        if aligned_start!=cursor:
+            cursor=aligned_start
+            machine,duration=select_machine_and_duration(db,wc,row,op,cursor)
+            cursor,end=align_to_shift(db,wc.id,cursor,duration)
         overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.workcenter_id==wc.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required","completed"}),models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.planned_start<end,models.OperationSchedule.planned_end>cursor).all()
         if overlaps: raise HTTPException(409,f"Workcenter {wc.code} has overlapping schedule")
         employee_id=row.assigned_employee_id
