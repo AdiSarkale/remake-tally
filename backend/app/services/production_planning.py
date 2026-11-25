@@ -27,7 +27,7 @@ def plan_materials(db: Session, order: models.ProductionOrder) -> list[dict]:
     prior_by_material = {r.material_id: r for r in prior}
     result = []
     for line in bom.lines:
-        material = db.get(models.RawMaterial, line.material_id)
+        material = db.query(models.RawMaterial).filter(models.RawMaterial.id == line.material_id).with_for_update().first()
         if material is None:
             raise ValueError(f"BOM material {line.material_id} no longer exists")
         required = round(float(line.quantity) * float(order.quantity), 3)
@@ -67,7 +67,7 @@ def _overlap(start: datetime, end: datetime, other_start: datetime, other_end: d
 
 
 def schedule_order(db: Session, order: models.ProductionOrder, start_at: datetime,
-                   respect_employee_availability: bool = True) -> list[models.ProductionOrderOperation]:
+                   respect_employee_availability: bool = True, machine_id: str | None = None) -> list[models.ProductionOrderOperation]:
     rows = db.query(models.ProductionOrderOperation).filter_by(
         production_order_id=order.id
     ).order_by(models.ProductionOrderOperation.sequence).all()
@@ -81,9 +81,19 @@ def schedule_order(db: Session, order: models.ProductionOrder, start_at: datetim
             raise ValueError(f"Operation {row.sequence} has an inactive or unavailable work centre")
         if wc.capacity_per_hour <= 0:
             raise ValueError(f"Work centre {wc.code} has no positive capacity")
+        machine = db.get(models.MachineResource, machine_id) if machine_id else None
+        if machine_id and (not machine or machine.workcenter_id != wc.id or not machine.active or machine.status != "available"):
+            raise ValueError(f"Machine {machine_id} is unavailable or not assigned to this work centre")
+        if machine is None:
+            machine = db.query(models.MachineResource).filter(
+                models.MachineResource.workcenter_id == wc.id,
+                models.MachineResource.active.is_(True),
+                models.MachineResource.status == "available",
+            ).order_by(models.MachineResource.capacity_per_hour.desc()).first()
+        capacity = float(machine.capacity_per_hour) if machine else float(wc.capacity_per_hour)
         duration = float(op.setup_minutes or 0) + float(order.quantity) * float(op.run_minutes_per_unit or 0)
         if not op.run_minutes_per_unit:
-            duration += float(order.quantity) / float(wc.capacity_per_hour) * 60
+            duration += float(order.quantity) / max(capacity, 0.0001) * 60
         duration = max(1.0, duration)
         candidate = max(start_at, previous_end)
         employee = db.get(models.Employee, row.assigned_employee_id) if row.assigned_employee_id else None
@@ -108,12 +118,16 @@ def schedule_order(db: Session, order: models.ProductionOrder, start_at: datetim
                 models.ProductionOrderOperation.scheduled_start.is_not(None),
             ).all()
             blocking_end = None
+            current_order_operation_ids = {x.id for x in rows}
             for other in other_rows:
+                if other.id in current_order_operation_ids:
+                    continue
                 if not other.scheduled_start or not other.scheduled_end:
                     continue
                 same_wc = other.workcenter_id == row.workcenter_id
                 same_employee = employee is not None and other.assigned_employee_id == employee.id
-                if (same_wc or (respect_employee_availability and same_employee)) and _overlap(candidate, end, other.scheduled_start, other.scheduled_end):
+                same_machine = machine is not None and other.machine_id == machine.id
+                if (same_wc or same_machine or (respect_employee_availability and same_employee)) and _overlap(candidate, end, other.scheduled_start, other.scheduled_end):
                     blocking_end = max(blocking_end or other.scheduled_end, other.scheduled_end)
             if blocking_end is None:
                 break
@@ -121,9 +135,17 @@ def schedule_order(db: Session, order: models.ProductionOrder, start_at: datetim
         else:
             raise ValueError("Unable to find a schedule slot within planning horizon")
         row.assigned_employee_id = employee.id if employee else None
+        row.machine_id = machine.id if machine else None
         row.planned_minutes = round(duration, 2)
         row.scheduled_start = candidate
         row.scheduled_end = candidate + timedelta(minutes=duration)
+        if machine:
+            outages = db.query(models.MachineDowntime).filter(
+                models.MachineDowntime.machine_id == machine.id,
+                models.MachineDowntime.start_at < row.scheduled_end,
+            ).all()
+            if any(_overlap(candidate, row.scheduled_end, d.start_at, d.end_at or row.scheduled_end) for d in outages):
+                raise ValueError(f"Machine {machine.code} has downtime overlapping the planned operation")
         row.status = "Scheduled" if employee else "Scheduled - Unassigned"
         previous_end = row.scheduled_end
     order.planning_status = "scheduled"

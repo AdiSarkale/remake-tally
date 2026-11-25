@@ -14,6 +14,8 @@ depends_on = None
 
 def upgrade() -> None:
     op.add_column("production_orders", sa.Column("planning_status", sa.String(length=24), nullable=False, server_default="unplanned"))
+    op.add_column("production_order_operations", sa.Column("machine_id", sa.String(length=36), nullable=True))
+    op.create_index("ix_production_order_operations_machine_id", "production_order_operations", ["machine_id"])
     op.add_column("production_order_operations", sa.Column("planned_minutes", sa.Float(), nullable=False, server_default="0"))
     op.add_column("production_order_operations", sa.Column("scheduled_start", sa.DateTime(), nullable=True))
     op.add_column("production_order_operations", sa.Column("scheduled_end", sa.DateTime(), nullable=True))
@@ -105,4 +107,6 @@ def downgrade() -> None:
     op.drop_column("production_order_operations", "scheduled_end")
     op.drop_column("production_order_operations", "scheduled_start")
     op.drop_column("production_order_operations", "planned_minutes")
+    op.drop_index("ix_production_order_operations_machine_id", table_name="production_order_operations")
+    op.drop_column("production_order_operations", "machine_id")
     op.drop_column("production_orders", "planning_status")

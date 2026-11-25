@@ -42,7 +42,7 @@ def schedule_production_order(order_id: str, payload: schemas.ScheduleIn, db: Se
     if order.planning_status not in {"materials_ready", "scheduled"}:
         raise HTTPException(409, "Resolve material shortages before scheduling")
     try:
-        rows = schedule_order(db, order, payload.start_at, payload.respect_employee_availability)
+        rows = schedule_order(db, order, payload.start_at, payload.respect_employee_availability, payload.machine_id)
     except ValueError as exc:
         db.rollback()
         raise HTTPException(400, str(exc)) from exc

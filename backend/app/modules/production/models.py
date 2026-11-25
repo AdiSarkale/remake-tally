@@ -175,6 +175,7 @@ class ProductionOrderOperation(Base):
     status: Mapped[str] = mapped_column(String(32), default="Pending")
     planned_qty: Mapped[float] = mapped_column(Float)
     completed_qty: Mapped[float] = mapped_column(Float, default=0)
+    machine_id: Mapped[str | None] = mapped_column(ForeignKey("production_machines.id"), nullable=True, index=True)
     planned_minutes: Mapped[float] = mapped_column(Float, default=0)
     scheduled_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     scheduled_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

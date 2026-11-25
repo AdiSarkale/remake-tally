@@ -207,6 +207,7 @@ class ProductionOrderOperationOut(ORMModel):
     status: str
     planned_qty: float
     completed_qty: float
+    machine_id: str | None = None
     planned_minutes: float = 0
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
@@ -263,6 +264,7 @@ class ProductionPlanningOut(BaseModel):
 
 class ScheduleIn(BaseModel):
     start_at: datetime
+    machine_id: str | None = None
     respect_employee_availability: bool = True
 
 
