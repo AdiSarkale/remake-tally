@@ -92,15 +92,19 @@ def mrp_net_requirements(db: Session) -> list[dict]:
 
 
 def shift_windows_for_date(db: Session, workcenter_id: str, day: date, tzinfo):
-    rows=db.query(models.WorkcenterShift).filter_by(workcenter_id=workcenter_id,weekday=day.weekday(),active=True).order_by(models.WorkcenterShift.start_time).all()
+    rows=db.query(models.WorkcenterShift).filter_by(workcenter_id=workcenter_id,active=True).filter(models.WorkcenterShift.weekday.in_({day.weekday(),(day.weekday()-1)%7})).order_by(models.WorkcenterShift.start_time).all()
     windows=[]
+    day_start=datetime.combine(day,time.min,tzinfo=tzinfo)
+    day_end=day_start+timedelta(days=1)
     for row in rows:
+        shift_day=day if row.weekday==day.weekday() else day-timedelta(days=1)
         start_time=time.fromisoformat(row.start_time)
         end_time=time.fromisoformat(row.end_time)
-        start=datetime.combine(day,start_time,tzinfo=tzinfo)
-        end=datetime.combine(day,end_time,tzinfo=tzinfo)
+        start=datetime.combine(shift_day,start_time,tzinfo=tzinfo)
+        end=datetime.combine(shift_day,end_time,tzinfo=tzinfo)
         if end<=start: end+=timedelta(days=1)
-        windows.append((start,end,row))
+        if start<day_end and end>day_start:
+            windows.append((start,end,row))
     return windows
 
 def align_to_shift(db: Session, workcenter_id: str, start_at: datetime, duration_minutes: float) -> tuple[datetime,datetime]:
