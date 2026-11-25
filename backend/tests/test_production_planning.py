@@ -152,6 +152,12 @@ def test_auto_costing_uses_material_machine_labor_and_overhead_rates():
     assert cost.overhead_cost==20
     assert cost.total_cost==210
     assert cost.unit_cost==26.25
+    from app.api.routes.manufacturing import update_production_quality
+    from app import schemas
+    updated=update_production_quality(entry.id,schemas.ProductionQualityIn(status="Accepted",accepted_qty=4,rejected_qty=6,remarks="re-inspected"),db,user)
+    recalc=db.query(models.ProductionCost).filter_by(production_entry_id=entry.id).one()
+    assert updated.accepted_qty==4
+    assert recalc.unit_cost==52.5
     db.close()
 
 def test_overnight_shift_covers_early_morning_after_midnight():
