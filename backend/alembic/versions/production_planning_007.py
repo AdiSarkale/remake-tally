@@ -63,6 +63,8 @@ def upgrade() -> None:
     op.create_index("ix_machine_resources_workcenter", "machine_resources", ["workcenter_id"])
     op.create_index("ix_machine_resources_status", "machine_resources", ["status"])
     op.create_index("ix_machine_resources_active", "machine_resources", ["active"])
+    op.add_column("production_operation_schedules", sa.Column("machine_id", sa.String(36), sa.ForeignKey("machine_resources.id"), nullable=True))
+    op.create_index("ix_production_operation_schedules_machine", "production_operation_schedules", ["machine_id"])
 
     op.create_table(
         "machine_downtime",
@@ -114,6 +116,9 @@ def downgrade() -> None:
     op.drop_table("production_wip_stock")
     op.drop_table("production_costs")
     op.drop_table("machine_downtime")
+    op.drop_table("machine_downtime")
+    op.drop_index("ix_production_operation_schedules_machine", table_name="production_operation_schedules")
+    op.drop_column("production_operation_schedules", "machine_id")
     op.drop_table("machine_resources")
     op.drop_table("production_operation_schedules")
     op.drop_table("production_material_reservations")
