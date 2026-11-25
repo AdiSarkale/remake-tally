@@ -133,14 +133,14 @@ def reschedule_operation(operation_row_id:str,payload:RescheduleIn,db:Session=De
         if downtime: raise HTTPException(409,"Machine downtime overlaps requested schedule")
         machine_overlap=db.query(models.OperationSchedule).filter(models.OperationSchedule.machine_id==machine.id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required","completed"}),models.OperationSchedule.planned_start<payload.planned_end,models.OperationSchedule.planned_end>payload.planned_start).first()
         if machine_overlap: raise HTTPException(409,"Machine schedule overlap")
-    overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.workcenter_id==wc.id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required"}),models.OperationSchedule.planned_start<payload.planned_end,models.OperationSchedule.planned_end>payload.planned_start).all()
+    overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.workcenter_id==wc.id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required","completed"}),models.OperationSchedule.planned_start<payload.planned_end,models.OperationSchedule.planned_end>payload.planned_start).all()
     if overlaps: raise HTTPException(409,"Workcenter schedule overlap")
     emp_id=payload.employee_id if payload.employee_id is not None else row.assigned_employee_id
     if emp_id:
         emp=db.get(models.Employee,emp_id)
         if not emp or not emp.active: raise HTTPException(400,"Employee inactive or missing")
         if operation.required_skill and not db.query(models.EmployeeSkill).filter_by(employee_id=emp.id,skill=operation.required_skill,active=True).first(): raise HTTPException(400,"Employee lacks required skill")
-        emp_overlap=db.query(models.OperationSchedule).filter(models.OperationSchedule.employee_id==emp_id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required"}),models.OperationSchedule.planned_start<payload.planned_end,models.OperationSchedule.planned_end>payload.planned_start).first()
+        emp_overlap=db.query(models.OperationSchedule).filter(models.OperationSchedule.employee_id==emp_id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required","completed"}),models.OperationSchedule.planned_start<payload.planned_end,models.OperationSchedule.planned_end>payload.planned_start).first()
         if emp_overlap: raise HTTPException(409,"Employee schedule overlap")
     sched=db.query(models.OperationSchedule).filter_by(operation_row_id=row.id).first()
     if not sched:
@@ -209,7 +209,7 @@ def create_downtime(payload:DowntimeIn,db:Session=Depends(get_db),user:models.Us
     if not machine: raise HTTPException(404,"Machine not found")
     row=models.MachineDowntime(**payload.model_dump(),created_by=user.username)
     db.add(row)
-    affected_query=db.query(models.OperationSchedule).filter(models.OperationSchedule.machine_id==machine.id,models.OperationSchedule.status.in_({"scheduled","completed"}),models.OperationSchedule.planned_end>payload.start_at)
+    affected_query=db.query(models.OperationSchedule).filter(models.OperationSchedule.machine_id==machine.id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.planned_end>payload.start_at)
     if payload.end_at:
         affected_query=affected_query.filter(models.OperationSchedule.planned_start<payload.end_at)
     affected=affected_query.all()
