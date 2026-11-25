@@ -195,6 +195,7 @@ def schedule_order(db: Session, order_id: str, start_at, username: str) -> dict:
 def calculate_production_cost(db: Session, entry: models.ProductionEntry) -> dict:
     material_cost=sum(cons.quantity*(db.get(models.RawMaterial,cons.material_id).cost if db.get(models.RawMaterial,cons.material_id) else 0) for cons in entry.consumption)
     schedule=None
+    operation_row=None
     if entry.production_order_id:
         query=db.query(models.ProductionOrderOperation).filter_by(production_order_id=entry.production_order_id)
         if entry.operation_id: query=query.filter_by(operation_id=entry.operation_id)
@@ -203,7 +204,9 @@ def calculate_production_cost(db: Session, entry: models.ProductionEntry) -> dic
     machine_cost=labor_cost=overhead_cost=0.0
     planned_minutes=0.0
     if schedule:
-        planned_minutes=schedule.duration_minutes or 0
+        full_schedule_minutes=schedule.duration_minutes or 0
+        allocation=min(entry.quantity/operation_row.planned_qty,1.0) if operation_row and operation_row.planned_qty>0 else 1.0
+        planned_minutes=full_schedule_minutes*allocation
         if schedule.machine_id:
             machine=db.get(models.MachineResource,schedule.machine_id)
             if machine: machine_cost=planned_minutes/60*(machine.hourly_rate or 0)
