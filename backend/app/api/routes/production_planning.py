@@ -28,7 +28,7 @@ class MachineIn(BaseModel):
     workcenter_id: str
     capacity_per_hour: float=Field(ge=0)
     hourly_rate: float=Field(ge=0)
-    status: str=Field(default="available",pattern="^(available|down|maintenance|disabled)$")
+    status: str=Field(default="available",pattern="(?i)^(available|down|maintenance|disabled)$")
     active: bool=True
     maintenance_due: date | None=None
 class DowntimeIn(BaseModel):
@@ -118,8 +118,8 @@ def reschedule_operation(operation_row_id:str,payload:RescheduleIn,db:Session=De
     if not row: raise HTTPException(404,"Production operation not found")
     previous=db.query(models.ProductionOrderOperation).filter(models.ProductionOrderOperation.production_order_id==row.production_order_id,models.ProductionOrderOperation.sequence<row.sequence).order_by(models.ProductionOrderOperation.sequence.desc()).first()
     following=db.query(models.ProductionOrderOperation).filter(models.ProductionOrderOperation.production_order_id==row.production_order_id,models.ProductionOrderOperation.sequence>row.sequence).order_by(models.ProductionOrderOperation.sequence.asc()).first()
-    prev_sched=db.query(models.OperationSchedule).filter_by(operation_row_id=previous.id,status="scheduled").first() if previous else None
-    next_sched=db.query(models.OperationSchedule).filter_by(operation_row_id=following.id,status="scheduled").first() if following else None
+    prev_sched=db.query(models.OperationSchedule).filter_by(operation_row_id=previous.id).filter(models.OperationSchedule.status.in_({"scheduled","completed"})).first() if previous else None
+    next_sched=db.query(models.OperationSchedule).filter_by(operation_row_id=following.id).filter(models.OperationSchedule.status.in_({"scheduled","completed"})).first() if following else None
     if prev_sched and payload.planned_start<prev_sched.planned_end: raise HTTPException(409,"Reschedule violates routing sequence: previous operation is not complete in schedule")
     if next_sched and payload.planned_end>next_sched.planned_start: raise HTTPException(409,"Reschedule violates routing sequence: next operation starts before this operation ends")
     wc=db.get(models.Workcenter,row.workcenter_id)
