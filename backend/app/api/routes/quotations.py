@@ -59,9 +59,9 @@ def next_quotation_no(
     return f"{prefix}{(max(numbers) + 1 if numbers else 1):04d}"
 
 
-# =========================================================
+# =
 # List quotations
-# =========================================================
+# =
 
 @router.get(
     "",
@@ -81,9 +81,9 @@ def list_quotations(
     )
 
 
-# =========================================================
+# =
 # Next quotation number
-# =========================================================
+# =
 
 @router.get("/next-number")
 def peek_next_quotation_number(
@@ -101,9 +101,9 @@ def peek_next_quotation_number(
     }
 
 
-# =========================================================
+# =
 # Get quotation
-# =========================================================
+# =
 
 @router.get(
     "/{quotation_id}",
@@ -128,9 +128,9 @@ def get_quotation(
     return quotation
 
 
-# =========================================================
+# =
 # Create quotation
-# =========================================================
+# =
 
 @router.post(
     "",
@@ -376,9 +376,9 @@ def create_quotation(
     return quotation
 
 
-# =========================================================
+# =
 # Update quotation status
-# =========================================================
+# =
 
 @router.patch(
     "/{quotation_id}/status",

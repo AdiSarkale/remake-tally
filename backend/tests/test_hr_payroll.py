@@ -9,7 +9,6 @@ from openpyxl import Workbook, load_workbook
 from pydantic import ValidationError
 
 from app.api.routes.hr_payroll import (
-    _missing_payroll_attendance,
     _attendance_template_workbook,
     _calculate_employee_monthly_payroll,
     _calendar_type,
@@ -24,6 +23,7 @@ def _employee():
         id="emp-1", emp_code="EMP-001", name="Test Employee",
         department="Production", joining_date=date(2000, 1, 1), end_date=None,
     )
+    return SimpleNamespace(id="emp-1", emp_code="EMP-001", name="Test Employee", department="Production")
 
 
 def _profile():
@@ -59,6 +59,12 @@ def test_absence_half_day_leave_and_overtime_affect_net_pay():
         SimpleNamespace(status="unpaid_leave", work_date=date(2026, 10, 5), overtime_minutes=0),
         SimpleNamespace(status="paid_leave", work_date=date(2026, 10, 6), overtime_minutes=0),
         SimpleNamespace(status="present", work_date=date(2026, 10, 7), overtime_minutes=120),
+
+        SimpleNamespace(status="absent", overtime_minutes=0),
+        SimpleNamespace(status="half_day", overtime_minutes=0),
+        SimpleNamespace(status="unpaid_leave", overtime_minutes=0),
+        SimpleNamespace(status="paid_leave", overtime_minutes=0),
+        SimpleNamespace(status="present", overtime_minutes=120),
     ]
     result = _calculate_employee_monthly_payroll(
         _employee(), _profile(), attendance, 2026, 10, "fixed_days", 30, [5, 6], {}
@@ -248,6 +254,7 @@ def test_attendance_excel_parser_reads_valid_rows_and_excel_times():
     assert rows[0]["overtime_minutes"] == 30
     assert rows[0]["punch_in"].date() == date(2026, 10, 5)
     assert rows[0]["punch_in"].hour == 3
+    assert rows[0]["punch_in"].hour == 8
     assert rows[0]["punch_out"].hour == 17
     assert rows[1]["status"] == "half_day"
     assert rows[1]["work_date"] == date(2026, 10, 6)
@@ -289,8 +296,6 @@ def test_attendance_excel_parser_rejects_header_changes():
             workbook, 2026, 10,
             {"EMP-001": SimpleNamespace(id="emp-1", emp_code="EMP-001", active=True)},
         )
-
-
 
 
 def test_payroll_readiness_requires_explicit_status_for_each_scheduled_workday():

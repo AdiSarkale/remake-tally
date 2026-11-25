@@ -961,7 +961,7 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
     assert salary.json()["annual_salary"] == 600000
     assert salary.json()["monthly_gross"] == 50000
 
-    # Every scheduled working day requires an explicit status before finalization.
+        # Every scheduled working day requires an explicit status before finalization.
     # The holiday remains excluded from attendance completeness.
     for day in range(1, 32):
         work_date = f"2026-10-{day:02d}"

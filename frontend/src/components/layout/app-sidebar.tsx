@@ -51,6 +51,8 @@ export function AppSidebar({
     item.area ? can(item.area) : item.anyArea ? item.anyArea.some((area) => can(area)) : true,
   );
 
+  const items = NAV.filter((item) => item.area ? can(item.area) : item.anyArea ? item.anyArea.some((area) => can(area)) : true);
+
   return (
     <aside
       aria-label="Main navigation"
