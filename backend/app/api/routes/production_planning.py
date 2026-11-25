@@ -7,7 +7,7 @@ from app import models
 from app.api.deps import require_area
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
-from app.services.production_planning import material_requirements, reserve_order_materials, mrp_net_requirements, schedule_order, select_machine_and_duration, align_to_shift, validate_shift_window, oee_metrics
+from app.services.production_planning import material_requirements, reserve_order_materials, mrp_net_requirements, schedule_order, select_machine_and_duration, align_to_shift, validate_shift_window, calculate_production_cost, oee_metrics
 
 router=APIRouter(prefix="/manufacturing/planning",tags=["production-planning"])
 guard=Depends(require_area("production"))
@@ -253,32 +253,9 @@ def record_cost(production_entry_id:str,payload:CostIn,db:Session=Depends(get_db
 def auto_cost(production_entry_id:str,db:Session=Depends(get_db),user:models.User=guard):
     entry=db.get(models.ProductionEntry,production_entry_id)
     if not entry: raise HTTPException(404,"Production entry not found")
-    material_cost=sum(cons.quantity*(db.get(models.RawMaterial,cons.material_id).cost if db.get(models.RawMaterial,cons.material_id) else 0) for cons in entry.consumption)
-    schedule=None
-    operation_row=None
-    if entry.production_order_id:
-        query=db.query(models.ProductionOrderOperation).filter_by(production_order_id=entry.production_order_id)
-        if entry.operation_id: query=query.filter_by(operation_id=entry.operation_id)
-        operation_row=query.order_by(models.ProductionOrderOperation.sequence).first()
-        if operation_row: schedule=db.query(models.OperationSchedule).filter_by(operation_row_id=operation_row.id).first()
-    machine_cost=0.0
-    labor_cost=0.0
-    overhead_cost=0.0
-    planned_minutes=0.0
-    if schedule:
-        planned_minutes=schedule.duration_minutes or 0
-        if schedule.machine_id:
-            machine=db.get(models.MachineResource,schedule.machine_id)
-            if machine: machine_cost=planned_minutes/60*(machine.hourly_rate or 0)
-        wc=db.get(models.Workcenter,schedule.workcenter_id)
-        if wc:
-            labor_cost=planned_minutes/60*(wc.labor_hourly_rate or 0)
-            overhead_cost=planned_minutes/60*(wc.overhead_hourly_rate or 0)
-    total=round(material_cost+machine_cost+labor_cost+overhead_cost,4)
-    accepted=entry.accepted_qty or 0
-    unit=round(total/accepted,4) if accepted>0 else 0
+    data=calculate_production_cost(db,entry)
+    planned_minutes=data.pop("planned_minutes")
     row=db.query(models.ProductionCost).filter_by(production_entry_id=entry.id).first()
-    data={"material_cost":round(material_cost,4),"labor_cost":round(labor_cost,4),"machine_cost":round(machine_cost,4),"overhead_cost":round(overhead_cost,4),"total_cost":total,"accepted_quantity":accepted,"unit_cost":unit,"currency":"INR","notes":"Automatically calculated from recorded material consumption and planned operation schedule; labour and overhead use configured workcentre hourly rates."}
     if row:
         for key,value in data.items(): setattr(row,key,value)
     else:
