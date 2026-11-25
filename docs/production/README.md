@@ -26,12 +26,14 @@ This implementation builds on the current production baseline in `main`.
 
 ## Phase 3 — Advanced Manufacturing
 - WIP / semi-finished tracking
-- Machine/resource master and rates\n- Machine-linked operation schedules and downtime-aware resource selection\n- Downtime invalidates affected schedules for explicit rescheduling\n- Machine-schedule availability analytics
+- Machine/resource master and rates
+- Machine-linked operation schedules and downtime-aware resource selection
+- Downtime invalidates affected schedules for explicit rescheduling
+- Machine-schedule availability analytics
 - Downtime records and maintenance state
 - Production costing
 - Yield and quality metrics
-- Analytics: plan-vs-actual, capacity load, employee productivity, material variance, yield, cost, machine availability\n- Analytics
-
+- Analytics: plan-vs-actual, capacity load, employee productivity, material variance, yield, cost, machine availability
 ## Constraints
 - Backend only: frontend is intentionally unchanged.
 - All API access remains tenant-scoped via the existing tenant DB dependency.
