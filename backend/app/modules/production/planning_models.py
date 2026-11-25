@@ -79,3 +79,30 @@ class WIPStock(Base):
     unit_cost: Mapped[float] = mapped_column(Float, default=0)
     status: Mapped[str] = mapped_column(String(24), default="available", index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class WIPMovement(Base):
+    __tablename__ = "production_wip_movements"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    wip_stock_id: Mapped[str] = mapped_column(ForeignKey("production_wip_stock.id", ondelete="CASCADE"), index=True)
+    production_order_id: Mapped[str | None] = mapped_column(ForeignKey("production_orders.id", ondelete="SET NULL"), nullable=True, index=True)
+    movement_type: Mapped[str] = mapped_column(String(24), index=True)
+    quantity: Mapped[float] = mapped_column(Float)
+    balance_after: Mapped[float] = mapped_column(Float)
+    unit_cost: Mapped[float] = mapped_column(Float, default=0)
+    reference: Mapped[str] = mapped_column(String(120), default="")
+    reason: Mapped[str] = mapped_column(Text, default="")
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+class WorkcenterShift(Base):
+    __tablename__ = "workcenter_shifts"
+    __table_args__ = (UniqueConstraint("workcenter_id", "weekday", "shift_code", name="uq_workcenter_shift_day_code"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    workcenter_id: Mapped[str] = mapped_column(ForeignKey("workcenters.id", ondelete="CASCADE"), index=True)
+    weekday: Mapped[int] = mapped_column(Integer)  # 0=Monday ... 6=Sunday
+    shift_code: Mapped[str] = mapped_column(String(16), default="A")
+    start_time: Mapped[str] = mapped_column(String(5))
+    end_time: Mapped[str] = mapped_column(String(5))
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
