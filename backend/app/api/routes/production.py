@@ -338,6 +338,10 @@ def create_production(
     if order_op:
         order_op.completed_qty += payload.quantity
         order_op.status = "Completed" if order_op.completed_qty >= order_op.planned_qty else "In Progress"
+        if order_op.status == "Completed":
+            scheduled_row = db.query(models.OperationSchedule).filter_by(operation_row_id=order_op.id).first()
+            if scheduled_row and scheduled_row.status in {"scheduled", "reschedule_required"}:
+                scheduled_row.status = "completed"
         order = db.get(models.ProductionOrder, payload.production_order_id)
         if order:
             ops = db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).all()
