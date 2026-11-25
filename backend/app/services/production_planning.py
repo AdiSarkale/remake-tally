@@ -163,7 +163,7 @@ def oee_metrics(db: Session) -> dict:
         operations=db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).order_by(models.ProductionOrderOperation.sequence).all()
         order_rows.append({"order_id":order.id,"order_no":order.order_no,"status":order.status,"planned_qty":order.quantity,"completed_qty":sum(o.completed_qty for o in operations)/len(operations) if operations else 0,"operations":[{"sequence":o.sequence,"planned_qty":o.planned_qty,"completed_qty":o.completed_qty,"status":o.status} for o in operations]})
     wc_rows=[]
-    schedules=db.query(models.OperationSchedule).filter_by(status="scheduled").all()
+    schedules=db.query(models.OperationSchedule).filter(models.OperationSchedule.status.in_({"scheduled","completed"})).all()
     for wc in db.query(models.Workcenter).all():
         wc_schedules=[s for s in schedules if s.workcenter_id==wc.id]
         planned_qty=sum(db.get(models.ProductionOrderOperation,s.operation_row_id).planned_qty for s in wc_schedules if db.get(models.ProductionOrderOperation,s.operation_row_id))
@@ -179,12 +179,22 @@ def oee_metrics(db: Session) -> dict:
             item["produced_qty"]+=e.quantity;item["production_entries"]+=1
     material_planned=sum(c.planned_quantity for e in entries for c in e.consumption)
     material_actual=sum(c.quantity for e in entries for c in e.consumption)
+    machine_schedules=[s for s in schedules if s.machine_id]
+    scheduled_machine_minutes=sum(s.duration_minutes for s in machine_schedules)
+    downtime_overlap=0.0
+    for schedule in machine_schedules:
+        records=db.query(models.MachineDowntime).filter(models.MachineDowntime.machine_id==schedule.machine_id,models.MachineDowntime.start_at<schedule.planned_end,((models.MachineDowntime.end_at.is_(None))|(models.MachineDowntime.end_at>schedule.planned_start))).all()
+        for record in records:
+            overlap_start=max(schedule.planned_start,record.start_at)
+            overlap_end=min(schedule.planned_end,record.end_at or schedule.planned_end)
+            downtime_overlap+=max(0,(overlap_end-overlap_start).total_seconds()/60)
+    availability=max(0,1-downtime_overlap/scheduled_machine_minutes) if scheduled_machine_minutes else None
     return {
       "production_quantity":produced,"accepted_quantity":accepted,"rejected_quantity":rejected,"scrap_quantity":scrap,
       "yield_ratio":accepted/produced if produced else None,"rejection_ratio":rejected/produced if produced else None,
       "scrap_ratio":scrap/produced if produced else None,
       "plan_vs_actual_by_order":order_rows,"workcenter_capacity_load":wc_rows,"employee_productivity":list(employees.values()),
       "planned_material_quantity":material_planned,"actual_material_quantity":material_actual,"material_variance":round(material_actual-material_planned,6),
-      "total_cost":total_cost,"costed_batches":len(costs),"availability_ratio":None,"performance_ratio":None,"oee_ratio":None,
-      "note":"Availability, performance, and OEE are intentionally not calculated yet: machine-specific schedules and target cycle-time data are not linked. Capacity load is a planning indicator, not OEE."
+      "total_cost":total_cost,"costed_batches":len(costs),"availability_ratio":availability,"performance_ratio":None,"oee_ratio":None,
+      "note":"Machine-linked scheduled availability is calculated where schedules and downtime records exist. Performance and full OEE are not reported until target cycle-time data is available."
     }
