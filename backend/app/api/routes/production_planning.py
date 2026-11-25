@@ -50,6 +50,40 @@ class WIPIn(BaseModel):
     unit_cost: float=Field(ge=0)
     status: str="available"
 
+
+@router.patch("/orders/{order_id}/status")
+def update_order_status(order_id:str,payload:OrderStatusIn,db:Session=Depends(get_db),user:models.User=guard):
+    order=db.get(models.ProductionOrder,order_id)
+    if not order: raise HTTPException(404,"Production order not found")
+    current=order.status; target=payload.status
+    allowed={
+      "Planned":{"Materials Pending","Ready","Cancelled"},
+      "Materials Pending":{"Ready","Cancelled"},
+      "Ready":{"Scheduled","In Progress","Cancelled"},
+      "Scheduled":{"In Progress","Cancelled"},
+      "In Progress":{"Completed"},
+      "Completed":set(),"Cancelled":set()
+    }
+    if target==current: return {"order_id":order.id,"status":order.status}
+    if target not in allowed.get(current,set()): raise HTTPException(409,f"Invalid production-order status transition {current} -> {target}")
+    if target=="Ready":
+        rows=material_requirements(db,order.id)
+        reservations=db.query(models.MaterialReservation).filter_by(production_order_id=order.id,status="active").all()
+        totals={}
+        for r in reservations: totals[r.material_id]=totals.get(r.material_id,0)+r.reserved_quantity
+        missing=[m["material_name"] for m in rows if totals.get(m["material_id"],0)<m["required_quantity"]]
+        if missing: raise HTTPException(409,"Materials not fully reserved: "+", ".join(missing))
+    if target=="Completed":
+        operations=db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).all()
+        if not operations or any(x.completed_qty<x.planned_qty for x in operations): raise HTTPException(409,"All production operations must be completed before closing the order")
+    if target=="Cancelled":
+        db.query(models.MaterialReservation).filter_by(production_order_id=order.id,status="active").update({"status":"released"},synchronize_session=False)
+        db.query(models.OperationSchedule).filter(models.OperationSchedule.operation_row_id.in_([x.id for x in db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).all()])).update({"status":"cancelled"},synchronize_session=False)
+    order.status=target
+    log_audit(db,user.username,"STATUS","production_order",f"{order.order_no}: {current} -> {target}")
+    db.commit()
+    return {"order_id":order.id,"order_no":order.order_no,"status":order.status}
+
 @router.get("/orders/{order_id}/requirements")
 def order_requirements(order_id:str,db:Session=Depends(get_db),user:models.User=guard):
     return {"production_order_id":order_id,"materials":material_requirements(db,order_id)}
