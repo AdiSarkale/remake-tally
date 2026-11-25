@@ -90,6 +90,27 @@ def mrp_net_requirements(db: Session) -> list[dict]:
         output.append({"material_id":m.id,"material_code":m.code,"material_name":m.name,"unit":m.unit,"gross_demand":round(gross,6),"safety_stock":safety,"physical_stock":m.stock,"reserved":reserved,"open_purchase_order_supply":round(open_po,6),"net_available_supply":round(net_available,6),"reserved_supply_informational":round(reserved,6),"net_requirement":shortage,"demand_orders":order_refs[material_id],"open_purchase_orders":receipts})
     return sorted(output,key=lambda x:x["material_code"])
 
+def select_machine_and_duration(db: Session, wc: models.Workcenter, row: models.ProductionOrderOperation, op: models.RoutingOperation, start_at, requested_machine_id: str | None = None) -> tuple[models.MachineResource | None,float]:
+    machines=db.query(models.MachineResource).filter_by(workcenter_id=wc.id,active=True).order_by(models.MachineResource.code).all()
+    base_duration=op.setup_minutes+(op.run_minutes_per_unit*row.planned_qty)
+    if not machines:
+        if requested_machine_id: raise HTTPException(409,"No machine resources are registered for this workcenter")
+        return None,max(base_duration,op.setup_minutes+(row.planned_qty*60/wc.capacity_per_hour))
+    if requested_machine_id:
+        machines=[m for m in machines if m.id==requested_machine_id]
+        if not machines: raise HTTPException(400,"Requested machine is not active for this workcenter")
+    for machine in machines:
+        if str(machine.status).lower() not in {"available"}: continue
+        capacity=machine.capacity_per_hour or wc.capacity_per_hour
+        duration=max(base_duration,op.setup_minutes+(row.planned_qty*60/capacity)) if capacity>0 else base_duration
+        end_at=start_at+timedelta(minutes=duration)
+        downtime=db.query(models.MachineDowntime).filter(models.MachineDowntime.machine_id==machine.id,models.MachineDowntime.start_at<end_at,((models.MachineDowntime.end_at.is_(None))|(models.MachineDowntime.end_at>start_at))).first()
+        if downtime: continue
+        conflicts=db.query(models.OperationSchedule).filter(models.OperationSchedule.machine_id==machine.id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required"}),models.OperationSchedule.planned_start<end_at,models.OperationSchedule.planned_end>start_at).first()
+        if conflicts: continue
+        return machine,duration
+    raise HTTPException(409,"No available machine has capacity for the requested schedule window")
+
 def schedule_order(db: Session, order_id: str, start_at, username: str) -> dict:
     order=db.get(models.ProductionOrder,order_id)
     if not order: raise HTTPException(404,"Production order not found")
@@ -103,11 +124,9 @@ def schedule_order(db: Session, order_id: str, start_at, username: str) -> dict:
             raise HTTPException(409,f"Workcenter unavailable for operation {row.sequence}")
         if wc.capacity_per_hour<=0:
             raise HTTPException(409,f"Workcenter {wc.code} has no positive capacity rate")
-        duration=op.setup_minutes+(op.run_minutes_per_unit*row.planned_qty)
-        capacity_duration=row.planned_qty*60/wc.capacity_per_hour
-        duration=max(duration,op.setup_minutes+capacity_duration)
+        machine,duration=select_machine_and_duration(db,wc,row,op,cursor)
         end=cursor+timedelta(minutes=duration)
-        overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.workcenter_id==wc.id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.planned_start<end,models.OperationSchedule.planned_end>cursor).all()
+        overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.workcenter_id==wc.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required"}),models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.planned_start<end,models.OperationSchedule.planned_end>cursor).all()
         if overlaps: raise HTTPException(409,f"Workcenter {wc.code} has overlapping schedule")
         employee_id=row.assigned_employee_id
         if employee_id:
@@ -115,16 +134,16 @@ def schedule_order(db: Session, order_id: str, start_at, username: str) -> dict:
             if not emp or not emp.active: raise HTTPException(409,"Assigned employee is inactive")
             if op.required_skill and not db.query(models.EmployeeSkill).filter_by(employee_id=emp.id,skill=op.required_skill,active=True).first():
                 raise HTTPException(409,f"Assigned employee lacks required skill: {op.required_skill}")
-            employee_overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.employee_id==employee_id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.planned_start<end,models.OperationSchedule.planned_end>cursor).all()
+            employee_overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.employee_id==employee_id,models.OperationSchedule.status.in_({"scheduled","reschedule_required"}),models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.planned_start<end,models.OperationSchedule.planned_end>cursor).all()
             if employee_overlaps: raise HTTPException(409,"Assigned employee has schedule overlap")
         existing=db.query(models.OperationSchedule).filter_by(operation_row_id=row.id).first()
         if existing:
-            existing.workcenter_id=wc.id; existing.employee_id=employee_id; existing.planned_start=cursor; existing.planned_end=end; existing.duration_minutes=duration; existing.status="scheduled"; existing.reschedule_reason="Auto-scheduled order"
+            existing.workcenter_id=wc.id; existing.machine_id=machine.id if machine else None; existing.employee_id=employee_id; existing.planned_start=cursor; existing.planned_end=end; existing.duration_minutes=duration; existing.status="scheduled"; existing.reschedule_reason="Auto-scheduled order"
         else:
-            existing=models.OperationSchedule(operation_row_id=row.id,workcenter_id=wc.id,employee_id=employee_id,planned_start=cursor,planned_end=end,duration_minutes=duration,status="scheduled",reschedule_reason="Auto-scheduled order")
+            existing=models.OperationSchedule(operation_row_id=row.id,workcenter_id=wc.id,machine_id=machine.id if machine else None,employee_id=employee_id,planned_start=cursor,planned_end=end,duration_minutes=duration,status="scheduled",reschedule_reason="Auto-scheduled order")
             db.add(existing)
         row.status="Scheduled"
-        scheduled.append({"operation_row_id":row.id,"sequence":row.sequence,"workcenter_id":wc.id,"employee_id":employee_id,"planned_start":cursor.isoformat(),"planned_end":end.isoformat(),"duration_minutes":round(duration,2)})
+        scheduled.append({"operation_row_id":row.id,"sequence":row.sequence,"workcenter_id":wc.id,"machine_id":machine.id if machine else None,"employee_id":employee_id,"planned_start":cursor.isoformat(),"planned_end":end.isoformat(),"duration_minutes":round(duration,2)})
         cursor=end
     order.status="Scheduled"
     db.flush()
