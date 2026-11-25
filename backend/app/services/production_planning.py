@@ -74,7 +74,7 @@ def mrp_net_requirements(db: Session) -> list[dict]:
         receipts=[]
         for po in db.query(models.PurchaseOrder).all():
             status=getattr(po.status,"value",str(po.status))
-            if status not in {"draft","sent","partially_received"}: continue
+            if status not in {"sent","partially_received"}: continue
             for line in po.lines:
                 if line.material_id==material_id:
                     remaining=max(0,line.quantity-(line.received_quantity or 0))
