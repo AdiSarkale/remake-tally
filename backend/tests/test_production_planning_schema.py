@@ -17,7 +17,8 @@ def test_production_planning_api_routes_are_registered():
     assert "/api/v1/manufacturing/planning/mrp/net-requirements" in paths
     assert "/api/v1/manufacturing/planning/orders/{order_id}/reservations" in paths
     assert "/api/v1/manufacturing/planning/orders/{order_id}/schedule" in paths
-    assert "/api/v1/manufacturing/planning/analytics" in paths\n    assert "/api/v1/manufacturing/planning/downtime/{downtime_id}/close" in paths
+    assert "/api/v1/manufacturing/planning/analytics" in paths
+    assert "/api/v1/manufacturing/planning/downtime/{downtime_id}/close" in paths
 
 def test_production_planning_migration_is_single_latest_head():
     config=Config(str(Path(__file__).resolve().parents[1]/"alembic.ini"))
