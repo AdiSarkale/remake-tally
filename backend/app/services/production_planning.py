@@ -41,6 +41,9 @@ def reserve_order_materials(db: Session, order_id: str) -> dict:
     order=db.get(models.ProductionOrder,order_id)
     if not order: raise HTTPException(404,"Production order not found")
     requirements=material_requirements(db,order_id)
+    # Lock material rows in stable order so concurrent orders cannot over-reserve.
+    for item in sorted(requirements,key=lambda x:x["material_id"]):
+        db.query(models.RawMaterial).filter_by(id=item["material_id"]).with_for_update().one()
     # Replace this order's active reservation set; never touch RawMaterial.stock.
     db.query(models.MaterialReservation).filter_by(production_order_id=order.id,status="active").update({"status":"released"},synchronize_session=False)
     results=[]
@@ -101,7 +104,8 @@ def schedule_order(db: Session, order_id: str, start_at, username: str) -> dict:
         if wc.capacity_per_hour<=0:
             raise HTTPException(409,f"Workcenter {wc.code} has no positive capacity rate")
         duration=op.setup_minutes+(op.run_minutes_per_unit*row.planned_qty)
-        if duration<=0: duration=max(1,row.planned_qty*60/wc.capacity_per_hour)
+        capacity_duration=row.planned_qty*60/wc.capacity_per_hour
+        duration=max(duration,op.setup_minutes+capacity_duration))
         end=cursor+timedelta(minutes=duration)
         overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.workcenter_id==wc.id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.planned_start<end,models.OperationSchedule.planned_end>cursor).all()
         if overlaps: raise HTTPException(409,f"Workcenter {wc.code} has overlapping schedule")
