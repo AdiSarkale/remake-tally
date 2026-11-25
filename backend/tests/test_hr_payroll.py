@@ -60,11 +60,6 @@ def test_absence_half_day_leave_and_overtime_affect_net_pay():
         SimpleNamespace(status="paid_leave", work_date=date(2026, 10, 6), overtime_minutes=0),
         SimpleNamespace(status="present", work_date=date(2026, 10, 7), overtime_minutes=120),
 
-        SimpleNamespace(status="absent", overtime_minutes=0),
-        SimpleNamespace(status="half_day", overtime_minutes=0),
-        SimpleNamespace(status="unpaid_leave", overtime_minutes=0),
-        SimpleNamespace(status="paid_leave", overtime_minutes=0),
-        SimpleNamespace(status="present", overtime_minutes=120),
     ]
     result = _calculate_employee_monthly_payroll(
         _employee(), _profile(), attendance, 2026, 10, "fixed_days", 30, [5, 6], {}
@@ -254,7 +249,6 @@ def test_attendance_excel_parser_reads_valid_rows_and_excel_times():
     assert rows[0]["overtime_minutes"] == 30
     assert rows[0]["punch_in"].date() == date(2026, 10, 5)
     assert rows[0]["punch_in"].hour == 3
-    assert rows[0]["punch_in"].hour == 8
     assert rows[0]["punch_out"].hour == 17
     assert rows[1]["status"] == "half_day"
     assert rows[1]["work_date"] == date(2026, 10, 6)
@@ -387,6 +381,7 @@ def test_unknown_joining_date_is_reported_and_full_month_attendance_is_required(
     from sqlalchemy.orm import Session
 
     from app import models
+    from app.api.routes.hr_payroll import _missing_payroll_attendance
 
     engine = create_engine("sqlite:///:memory:")
     models.Base.metadata.create_all(engine)
