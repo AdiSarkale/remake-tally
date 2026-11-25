@@ -1116,3 +1116,31 @@ def test_employee_api_reads_and_mutations_are_tenant_scoped(isolated_tenants):
         json={"active": False},
     )
     assert cross_tenant_deactivation.status_code == 404
+
+def test_production_planning_routes_are_tenant_scoped(isolated_tenants):
+    client = isolated_tenants["client"]
+    sessions = isolated_tenants["sessions"]
+    a = _login(client, "AA")
+    b = _login(client, "BB")
+    a_headers = {"Authorization": f"Bearer {a['access_token']}"}
+    b_headers = {"Authorization": f"Bearer {b['access_token']}"}
+
+    SessionA, SessionB = sessions
+    db = SessionA()
+    product = db.get(models.Product, "product-a")
+    material = db.get(models.RawMaterial, "material-a")
+    bom = models.BillOfMaterials(product_id=product.id, version=1, active=True, expected_scrap_percent=0)
+    db.add(bom)
+    db.flush()
+    db.add(models.BomLine(bom_id=bom.id, material_id=material.id, quantity=2))
+    order = models.ProductionOrder(order_no="PO-TENANT-A", order_date=__import__("datetime").date(2026, 11, 25), product_id=product.id, quantity=3, due_date=None, routing_id=None, status="Planned", remarks="")
+    db.add(order)
+    db.commit()
+    order_id = order.id
+    db.close()
+
+    a_response = client.get(f"/api/v1/manufacturing/planning/orders/{order_id}/requirements", headers=a_headers)
+    b_response = client.get(f"/api/v1/manufacturing/planning/orders/{order_id}/requirements", headers=b_headers)
+    assert a_response.status_code == 200, a_response.text
+    assert a_response.json()["materials"][0]["material_code"] == "RM-a"
+    assert b_response.status_code == 404
