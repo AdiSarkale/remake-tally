@@ -1,7 +1,7 @@
 """Production planning calculations. Reservations are planning records, not stock movements."""
 from __future__ import annotations
 from collections import defaultdict
-from datetime import timedelta
+from datetime import date, datetime, time, timedelta
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app import models
@@ -90,6 +90,38 @@ def mrp_net_requirements(db: Session) -> list[dict]:
         output.append({"material_id":m.id,"material_code":m.code,"material_name":m.name,"unit":m.unit,"gross_demand":round(gross,6),"safety_stock":safety,"physical_stock":m.stock,"reserved":reserved,"open_purchase_order_supply":round(open_po,6),"net_available_supply":round(net_available,6),"reserved_supply_informational":round(reserved,6),"net_requirement":shortage,"demand_orders":order_refs[material_id],"open_purchase_orders":receipts})
     return sorted(output,key=lambda x:x["material_code"])
 
+
+def shift_windows_for_date(db: Session, workcenter_id: str, day: date, tzinfo):
+    rows=db.query(models.WorkcenterShift).filter_by(workcenter_id=workcenter_id,weekday=day.weekday(),active=True).order_by(models.WorkcenterShift.start_time).all()
+    windows=[]
+    for row in rows:
+        start_time=time.fromisoformat(row.start_time)
+        end_time=time.fromisoformat(row.end_time)
+        start=datetime.combine(day,start_time,tzinfo=tzinfo)
+        end=datetime.combine(day,end_time,tzinfo=tzinfo)
+        if end<=start: end+=timedelta(days=1)
+        windows.append((start,end,row))
+    return windows
+
+def align_to_shift(db: Session, workcenter_id: str, start_at: datetime, duration_minutes: float) -> tuple[datetime,datetime]:
+    configured=db.query(models.WorkcenterShift).filter_by(workcenter_id=workcenter_id,active=True).count()
+    if configured==0:
+        return start_at,start_at+timedelta(minutes=duration_minutes)
+    day=start_at.date()
+    for offset in range(0,31):
+        current_day=day+timedelta(days=offset)
+        for shift_start,shift_end,row in shift_windows_for_date(db,workcenter_id,current_day,start_at.tzinfo):
+            candidate=max(start_at,shift_start)
+            end=candidate+timedelta(minutes=duration_minutes)
+            if candidate<shift_end and end<=shift_end:
+                return candidate,end
+    raise HTTPException(409,"No configured workcenter shift can fit this operation within the next 30 days")
+
+def validate_shift_window(db: Session, workcenter_id: str, start_at: datetime, end_at: datetime) -> bool:
+    configured=db.query(models.WorkcenterShift).filter_by(workcenter_id=workcenter_id,active=True).count()
+    if configured==0: return True
+    return any(start_at>=a and end_at<=b for a,b,_ in shift_windows_for_date(db,workcenter_id,start_at.date(),start_at.tzinfo))
+
 def select_machine_and_duration(db: Session, wc: models.Workcenter, row: models.ProductionOrderOperation, op: models.RoutingOperation, start_at, requested_machine_id: str | None = None) -> tuple[models.MachineResource | None,float]:
     machines=db.query(models.MachineResource).filter_by(workcenter_id=wc.id,active=True).order_by(models.MachineResource.code).all()
     base_duration=op.setup_minutes+(op.run_minutes_per_unit*row.planned_qty)
@@ -125,7 +157,7 @@ def schedule_order(db: Session, order_id: str, start_at, username: str) -> dict:
         if wc.capacity_per_hour<=0:
             raise HTTPException(409,f"Workcenter {wc.code} has no positive capacity rate")
         machine,duration=select_machine_and_duration(db,wc,row,op,cursor)
-        end=cursor+timedelta(minutes=duration)
+        cursor,end=align_to_shift(db,wc.id,cursor,duration)
         overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.workcenter_id==wc.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required","completed"}),models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.planned_start<end,models.OperationSchedule.planned_end>cursor).all()
         if overlaps: raise HTTPException(409,f"Workcenter {wc.code} has overlapping schedule")
         employee_id=row.assigned_employee_id
