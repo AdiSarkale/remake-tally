@@ -209,7 +209,10 @@ def create_downtime(payload:DowntimeIn,db:Session=Depends(get_db),user:models.Us
     if not machine: raise HTTPException(404,"Machine not found")
     row=models.MachineDowntime(**payload.model_dump(),created_by=user.username)
     db.add(row)
-    affected=db.query(models.OperationSchedule).filter(models.OperationSchedule.machine_id==machine.id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.planned_start<payload.end_at if payload.end_at else models.OperationSchedule.planned_start<datetime.max,models.OperationSchedule.planned_end>payload.start_at).all()
+    affected_query=db.query(models.OperationSchedule).filter(models.OperationSchedule.machine_id==machine.id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.planned_end>payload.start_at)
+    if payload.end_at:
+        affected_query=affected_query.filter(models.OperationSchedule.planned_start<payload.end_at)
+    affected=affected_query.all()
     for schedule in affected:
         schedule.status="reschedule_required"
     machine.status="maintenance" if payload.maintenance and payload.end_at is None else ("down" if payload.end_at is None else machine.status)
