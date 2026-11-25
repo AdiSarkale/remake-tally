@@ -1,5 +1,5 @@
 """Backend-only production planning and advanced manufacturing APIs; Smart PR generation is intentionally excluded."""
-from datetime import datetime
+from datetime import date, datetime
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -27,7 +27,7 @@ class MachineIn(BaseModel):
     hourly_rate: float=Field(ge=0)
     status: str="available"
     active: bool=True
-    maintenance_due: datetime | None=None
+    maintenance_due: date | None=None
 class DowntimeIn(BaseModel):
     machine_id: str
     start_at: datetime
@@ -110,7 +110,7 @@ def create_machine(payload:MachineIn,db:Session=Depends(get_db),user:models.User
     if not db.get(models.Workcenter,payload.workcenter_id): raise HTTPException(404,"Workcenter not found")
     data=payload.model_dump()
     data.pop("maintenance_due",None)
-    machine=models.MachineResource(**data,maintenance_due=payload.maintenance_due.date() if payload.maintenance_due else None)
+    machine=models.MachineResource(**data,maintenance_due=payload.maintenance_due)
     db.add(machine);log_audit(db,user.username,"CREATE","machine",payload.code);db.commit();db.refresh(machine);return machine
 
 @router.patch("/machines/{machine_id}")
@@ -120,7 +120,7 @@ def update_machine(machine_id:str,payload:MachineIn,db:Session=Depends(get_db),u
     if machine.code!=payload.code and db.query(models.MachineResource).filter_by(code=payload.code).first(): raise HTTPException(409,"Machine code exists")
     if not db.get(models.Workcenter,payload.workcenter_id): raise HTTPException(404,"Workcenter not found")
     for k in ("code","name","workcenter_id","capacity_per_hour","hourly_rate","status","active"): setattr(machine,k,getattr(payload,k))
-    machine.maintenance_due=payload.maintenance_due.date() if payload.maintenance_due else None
+    machine.maintenance_due=payload.maintenance_due
     log_audit(db,user.username,"UPDATE","machine",machine.code);db.commit();return machine
 
 @router.get("/downtime")
