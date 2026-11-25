@@ -87,3 +87,68 @@ def test_machine_linked_schedule_is_blocked_by_downtime():
         schedule_order(db,order.id,start,"tester")
     assert exc.value.status_code==409
     db.close()
+
+def test_shift_calendar_aligns_scheduling_start_and_rejects_unfittable_operation():
+    from datetime import datetime, timezone
+    import pytest
+    from fastapi import HTTPException
+    from app.services.production_planning import align_to_shift
+    db=make_db()
+    wc=models.Workcenter(code="WC-SHIFT",name="Shift WC",capacity_per_hour=60,status="Available",active=True)
+    db.add(wc);db.flush()
+    db.add(models.WorkcenterShift(workcenter_id=wc.id,weekday=2,shift_code="A",start_time="09:00",end_time="11:00",active=True))
+    db.flush()
+    start=datetime(2026,11,25,8,0,tzinfo=timezone.utc) # Wednesday
+    aligned,end=align_to_shift(db,wc.id,start,60)
+    assert aligned.hour==9 and end.hour==10
+    with pytest.raises(HTTPException) as exc:
+        align_to_shift(db,wc.id,start,180)
+    assert exc.value.status_code==409
+    db.close()
+
+def test_wip_receipt_and_consumption_are_ledgered():
+    from app.api.routes.production_planning import create_wip, consume_wip, WIPIn, WIPConsumeIn
+    db=make_db()
+    product=models.Product(code="SF-WIP",name="Semi Finished")
+    user=models.User(username="tester",full_name="Test",password_hash="x")
+    db.add_all([product,user]);db.flush()
+    receipt=create_wip(WIPIn(product_id=product.id,production_order_id=None,quantity=10,unit_cost=12,status="available"),db,user)
+    consumed=consume_wip(receipt.id,WIPConsumeIn(quantity=3,reference="OP-2",reason="Next-stage issue"),db,user)
+    assert consumed["wip"].quantity==7
+    movements=db.query(models.WIPMovement).filter_by(wip_stock_id=receipt.id).order_by(models.WIPMovement.created_at).all()
+    assert len(movements)==2
+    assert movements[0].movement_type=="receipt" and movements[0].quantity==10
+    assert movements[1].movement_type=="consumption" and movements[1].quantity==-3
+    assert movements[1].balance_after==7
+    db.close()
+
+def test_auto_costing_uses_material_machine_labor_and_overhead_rates():
+    from app.api.routes.production_planning import auto_cost
+    db=make_db()
+    product=models.Product(code="FG-COST",name="Costed")
+    material=models.RawMaterial(code="RM-COST",name="Cost material",unit="KG",stock=20,min_stock=0,cost=4)
+    wc=models.Workcenter(code="WC-COST",name="Cost WC",capacity_per_hour=60,labor_hourly_rate=50,overhead_hourly_rate=20,status="Available",active=True)
+    user=models.User(username="tester",full_name="Test",password_hash="x")
+    db.add_all([product,material,wc,user]);db.flush()
+    routing=models.Routing(product_id=product.id,version=1,active=True,name="Cost route")
+    db.add(routing);db.flush()
+    operation=models.RoutingOperation(routing_id=routing.id,sequence=1,code="OP-C",name="Cost operation",workcenter_id=wc.id,required_skill="",setup_minutes=0,run_minutes_per_unit=1,active=True)
+    db.add(operation);db.flush()
+    order=models.ProductionOrder(order_no="PO-COST",order_date=date.today(),product_id=product.id,quantity=10,due_date=None,routing_id=routing.id,status="In Progress",remarks="")
+    db.add(order);db.flush()
+    op_row=models.ProductionOrderOperation(production_order_id=order.id,operation_id=operation.id,sequence=1,workcenter_id=wc.id,assigned_employee_id=None,status="In Progress",planned_qty=10,completed_qty=10)
+    machine=models.MachineResource(code="M-COST",name="Cost machine",workcenter_id=wc.id,capacity_per_hour=60,hourly_rate=120,status="available",active=True)
+    db.add_all([op_row,machine]);db.flush()
+    schedule=models.OperationSchedule(operation_row_id=op_row.id,workcenter_id=wc.id,machine_id=machine.id,employee_id=None,planned_start=datetime(2026,11,25,9,tzinfo=timezone.utc),planned_end=datetime(2026,11,25,10,tzinfo=timezone.utc),duration_minutes=60,status="completed",reschedule_reason="")
+    entry=models.ProductionEntry(batch_no="B-COST",entry_date=date.today(),product_id=product.id,quantity=10,machine=machine.code,workcenter_id=wc.id,routing_id=routing.id,operation_id=operation.id,production_order_id=order.id,employee_id=None,operator="Test",shift="A",remarks="",actual_scrap=0,quality_status="Accepted",accepted_qty=8,rejected_qty=2,quality_remarks="")
+    db.add_all([schedule,entry]);db.flush()
+    db.add(models.ProductionConsumption(production_id=entry.id,material_id=material.id,planned_quantity=5,quantity=5));db.flush()
+    result=auto_cost(entry.id,db,user)
+    cost=result["cost_record"]
+    assert cost.material_cost==20
+    assert cost.machine_cost==120
+    assert cost.labor_cost==50
+    assert cost.overhead_cost==20
+    assert cost.total_cost==210
+    assert cost.unit_cost==26.25
+    db.close()
