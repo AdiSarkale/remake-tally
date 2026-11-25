@@ -135,6 +135,8 @@ def schedule_order(db: Session, order: models.ProductionOrder, start_at: datetim
                     models.MachineDowntime.start_at < end,
                 ).all()
                 for downtime in downtime_rows:
+                    if downtime.end_at is None and _overlap(candidate, end, downtime.start_at, end):
+                        raise ValueError(f"Machine {machine.code} has an open downtime; close it before scheduling")
                     downtime_end = downtime.end_at or end
                     if _overlap(candidate, end, downtime.start_at, downtime_end):
                         blocking_end = max(blocking_end or downtime_end, downtime_end)

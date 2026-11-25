@@ -56,7 +56,7 @@ def schedule_production_order(order_id: str, payload: schemas.ScheduleIn, db: Se
         material_rows.append({
             "material_id": r.material_id, "material_name": material.name if material else "",
             "required_quantity": r.required_quantity,
-            "available_quantity": max(0.0, float(material.stock or 0) - float(r.reserved_quantity)),
+            "available_quantity": max(0.0, float(material.stock or 0) - float(db.query(func.coalesce(func.sum(models.MaterialReservation.reserved_quantity), 0)).filter(models.MaterialReservation.material_id == r.material_id, models.MaterialReservation.production_order_id != order.id, models.MaterialReservation.status.in_(["reserved", "partial"])).scalar() or 0)) if material else 0.0,
             "reserved_quantity": r.reserved_quantity,
             "shortage_quantity": round(max(0, r.required_quantity-r.reserved_quantity), 3),
         })
