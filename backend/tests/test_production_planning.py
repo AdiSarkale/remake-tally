@@ -153,3 +153,16 @@ def test_auto_costing_uses_material_machine_labor_and_overhead_rates():
     assert cost.total_cost==210
     assert cost.unit_cost==26.25
     db.close()
+
+def test_overnight_shift_covers_early_morning_after_midnight():
+    from datetime import datetime, timezone
+    from app.services.production_planning import align_to_shift
+    db=make_db()
+    wc=models.Workcenter(code="WC-NIGHT",name="Night shift WC",capacity_per_hour=60,status="Available",active=True)
+    db.add(wc);db.flush()
+    db.add(models.WorkcenterShift(workcenter_id=wc.id,weekday=2,shift_code="N",start_time="22:00",end_time="06:00",active=True))
+    db.flush()
+    start=datetime(2026,11,26,2,0,tzinfo=timezone.utc) # Thursday, within Wednesday overnight shift
+    aligned,end=align_to_shift(db,wc.id,start,60)
+    assert aligned==start and end.hour==3
+    db.close()
