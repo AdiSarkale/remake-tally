@@ -116,7 +116,6 @@ def downgrade() -> None:
     op.drop_table("production_wip_stock")
     op.drop_table("production_costs")
     op.drop_table("machine_downtime")
-    op.drop_table("machine_downtime")
     op.drop_index("ix_production_operation_schedules_machine", table_name="production_operation_schedules")
     op.drop_column("production_operation_schedules", "machine_id")
     op.drop_table("machine_resources")
