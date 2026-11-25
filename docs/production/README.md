@@ -32,9 +32,9 @@ This implementation builds on the current production baseline in `main`.
 - Machine-linked operation schedules and downtime-aware resource selection
 - Downtime invalidates affected schedules for explicit rescheduling
 - Work-centre shift calendar and schedule fit validation
-- Automatic cost calculation from actual material consumption and planned operation duration
+- Automatic cost calculation on production posting from actual material consumption and planned operation duration; recalculation after quality updates
 - Configurable work-centre labor and overhead rates
-- Machine hourly cost from machine master rates
+- Machine hourly cost from machine master rates, prorated for partial production entries
 - Production yield, accepted/rejected, scrap and quality metrics
 - Analytics: plan-vs-actual, capacity load, employee productivity, material variance, yield, cost, and machine availability
 
