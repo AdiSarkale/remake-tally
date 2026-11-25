@@ -105,6 +105,8 @@ class Workcenter(Base):
     name: Mapped[str] = mapped_column(String(120))
     department: Mapped[str] = mapped_column(String(120), default="")
     capacity_per_hour: Mapped[float] = mapped_column(Float, default=0)
+    labor_hourly_rate: Mapped[float] = mapped_column(Float, default=0)
+    overhead_hourly_rate: Mapped[float] = mapped_column(Float, default=0)
     status: Mapped[str] = mapped_column(String(32), default="Available")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     location: Mapped[str] = mapped_column(String(160), default="")
