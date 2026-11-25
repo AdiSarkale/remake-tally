@@ -7,7 +7,7 @@ from app import models
 from app.api.deps import require_area
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
-from app.services.production_planning import material_requirements, reserve_order_materials, mrp_net_requirements, schedule_order, select_machine_and_duration, oee_metrics
+from app.services.production_planning import material_requirements, reserve_order_materials, mrp_net_requirements, schedule_order, select_machine_and_duration, align_to_shift, validate_shift_window, oee_metrics
 
 router=APIRouter(prefix="/manufacturing/planning",tags=["production-planning"])
 guard=Depends(require_area("production"))
@@ -51,9 +51,22 @@ class CostIn(BaseModel):
 class WIPIn(BaseModel):
     product_id: str
     production_order_id: str | None=None
-    quantity: float=Field(ge=0)
+    quantity: float=Field(gt=0)
     unit_cost: float=Field(ge=0)
-    status: str=Field(default="available",pattern="^(available|reserved|quality_hold|consumed)$")
+    status: str=Field(default="available",pattern="^(available|reserved|quality_hold)$")
+class WIPConsumeIn(BaseModel):
+    quantity: float=Field(gt=0)
+    reference: str=Field(default="",max_length=120)
+    reason: str=Field(default="",max_length=500)
+class CostRatesIn(BaseModel):
+    labor_hourly_rate: float=Field(ge=0)
+    overhead_hourly_rate: float=Field(ge=0)
+class WorkcenterShiftIn(BaseModel):
+    weekday: int=Field(ge=0,le=6)
+    shift_code: str=Field(min_length=1,max_length=16)
+    start_time: str=Field(pattern="^(?:[01]\\d|2[0-3]):[0-5]\\d$")
+    end_time: str=Field(pattern="^(?:[01]\\d|2[0-3]):[0-5]\\d$")
+    active: bool=True
 
 
 @router.patch("/orders/{order_id}/status")
@@ -235,32 +248,127 @@ def record_cost(production_entry_id:str,payload:CostIn,db:Session=Depends(get_db
     log_audit(db,user.username,"COST","production_entry",entry.batch_no)
     db.commit();db.refresh(row);return row
 
+@router.post("/costs/{production_entry_id}/auto")
+def auto_cost(production_entry_id:str,db:Session=Depends(get_db),user:models.User=guard):
+    entry=db.get(models.ProductionEntry,production_entry_id)
+    if not entry: raise HTTPException(404,"Production entry not found")
+    material_cost=sum(cons.quantity*(db.get(models.RawMaterial,cons.material_id).cost if db.get(models.RawMaterial,cons.material_id) else 0) for cons in entry.consumption)
+    schedule=None
+    operation_row=None
+    if entry.production_order_id:
+        query=db.query(models.ProductionOrderOperation).filter_by(production_order_id=entry.production_order_id)
+        if entry.operation_id: query=query.filter_by(operation_id=entry.operation_id)
+        operation_row=query.order_by(models.ProductionOrderOperation.sequence).first()
+        if operation_row: schedule=db.query(models.OperationSchedule).filter_by(operation_row_id=operation_row.id).first()
+    machine_cost=0.0
+    labor_cost=0.0
+    overhead_cost=0.0
+    planned_minutes=0.0
+    if schedule:
+        planned_minutes=schedule.duration_minutes or 0
+        if schedule.machine_id:
+            machine=db.get(models.MachineResource,schedule.machine_id)
+            if machine: machine_cost=planned_minutes/60*(machine.hourly_rate or 0)
+        wc=db.get(models.Workcenter,schedule.workcenter_id)
+        if wc:
+            labor_cost=planned_minutes/60*(wc.labor_hourly_rate or 0)
+            overhead_cost=planned_minutes/60*(wc.overhead_hourly_rate or 0)
+    total=round(material_cost+machine_cost+labor_cost+overhead_cost,4)
+    accepted=entry.accepted_qty or 0
+    unit=round(total/accepted,4) if accepted>0 else 0
+    row=db.query(models.ProductionCost).filter_by(production_entry_id=entry.id).first()
+    data={"material_cost":round(material_cost,4),"labor_cost":round(labor_cost,4),"machine_cost":round(machine_cost,4),"overhead_cost":round(overhead_cost,4),"total_cost":total,"accepted_quantity":accepted,"unit_cost":unit,"currency":"INR","notes":"Automatically calculated from recorded material consumption and planned operation schedule; labour and overhead use configured workcentre hourly rates."}
+    if row:
+        for key,value in data.items(): setattr(row,key,value)
+    else:
+        row=models.ProductionCost(production_entry_id=entry.id,**data);db.add(row)
+    log_audit(db,user.username,"AUTO_COST","production_entry",entry.batch_no)
+    db.commit();db.refresh(row)
+    return {"cost_record":row,"calculation_basis":{"material":"actual consumption quantity × raw-material master cost","machine":"planned schedule minutes × machine hourly rate","labor":"planned schedule minutes × workcenter labor hourly rate","overhead":"planned schedule minutes × workcenter overhead hourly rate","planned_minutes":planned_minutes,"actual_operation_time_available":False}}
+
 @router.get("/costs")
 def list_costs(db:Session=Depends(get_db),user:models.User=guard):
     return db.query(models.ProductionCost).all()
+
+@router.patch("/workcenters/{workcenter_id}/cost-rates")
+def set_workcenter_cost_rates(workcenter_id:str,payload:CostRatesIn,db:Session=Depends(get_db),user:models.User=guard):
+    wc=db.get(models.Workcenter,workcenter_id)
+    if not wc: raise HTTPException(404,"Workcenter not found")
+    wc.labor_hourly_rate=payload.labor_hourly_rate
+    wc.overhead_hourly_rate=payload.overhead_hourly_rate
+    log_audit(db,user.username,"COST_RATES","workcenter",workcenter_id)
+    db.commit();db.refresh(wc)
+    return {"workcenter_id":wc.id,"labor_hourly_rate":wc.labor_hourly_rate,"overhead_hourly_rate":wc.overhead_hourly_rate}
+
+@router.get("/workcenters/{workcenter_id}/shifts")
+def list_workcenter_shifts(workcenter_id:str,db:Session=Depends(get_db),user:models.User=guard):
+    wc=db.get(models.Workcenter,workcenter_id)
+    if not wc: raise HTTPException(404,"Workcenter not found")
+    return db.query(models.WorkcenterShift).filter_by(workcenter_id=workcenter_id).order_by(models.WorkcenterShift.weekday,models.WorkcenterShift.start_time).all()
+
+@router.put("/workcenters/{workcenter_id}/shifts")
+def replace_workcenter_shifts(workcenter_id:str,payload:list[WorkcenterShiftIn],db:Session=Depends(get_db),user:models.User=guard):
+    wc=db.get(models.Workcenter,workcenter_id)
+    if not wc: raise HTTPException(404,"Workcenter not found")
+    for row in payload:
+        if row.start_time==row.end_time: raise HTTPException(400,"Shift start and end cannot be identical")
+    db.query(models.WorkcenterShift).filter_by(workcenter_id=workcenter_id).delete(synchronize_session=False)
+    rows=[models.WorkcenterShift(workcenter_id=workcenter_id,**item.model_dump()) for item in payload]
+    db.add_all(rows)
+    log_audit(db,user.username,"SHIFT_CALENDAR","workcenter",workcenter_id)
+    db.commit()
+    return rows
 
 @router.get("/wip")
 def list_wip(db:Session=Depends(get_db),user:models.User=guard):
     return db.query(models.WIPStock).order_by(models.WIPStock.updated_at.desc()).all()
 
+@router.get("/wip/{wip_id}/movements")
+def wip_movements(wip_id:str,db:Session=Depends(get_db),user:models.User=guard):
+    row=db.get(models.WIPStock,wip_id)
+    if not row: raise HTTPException(404,"WIP record not found")
+    return db.query(models.WIPMovement).filter_by(wip_stock_id=wip_id).order_by(models.WIPMovement.created_at.desc()).all()
+
 @router.post("/wip",status_code=201)
 def create_wip(payload:WIPIn,db:Session=Depends(get_db),user:models.User=guard):
     if not db.get(models.Product,payload.product_id): raise HTTPException(404,"Product/SF master not found")
     if payload.production_order_id and not db.get(models.ProductionOrder,payload.production_order_id): raise HTTPException(404,"Production order not found")
-    existing=db.query(models.WIPStock).filter_by(product_id=payload.product_id,production_order_id=payload.production_order_id).first()
+    existing=db.query(models.WIPStock).filter_by(product_id=payload.product_id,production_order_id=payload.production_order_id).with_for_update().first()
     if existing:
-        existing.quantity+=payload.quantity;existing.unit_cost=payload.unit_cost;existing.status=payload.status;row=existing
+        old_qty=existing.quantity
+        total=old_qty+payload.quantity
+        existing.unit_cost=round((old_qty*existing.unit_cost+payload.quantity*payload.unit_cost)/total,6) if total else 0
+        existing.quantity=total
+        if existing.status=="consumed": existing.status="available"
+        row=existing
     else:
-        row=models.WIPStock(**payload.model_dump());db.add(row)
+        row=models.WIPStock(**payload.model_dump());db.add(row);db.flush()
+    db.add(models.WIPMovement(wip_stock_id=row.id,production_order_id=row.production_order_id,movement_type="receipt",quantity=payload.quantity,balance_after=row.quantity,unit_cost=payload.unit_cost,reference="",reason="WIP receipt",created_by=user.username))
     log_audit(db,user.username,"WIP_RECEIPT","wip",payload.product_id)
     db.commit();db.refresh(row);return row
 
 @router.patch("/wip/{wip_id}")
-def adjust_wip(wip_id:str,quantity:float=Query(ge=0),status:str="available",db:Session=Depends(get_db),user:models.User=guard):
-    row=db.get(models.WIPStock,wip_id)
+def adjust_wip(wip_id:str,quantity:float=Query(ge=0),status:str=Query(default="available",pattern="^(available|reserved|quality_hold|consumed)$"),reason:str=Query(default="Manual balance adjustment",max_length=500),db:Session=Depends(get_db),user:models.User=guard):
+    row=db.query(models.WIPStock).filter_by(id=wip_id).with_for_update().first()
     if not row: raise HTTPException(404,"WIP record not found")
+    if status=="consumed" and quantity>0: raise HTTPException(409,"Use the WIP consume endpoint to issue quantity; do not mark a positive balance consumed")
+    delta=round(quantity-row.quantity,6)
     row.quantity=quantity;row.status=status
-    log_audit(db,user.username,"WIP_ADJUST","wip",wip_id);db.commit();return row
+    if delta:
+        db.add(models.WIPMovement(wip_stock_id=row.id,production_order_id=row.production_order_id,movement_type="adjustment",quantity=delta,balance_after=row.quantity,unit_cost=row.unit_cost,reference="",reason=reason,created_by=user.username))
+    log_audit(db,user.username,"WIP_ADJUST","wip",wip_id);db.commit();db.refresh(row);return row
+
+@router.post("/wip/{wip_id}/consume")
+def consume_wip(wip_id:str,payload:WIPConsumeIn,db:Session=Depends(get_db),user:models.User=guard):
+    row=db.query(models.WIPStock).filter_by(id=wip_id).with_for_update().first()
+    if not row: raise HTTPException(404,"WIP record not found")
+    if row.status not in {"available","reserved"}: raise HTTPException(409,f"WIP status {row.status} cannot be consumed")
+    if payload.quantity>row.quantity: raise HTTPException(409,"WIP consumption exceeds available balance")
+    row.quantity=round(row.quantity-payload.quantity,6)
+    if row.quantity==0: row.status="consumed"
+    db.add(models.WIPMovement(wip_stock_id=row.id,production_order_id=row.production_order_id,movement_type="consumption",quantity=-payload.quantity,balance_after=row.quantity,unit_cost=row.unit_cost,reference=payload.reference,reason=payload.reason,created_by=user.username))
+    log_audit(db,user.username,"WIP_CONSUME","wip",f"{wip_id}:{payload.quantity}")
+    db.commit();db.refresh(row);return {"wip":row,"movement_type":"consumption","quantity_consumed":payload.quantity,"balance":row.quantity}
 
 @router.get("/analytics")
 def analytics(db:Session=Depends(get_db),user:models.User=guard):
