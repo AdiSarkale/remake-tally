@@ -260,6 +260,24 @@ def create_production(
     # -------------------------------------------------
 
     for consumption_line in consumption:
+        # Consume the order's planning reservation as execution consumes stock.
+        # Reservation records never change physical stock; apply_movement below is
+        # the sole physical inventory change.
+        if payload.production_order_id:
+            active_reservations = db.query(models.MaterialReservation).filter_by(
+                production_order_id=payload.production_order_id,
+                material_id=consumption_line.material_id,
+                status="active",
+            ).order_by(models.MaterialReservation.created_at.asc()).all()
+            to_release = consumption_line.quantity
+            for reservation in active_reservations:
+                released = min(reservation.reserved_quantity, to_release)
+                reservation.reserved_quantity = round(reservation.reserved_quantity - released, 6)
+                to_release = round(to_release - released, 6)
+                if reservation.reserved_quantity <= 0:
+                    reservation.status = "consumed"
+                if to_release <= 0:
+                    break
         apply_movement(
             db,
             kind=ItemKind.material,
