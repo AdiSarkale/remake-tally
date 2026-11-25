@@ -12,7 +12,9 @@ from app.services.production_planning import material_requirements, reserve_orde
 router=APIRouter(prefix="/manufacturing/planning",tags=["production-planning"])
 guard=Depends(require_area("production"))
 
-class OrderStatusIn(BaseModel):\n    status: str=Field(pattern=\"^(Planned|Materials Pending|Ready|Scheduled|In Progress|Completed|Cancelled)$\")\nclass ScheduleOrderIn(BaseModel):
+class OrderStatusIn(BaseModel):
+    status: str=Field(pattern="^(Planned|Materials Pending|Ready|Scheduled|In Progress|Completed|Cancelled)$")
+class ScheduleOrderIn(BaseModel):
     start_at: datetime
 class RescheduleIn(BaseModel):
     planned_start: datetime
