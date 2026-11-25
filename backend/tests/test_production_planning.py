@@ -123,6 +123,7 @@ def test_wip_receipt_and_consumption_are_ledgered():
     db.close()
 
 def test_auto_costing_uses_material_machine_labor_and_overhead_rates():
+    from datetime import datetime, timezone
     from app.api.routes.production_planning import auto_cost
     db=make_db()
     product=models.Product(code="FG-COST",name="Costed")
