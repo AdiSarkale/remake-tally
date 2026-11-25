@@ -191,6 +191,31 @@ def schedule_order(db: Session, order_id: str, start_at, username: str) -> dict:
     db.flush()
     return {"order_id":order.id,"order_no":order.order_no,"status":order.status,"operations":scheduled}
 
+
+def calculate_production_cost(db: Session, entry: models.ProductionEntry) -> dict:
+    material_cost=sum(cons.quantity*(db.get(models.RawMaterial,cons.material_id).cost if db.get(models.RawMaterial,cons.material_id) else 0) for cons in entry.consumption)
+    schedule=None
+    if entry.production_order_id:
+        query=db.query(models.ProductionOrderOperation).filter_by(production_order_id=entry.production_order_id)
+        if entry.operation_id: query=query.filter_by(operation_id=entry.operation_id)
+        operation_row=query.order_by(models.ProductionOrderOperation.sequence).first()
+        if operation_row: schedule=db.query(models.OperationSchedule).filter_by(operation_row_id=operation_row.id).first()
+    machine_cost=labor_cost=overhead_cost=0.0
+    planned_minutes=0.0
+    if schedule:
+        planned_minutes=schedule.duration_minutes or 0
+        if schedule.machine_id:
+            machine=db.get(models.MachineResource,schedule.machine_id)
+            if machine: machine_cost=planned_minutes/60*(machine.hourly_rate or 0)
+        wc=db.get(models.Workcenter,schedule.workcenter_id)
+        if wc:
+            labor_cost=planned_minutes/60*(wc.labor_hourly_rate or 0)
+            overhead_cost=planned_minutes/60*(wc.overhead_hourly_rate or 0)
+    total=round(material_cost+machine_cost+labor_cost+overhead_cost,4)
+    accepted=entry.accepted_qty or 0
+    unit=round(total/accepted,4) if accepted>0 else 0
+    return {"material_cost":round(material_cost,4),"labor_cost":round(labor_cost,4),"machine_cost":round(machine_cost,4),"overhead_cost":round(overhead_cost,4),"total_cost":total,"accepted_quantity":accepted,"unit_cost":unit,"currency":"INR","notes":"Automatically calculated from recorded material consumption and planned operation schedule; labour and overhead use configured workcentre hourly rates.","planned_minutes":planned_minutes}
+
 def oee_metrics(db: Session) -> dict:
     entries=db.query(models.ProductionEntry).all()
     produced=sum(e.quantity for e in entries)
