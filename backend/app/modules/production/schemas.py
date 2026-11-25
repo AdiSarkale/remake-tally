@@ -207,6 +207,10 @@ class ProductionOrderOperationOut(ORMModel):
     status: str
     planned_qty: float
     completed_qty: float
+    machine_id: str | None = None
+    planned_minutes: float = 0
+    scheduled_start: datetime | None = None
+    scheduled_end: datetime | None = None
 
 class ProductionOrderOut(ORMModel):
     id: str
@@ -239,3 +243,123 @@ class ManufacturingReportOut(BaseModel):
     actual_material_qty: float
     material_variance: float
     by_workcenter: list[dict]
+
+
+# Production planning and advanced manufacturing schemas.
+class PlanningMaterialOut(BaseModel):
+    material_id: str
+    material_name: str
+    required_quantity: float
+    available_quantity: float
+    reserved_quantity: float
+    shortage_quantity: float
+
+
+class ProductionPlanningOut(BaseModel):
+    production_order_id: str
+    planning_status: str
+    materials: list[PlanningMaterialOut]
+    operations: list[ProductionOrderOperationOut]
+
+
+class ScheduleIn(BaseModel):
+    start_at: datetime
+    machine_id: str | None = None
+    respect_employee_availability: bool = True
+
+
+class MachineIn(BaseModel):
+    code: str
+    name: str
+    workcenter_id: str
+    capacity_per_hour: float = Field(default=1, gt=0)
+    hourly_rate: float = Field(default=0, ge=0)
+    active: bool = True
+
+
+class MachineOut(ORMModel):
+    id: str
+    code: str
+    name: str
+    workcenter_id: str
+    capacity_per_hour: float
+    hourly_rate: float
+    status: str
+    active: bool
+
+
+class DowntimeIn(BaseModel):
+    machine_id: str
+    start_at: datetime
+    end_at: datetime | None = None
+    reason: str
+    notes: str = ""
+
+
+class DowntimeCloseIn(BaseModel):
+    end_at: datetime
+
+
+class DowntimeOut(ORMModel):
+    id: str
+    machine_id: str
+    workcenter_id: str
+    start_at: datetime
+    end_at: datetime | None
+    reason: str
+    notes: str
+
+
+class WIPIn(BaseModel):
+    production_order_id: str
+    operation_id: str
+    quantity: float = Field(gt=0)
+    stage: str = "semi_finished"
+
+
+class WIPOut(ORMModel):
+    id: str
+    production_order_id: str
+    operation_id: str
+    quantity: float
+    stage: str
+    status: str
+    created_at: datetime
+
+
+class CostIn(BaseModel):
+    material_cost: float = Field(default=0, ge=0)
+    labour_cost: float = Field(default=0, ge=0)
+    machine_cost: float = Field(default=0, ge=0)
+    overhead_cost: float = Field(default=0, ge=0)
+    quantity_produced: float = Field(default=0, ge=0)
+
+
+class CostOut(ORMModel):
+    id: str
+    production_order_id: str
+    material_cost: float
+    labour_cost: float
+    machine_cost: float
+    overhead_cost: float
+    quantity_produced: float
+    total_cost: float
+    unit_cost: float
+    updated_at: datetime
+
+
+class MRPRequirementOut(BaseModel):
+    material_id: str
+    material_name: str
+    gross_demand: float
+    stock: float
+    reserved: float
+    open_purchase_supply: float
+    safety_stock: float
+    net_requirement: float
+    demand_orders: list[str]
+
+
+class MRPOut(BaseModel):
+    calculated_at: datetime
+    requirements: list[MRPRequirementOut]

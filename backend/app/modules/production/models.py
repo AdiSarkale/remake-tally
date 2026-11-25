@@ -159,6 +159,7 @@ class ProductionOrder(Base):
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     routing_id: Mapped[str | None] = mapped_column(ForeignKey("routings.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="Planned")
+    planning_status: Mapped[str] = mapped_column(String(24), default="unplanned")
     remarks: Mapped[str] = mapped_column(Text, default="")
 
 class ProductionOrderOperation(Base):
@@ -174,3 +175,73 @@ class ProductionOrderOperation(Base):
     status: Mapped[str] = mapped_column(String(32), default="Pending")
     planned_qty: Mapped[float] = mapped_column(Float)
     completed_qty: Mapped[float] = mapped_column(Float, default=0)
+    machine_id: Mapped[str | None] = mapped_column(ForeignKey("production_machines.id"), nullable=True, index=True)
+    planned_minutes: Mapped[float] = mapped_column(Float, default=0)
+    scheduled_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    scheduled_end: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+# Production roadmap: planning, reservations, resources, WIP and costing.
+class MaterialReservation(Base):
+    __tablename__ = "production_material_reservations"
+    __table_args__ = (UniqueConstraint("production_order_id", "material_id", name="uq_order_material_reservation"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    production_order_id: Mapped[str] = mapped_column(ForeignKey("production_orders.id", ondelete="CASCADE"), index=True)
+    material_id: Mapped[str] = mapped_column(ForeignKey("raw_materials.id"), index=True)
+    required_quantity: Mapped[float] = mapped_column(Float, default=0)
+    reserved_quantity: Mapped[float] = mapped_column(Float, default=0)
+    status: Mapped[str] = mapped_column(String(24), default="shortage")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class MachineResource(Base):
+    __tablename__ = "production_machines"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    workcenter_id: Mapped[str] = mapped_column(ForeignKey("workcenters.id"), index=True)
+    capacity_per_hour: Mapped[float] = mapped_column(Float, default=1)
+    hourly_rate: Mapped[float] = mapped_column(Float, default=0)
+    status: Mapped[str] = mapped_column(String(24), default="available")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class MachineDowntime(Base):
+    __tablename__ = "production_machine_downtime"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    machine_id: Mapped[str] = mapped_column(ForeignKey("production_machines.id", ondelete="CASCADE"), index=True)
+    workcenter_id: Mapped[str] = mapped_column(ForeignKey("workcenters.id"), index=True)
+    start_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    end_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    reason: Mapped[str] = mapped_column(String(120), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+
+
+class ProductionWIP(Base):
+    __tablename__ = "production_wip"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    production_order_id: Mapped[str] = mapped_column(ForeignKey("production_orders.id", ondelete="CASCADE"), index=True)
+    operation_id: Mapped[str] = mapped_column(ForeignKey("routing_operations.id"), index=True)
+    quantity: Mapped[float] = mapped_column(Float)
+    stage: Mapped[str] = mapped_column(String(24), default="semi_finished")
+    status: Mapped[str] = mapped_column(String(24), default="open")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
+
+
+class ProductionCost(Base):
+    __tablename__ = "production_costs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    production_order_id: Mapped[str] = mapped_column(ForeignKey("production_orders.id", ondelete="CASCADE"), index=True)
+    material_cost: Mapped[float] = mapped_column(Float, default=0)
+    labour_cost: Mapped[float] = mapped_column(Float, default=0)
+    machine_cost: Mapped[float] = mapped_column(Float, default=0)
+    overhead_cost: Mapped[float] = mapped_column(Float, default=0)
+    quantity_produced: Mapped[float] = mapped_column(Float, default=0)
+    total_cost: Mapped[float] = mapped_column(Float, default=0)
+    unit_cost: Mapped[float] = mapped_column(Float, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
