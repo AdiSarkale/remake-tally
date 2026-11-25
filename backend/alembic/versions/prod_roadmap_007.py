@@ -45,6 +45,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_production_machines_code", "production_machines", ["code"])
     op.create_index("ix_production_machines_workcenter_id", "production_machines", ["workcenter_id"])
+    op.create_foreign_key("fk_production_order_operations_machine_id_production_machines", "production_order_operations", "production_machines", ["machine_id"], ["id"])
     op.create_table(
         "production_machine_downtime",
         sa.Column("id", sa.String(length=36), primary_key=True),
@@ -107,6 +108,7 @@ def downgrade() -> None:
     op.drop_column("production_order_operations", "scheduled_end")
     op.drop_column("production_order_operations", "scheduled_start")
     op.drop_column("production_order_operations", "planned_minutes")
+    op.drop_constraint("fk_production_order_operations_machine_id_production_machines", "production_order_operations", type_="foreignkey")
     op.drop_index("ix_production_order_operations_machine_id", table_name="production_order_operations")
     op.drop_column("production_order_operations", "machine_id")
     op.drop_column("production_orders", "planning_status")

@@ -2,6 +2,7 @@
 from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app import models, schemas
 from app.api.deps import require_area

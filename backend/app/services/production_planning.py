@@ -201,8 +201,20 @@ def save_cost(db: Session, order: models.ProductionOrder, payload: dict) -> mode
     if row is None:
         row = models.ProductionCost(production_order_id=order.id)
         db.add(row)
-    for field in ("material_cost", "labour_cost", "machine_cost", "overhead_cost", "quantity_produced"):
+    for field in ("labour_cost", "machine_cost", "overhead_cost", "quantity_produced"):
         setattr(row, field, float(payload.get(field, 0)))
+    material_cost = float(payload.get("material_cost", 0))
+    if material_cost <= 0:
+        actual_material_cost = 0.0
+        entries = db.query(models.ProductionEntry).filter_by(production_order_id=order.id).all()
+        for entry in entries:
+            for consumption in entry.consumption:
+                material = db.get(models.RawMaterial, consumption.material_id)
+                if material:
+                    actual_material_cost += float(consumption.quantity or 0) * float(material.cost or 0)
+        row.material_cost = round(actual_material_cost, 2)
+    else:
+        row.material_cost = material_cost
     row.total_cost = round(row.material_cost + row.labour_cost + row.machine_cost + row.overhead_cost, 2)
     row.unit_cost = round(row.total_cost / row.quantity_produced, 4) if row.quantity_produced > 0 else 0
     db.flush()

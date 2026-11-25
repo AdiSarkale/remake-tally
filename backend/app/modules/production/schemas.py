@@ -296,6 +296,10 @@ class DowntimeIn(BaseModel):
     notes: str = ""
 
 
+class DowntimeCloseIn(BaseModel):
+    end_at: datetime
+
+
 class DowntimeOut(ORMModel):
     id: str
     machine_id: str

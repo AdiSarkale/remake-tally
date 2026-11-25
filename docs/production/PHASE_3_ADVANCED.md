@@ -13,3 +13,6 @@ Not yet production-grade:
 - OEE formula and planned shift time require manufacturing-policy validation.
 - Maintenance lifecycle and preventive maintenance are not implemented.
 - Detailed machine selection and operation-specific resources are not yet supported.
+
+- Downtime records now have an explicit close action; open breakdowns block machine scheduling until closed.
+- Material cost can be auto-derived from production-entry actual consumption and raw-material cost when no manual material cost is supplied.
