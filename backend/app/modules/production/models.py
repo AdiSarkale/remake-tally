@@ -159,6 +159,7 @@ class ProductionOrder(Base):
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     routing_id: Mapped[str | None] = mapped_column(ForeignKey("routings.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="Planned")
+    planning_status: Mapped[str] = mapped_column(String(24), default="unplanned")
     remarks: Mapped[str] = mapped_column(Text, default="")
 
 class ProductionOrderOperation(Base):
