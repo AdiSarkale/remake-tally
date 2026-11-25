@@ -1144,3 +1144,19 @@ def test_production_planning_routes_are_tenant_scoped(isolated_tenants):
     assert a_response.status_code == 200, a_response.text
     assert a_response.json()["materials"][0]["material_code"] == "RM-a"
     assert b_response.status_code == 404
+
+def test_wip_ledger_and_consumption_are_tenant_scoped(isolated_tenants):
+    client=isolated_tenants["client"]
+    a=_login(client,"AA")
+    b=_login(client,"BB")
+    a_headers={"Authorization":f"Bearer {a['access_token']}"}
+    b_headers={"Authorization":f"Bearer {b['access_token']}"}
+    receipt=client.post("/api/v1/manufacturing/planning/wip",headers=a_headers,json={"product_id":"product-a","production_order_id":None,"quantity":5,"unit_cost":10,"status":"available"})
+    assert receipt.status_code==201,receipt.text
+    wip_id=receipt.json()["id"]
+    b_list=client.get("/api/v1/manufacturing/planning/wip",headers=b_headers)
+    assert b_list.status_code==200 and b_list.json()==[]
+    b_movements=client.get(f"/api/v1/manufacturing/planning/wip/{wip_id}/movements",headers=b_headers)
+    assert b_movements.status_code==404
+    b_consume=client.post(f"/api/v1/manufacturing/planning/wip/{wip_id}/consume",headers=b_headers,json={"quantity":1,"reference":"cross-tenant","reason":"must be blocked"})
+    assert b_consume.status_code==404
