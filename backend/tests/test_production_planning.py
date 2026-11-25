@@ -57,3 +57,33 @@ def test_reservation_fully_covers_demand_and_marks_order_ready():
     assert order.status=="Ready"
     assert material.stock==10
     db.close()
+
+def test_machine_linked_schedule_is_blocked_by_downtime():
+    from datetime import datetime, timezone
+    import pytest
+    from fastapi import HTTPException
+    from app.services.production_planning import schedule_order
+
+    db=make_db()
+    product=models.Product(code="FG-M",name="Machine Finished")
+    wc=models.Workcenter(code="WC-M",name="Machine Workcenter",capacity_per_hour=100,status="Available",active=True)
+    db.add_all([product,wc]);db.flush()
+    routing=models.Routing(product_id=product.id,version=1,active=True,name="Route")
+    db.add(routing);db.flush()
+    operation=models.RoutingOperation(routing_id=routing.id,sequence=1,code="OP1",name="Machine Operation",workcenter_id=wc.id,required_skill="",setup_minutes=0,run_minutes_per_unit=1,active=True)
+    db.add(operation);db.flush()
+    order=models.ProductionOrder(order_no="PO-MACHINE",order_date=date.today(),product_id=product.id,quantity=5,due_date=None,routing_id=routing.id,status="Ready",remarks="")
+    db.add(order);db.flush()
+    op_row=models.ProductionOrderOperation(production_order_id=order.id,operation_id=operation.id,sequence=1,workcenter_id=wc.id,assigned_employee_id=None,status="Assigned",planned_qty=5,completed_qty=0)
+    machine=models.MachineResource(code="M-1",name="Machine 1",workcenter_id=wc.id,capacity_per_hour=60,hourly_rate=100,status="available",active=True)
+    db.add_all([op_row,machine]);db.flush()
+    start=datetime(2026,11,25,8,0,tzinfo=timezone.utc)
+    scheduled=schedule_order(db,order.id,start,"tester")
+    assert scheduled["operations"][0]["machine_id"]==machine.id
+    assert db.query(models.OperationSchedule).filter_by(operation_row_id=op_row.id).one().machine_id==machine.id
+    db.add(models.MachineDowntime(machine_id=machine.id,start_at=datetime(2026,11,25,8,2,tzinfo=timezone.utc),end_at=datetime(2026,11,25,8,4,tzinfo=timezone.utc),reason_code="BREAK",reason="Test downtime",maintenance=False,created_by="tester"))
+    db.flush()
+    with pytest.raises(HTTPException) as exc:
+        schedule_order(db,order.id,start,"tester")
+    assert exc.value.status_code==409
+    db.close()
