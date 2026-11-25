@@ -129,6 +129,15 @@ def schedule_order(db: Session, order: models.ProductionOrder, start_at: datetim
                 same_machine = machine is not None and other.machine_id == machine.id
                 if (same_wc or same_machine or (respect_employee_availability and same_employee)) and _overlap(candidate, end, other.scheduled_start, other.scheduled_end):
                     blocking_end = max(blocking_end or other.scheduled_end, other.scheduled_end)
+            if machine:
+                downtime_rows = db.query(models.MachineDowntime).filter(
+                    models.MachineDowntime.machine_id == machine.id,
+                    models.MachineDowntime.start_at < end,
+                ).all()
+                for downtime in downtime_rows:
+                    downtime_end = downtime.end_at or end
+                    if _overlap(candidate, end, downtime.start_at, downtime_end):
+                        blocking_end = max(blocking_end or downtime_end, downtime_end)
             if blocking_end is None:
                 break
             candidate = blocking_end
@@ -139,13 +148,6 @@ def schedule_order(db: Session, order: models.ProductionOrder, start_at: datetim
         row.planned_minutes = round(duration, 2)
         row.scheduled_start = candidate
         row.scheduled_end = candidate + timedelta(minutes=duration)
-        if machine:
-            outages = db.query(models.MachineDowntime).filter(
-                models.MachineDowntime.machine_id == machine.id,
-                models.MachineDowntime.start_at < row.scheduled_end,
-            ).all()
-            if any(_overlap(candidate, row.scheduled_end, d.start_at, d.end_at or row.scheduled_end) for d in outages):
-                raise ValueError(f"Machine {machine.code} has downtime overlapping the planned operation")
         row.status = "Scheduled" if employee else "Scheduled - Unassigned"
         previous_end = row.scheduled_end
     order.planning_status = "scheduled"
@@ -182,7 +184,7 @@ def calculate_mrp(db: Session) -> list[dict]:
         )
         stock = float(material.stock or 0)
         safety = float(material.min_stock or 0)
-        available_supply = max(0.0, stock - float(reserved)) + open_supply
+        available_supply = stock + open_supply
         net = round(max(0.0, gross_qty + safety - available_supply), 3)
         result.append({
             "material_id": material_id, "material_name": material.name,

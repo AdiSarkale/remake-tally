@@ -54,7 +54,8 @@ def schedule_production_order(order_id: str, payload: schemas.ScheduleIn, db: Se
         material = db.get(models.RawMaterial, r.material_id)
         material_rows.append({
             "material_id": r.material_id, "material_name": material.name if material else "",
-            "required_quantity": r.required_quantity, "available_quantity": r.reserved_quantity,
+            "required_quantity": r.required_quantity,
+            "available_quantity": max(0.0, float(material.stock or 0) - float(r.reserved_quantity)),
             "reserved_quantity": r.reserved_quantity,
             "shortage_quantity": round(max(0, r.required_quantity-r.reserved_quantity), 3),
         })
