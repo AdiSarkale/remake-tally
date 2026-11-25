@@ -23,5 +23,6 @@ def test_production_planning_api_routes_are_registered():
 def test_production_planning_migration_is_single_latest_head():
     config=Config(str(Path(__file__).resolve().parents[1]/"alembic.ini"))
     script=ScriptDirectory.from_config(config)
-    assert script.get_heads()==["production_planning_007"]
+    assert script.get_heads()==["production_planning_008"]
+    assert script.get_revision("production_planning_008").down_revision=="production_planning_007"
     assert script.get_revision("production_planning_007").down_revision=="hr_timezone_006"
