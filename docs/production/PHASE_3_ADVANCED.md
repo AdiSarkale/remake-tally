@@ -13,7 +13,7 @@ Record machine, start/end, reason code, explanation, maintenance flag, and actor
 Work-centre shift windows are configured by weekday, shift code, and start/end time. Schedules align to configured shifts and operations must fit within a single shift window. No shift rows means legacy unrestricted scheduling.
 
 ## Production costing
-Store material, labour, machine, and overhead components; total cost; accepted quantity; unit cost; currency; and notes. Automatic calculation uses recorded material consumption × raw-material master cost, planned operation schedule minutes × machine hourly rate, and configured work-centre labour/overhead rates. The estimate is not actual-time costing until actual operation time capture is implemented.
+Store material, labour, machine, and overhead components; total cost; accepted quantity; unit cost; currency; and notes. Automatic costing runs when a production batch is posted and recalculates after quality updates. It uses recorded material consumption × raw-material master cost, planned operation schedule minutes × machine hourly rate, and configured work-centre labour/overhead rates. Planned resource time is prorated across partial production batches against the operation's planned quantity. The estimate is not actual-time costing until actual operation time capture is implemented.
 
 ## Analytics
 Report production, accepted/rejected, scrap, quality ratio, costs, plan-vs-actual, capacity load, employee productivity, material variance, and machine-linked availability. Full OEE performance and OEE remain unavailable until target-cycle-time and actual operating-time data are available and validated.
