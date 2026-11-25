@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.api.deps import require_any_area, require_area
 from app.db.session import get_db
-from app.modules.core.audit import log_audit
+from app.modules.core.audit import log_audit\nfrom app.services.production_planning import calculate_production_cost
 from app.services.inventory import next_batch_no
 
 router = APIRouter(prefix="/manufacturing", tags=["manufacturing"])
@@ -255,7 +255,15 @@ def update_production_quality(production_id: str, payload: schemas.ProductionQua
     production.accepted_qty = payload.accepted_qty
     production.rejected_qty = payload.rejected_qty
     production.quality_remarks = payload.remarks
+    existing_cost=db.query(models.ProductionCost).filter_by(production_entry_id=production.id).first()
+    cost_data=calculate_production_cost(db,production)
+    cost_data.pop("planned_minutes",None)
+    if existing_cost:
+        for key,value in cost_data.items(): setattr(existing_cost,key,value)
+    else:
+        db.add(models.ProductionCost(production_entry_id=production.id,**cost_data))
     log_audit(db, user.username, "QUALITY", "production", production.batch_no + ": " + payload.status)
+    log_audit(db, user.username, "AUTO_COST", "production_entry", production.batch_no)
     db.commit()
     db.refresh(production)
     return production
