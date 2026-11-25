@@ -111,6 +111,12 @@ def reschedule_operation(operation_row_id:str,payload:RescheduleIn,db:Session=De
     if payload.planned_end<=payload.planned_start: raise HTTPException(400,"Planned end must be after planned start")
     row=db.get(models.ProductionOrderOperation,operation_row_id)
     if not row: raise HTTPException(404,"Production operation not found")
+    previous=db.query(models.ProductionOrderOperation).filter(models.ProductionOrderOperation.production_order_id==row.production_order_id,models.ProductionOrderOperation.sequence<row.sequence).order_by(models.ProductionOrderOperation.sequence.desc()).first()
+    following=db.query(models.ProductionOrderOperation).filter(models.ProductionOrderOperation.production_order_id==row.production_order_id,models.ProductionOrderOperation.sequence>row.sequence).order_by(models.ProductionOrderOperation.sequence.asc()).first()
+    prev_sched=db.query(models.OperationSchedule).filter_by(operation_row_id=previous.id,status="scheduled").first() if previous else None
+    next_sched=db.query(models.OperationSchedule).filter_by(operation_row_id=following.id,status="scheduled").first() if following else None
+    if prev_sched and payload.planned_start<prev_sched.planned_end: raise HTTPException(409,"Reschedule violates routing sequence: previous operation is not complete in schedule")
+    if next_sched and payload.planned_end>next_sched.planned_start: raise HTTPException(409,"Reschedule violates routing sequence: next operation starts before this operation ends")
     wc=db.get(models.Workcenter,row.workcenter_id)
     if not wc or not wc.active or wc.status in {"Under Maintenance","Breakdown"}: raise HTTPException(409,"Workcenter unavailable")
     overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.workcenter_id==wc.id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.planned_start<payload.planned_end,models.OperationSchedule.planned_end>payload.planned_start).all()
@@ -130,6 +136,8 @@ def reschedule_operation(operation_row_id:str,payload:RescheduleIn,db:Session=De
     else:
         sched.employee_id=emp_id;sched.planned_start=payload.planned_start;sched.planned_end=payload.planned_end;sched.duration_minutes=(payload.planned_end-payload.planned_start).total_seconds()/60;sched.status="scheduled";sched.reschedule_reason=payload.reason
     row.status="Scheduled"
+    parent_order=db.get(models.ProductionOrder,row.production_order_id)
+    if parent_order and parent_order.status in {"Ready","Materials Pending"}: parent_order.status="Scheduled"
     log_audit(db,user.username,"RESCHEDULE","production_operation",operation_row_id)
     db.commit()
     return {"operation_row_id":row.id,"planned_start":payload.planned_start,"planned_end":payload.planned_end,"duration_minutes":sched.duration_minutes,"employee_id":emp_id}
