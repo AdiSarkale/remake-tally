@@ -311,17 +311,21 @@ def list_workcenter_shifts(workcenter_id:str,db:Session=Depends(get_db),user:mod
 def replace_workcenter_shifts(workcenter_id:str,payload:list[WorkcenterShiftIn],db:Session=Depends(get_db),user:models.User=guard):
     wc=db.get(models.Workcenter,workcenter_id)
     if not wc: raise HTTPException(404,"Workcenter not found")
-    ranges={}
+    week_intervals=[]
+    week_minutes=7*1440
     for item in payload:
         if item.start_time==item.end_time: raise HTTPException(400,"Shift start and end cannot be identical")
         start_min=int(item.start_time[:2])*60+int(item.start_time[3:])
         end_min=int(item.end_time[:2])*60+int(item.end_time[3:])
-        if end_min>start_min: segments=[(start_min,end_min)]
-        else: segments=[(start_min,1440),(0,end_min)]
-        for a,b in segments:
-            for existing_a,existing_b,code in ranges.setdefault(item.weekday,[]):
-                if max(a,existing_a)<min(b,existing_b): raise HTTPException(400,f"Overlapping shifts on weekday {item.weekday}: {item.shift_code} and {code}")
-            ranges[item.weekday].append((a,b,item.shift_code))
+        start=item.weekday*1440+start_min
+        end=item.weekday*1440+end_min
+        if end<=start: end+=1440
+        for existing_start,existing_end,existing_code in week_intervals:
+            for offset in (-week_minutes,0,week_minutes):
+                shifted_start=existing_start+offset;shifted_end=existing_end+offset
+                if max(start,shifted_start)<min(end,shifted_end):
+                    raise HTTPException(400,f"Overlapping workcenter shifts: {item.shift_code} and {existing_code}")
+        week_intervals.append((start,end,item.shift_code))
     db.query(models.WorkcenterShift).filter_by(workcenter_id=workcenter_id).delete(synchronize_session=False)
     rows=[models.WorkcenterShift(workcenter_id=workcenter_id,**item.model_dump()) for item in payload]
     db.add_all(rows)
@@ -349,7 +353,7 @@ def create_wip(payload:WIPIn,db:Session=Depends(get_db),user:models.User=guard):
         total=old_qty+payload.quantity
         existing.unit_cost=round((old_qty*existing.unit_cost+payload.quantity*payload.unit_cost)/total,6) if total else 0
         existing.quantity=total
-        if existing.status=="consumed": existing.status="available"
+        existing.status=payload.status
         row=existing
     else:
         row=models.WIPStock(**payload.model_dump());db.add(row);db.flush()
