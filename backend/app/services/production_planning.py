@@ -106,7 +106,7 @@ def select_machine_and_duration(db: Session, wc: models.Workcenter, row: models.
         end_at=start_at+timedelta(minutes=duration)
         downtime=db.query(models.MachineDowntime).filter(models.MachineDowntime.machine_id==machine.id,models.MachineDowntime.start_at<end_at,((models.MachineDowntime.end_at.is_(None))|(models.MachineDowntime.end_at>start_at))).first()
         if downtime: continue
-        conflicts=db.query(models.OperationSchedule).filter(models.OperationSchedule.machine_id==machine.id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required"}),models.OperationSchedule.planned_start<end_at,models.OperationSchedule.planned_end>start_at).first()
+        conflicts=db.query(models.OperationSchedule).filter(models.OperationSchedule.machine_id==machine.id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required","completed"}),models.OperationSchedule.planned_start<end_at,models.OperationSchedule.planned_end>start_at).first()
         if conflicts: continue
         return machine,duration
     raise HTTPException(409,"No available machine has capacity for the requested schedule window")
