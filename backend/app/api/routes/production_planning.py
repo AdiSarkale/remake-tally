@@ -270,7 +270,7 @@ def list_costs(db:Session=Depends(get_db),user:models.User=guard):
 
 @router.patch("/workcenters/{workcenter_id}/cost-rates")
 def set_workcenter_cost_rates(workcenter_id:str,payload:CostRatesIn,db:Session=Depends(get_db),user:models.User=guard):
-    wc=db.get(models.Workcenter,workcenter_id)
+    wc=db.query(models.Workcenter).filter_by(id=workcenter_id).with_for_update().first()
     if not wc: raise HTTPException(404,"Workcenter not found")
     wc.labor_hourly_rate=payload.labor_hourly_rate
     wc.overhead_hourly_rate=payload.overhead_hourly_rate
@@ -286,7 +286,7 @@ def list_workcenter_shifts(workcenter_id:str,db:Session=Depends(get_db),user:mod
 
 @router.put("/workcenters/{workcenter_id}/shifts")
 def replace_workcenter_shifts(workcenter_id:str,payload:list[WorkcenterShiftIn],db:Session=Depends(get_db),user:models.User=guard):
-    wc=db.get(models.Workcenter,workcenter_id)
+    wc=db.query(models.Workcenter).filter_by(id=workcenter_id).with_for_update().first()
     if not wc: raise HTTPException(404,"Workcenter not found")
     week_intervals=[]
     week_minutes=7*1440
@@ -322,7 +322,8 @@ def wip_movements(wip_id:str,db:Session=Depends(get_db),user:models.User=guard):
 
 @router.post("/wip",status_code=201)
 def create_wip(payload:WIPIn,db:Session=Depends(get_db),user:models.User=guard):
-    if not db.get(models.Product,payload.product_id): raise HTTPException(404,"Product/SF master not found")
+    product=db.query(models.Product).filter_by(id=payload.product_id).with_for_update().first()
+    if not product: raise HTTPException(404,"Product/SF master not found")
     if payload.production_order_id and not db.get(models.ProductionOrder,payload.production_order_id): raise HTTPException(404,"Production order not found")
     existing=db.query(models.WIPStock).filter_by(product_id=payload.product_id,production_order_id=payload.production_order_id).with_for_update().first()
     if existing:
