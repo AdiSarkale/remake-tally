@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.api.deps import require_any_area, require_area
 from app.db.session import get_db
-from app.modules.core.audit import log_audit\nfrom app.services.production_planning import calculate_production_cost
+from app.modules.core.audit import log_audit
+from app.services.production_planning import calculate_production_cost
 from app.services.inventory import next_batch_no
 
 router = APIRouter(prefix="/manufacturing", tags=["manufacturing"])
