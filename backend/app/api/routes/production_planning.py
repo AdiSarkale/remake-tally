@@ -1,7 +1,7 @@
 """Backend-only production planning and advanced manufacturing APIs; Smart PR generation is intentionally excluded."""
 from datetime import datetime
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app import models
 from app.api.deps import require_area
@@ -174,7 +174,7 @@ def create_wip(payload:WIPIn,db:Session=Depends(get_db),user:models.User=guard):
     db.commit();db.refresh(row);return row
 
 @router.patch("/wip/{wip_id}")
-def adjust_wip(wip_id:str,quantity:float=Field(ge=0),status:str="available",db:Session=Depends(get_db),user:models.User=guard):
+def adjust_wip(wip_id:str,quantity:float=Query(ge=0),status:str="available",db:Session=Depends(get_db),user:models.User=guard):
     row=db.get(models.WIPStock,wip_id)
     if not row: raise HTTPException(404,"WIP record not found")
     row.quantity=quantity;row.status=status
