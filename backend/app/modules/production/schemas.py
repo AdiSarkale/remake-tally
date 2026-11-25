@@ -207,6 +207,9 @@ class ProductionOrderOperationOut(ORMModel):
     status: str
     planned_qty: float
     completed_qty: float
+    planned_minutes: float = 0
+    scheduled_start: datetime | None = None
+    scheduled_end: datetime | None = None
 
 class ProductionOrderOut(ORMModel):
     id: str
