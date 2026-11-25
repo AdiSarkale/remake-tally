@@ -9,7 +9,7 @@ from app.api.deps import require_area
 from app.db.session import get_db
 from app.models import ItemKind, MovementType
 from app.modules.core.audit import log_audit
-from app.services.inventory import apply_movement, next_batch_no
+from app.services.inventory import apply_movement, next_batch_no\nfrom app.services.production_planning import calculate_production_cost
 
 router = APIRouter(prefix="/production", tags=["production"])
 guard = Depends(require_area("production"))
@@ -349,6 +349,14 @@ def create_production(
                 order.status = "Completed"
             elif any(x.completed_qty > 0 for x in ops):
                 order.status = "In Progress"
+
+    # Automatically create/update the cost record from actual consumption and the
+    # linked operation schedule. Labour and overhead use configured workcentre rates.
+    db.flush()
+    cost_data=calculate_production_cost(db,entry)
+    cost_data.pop("planned_minutes",None)
+    db.add(models.ProductionCost(production_entry_id=entry.id,**cost_data))
+    log_audit(db,user.username,"AUTO_COST","production_entry",entry.batch_no)
 
     log_audit(
         db,
