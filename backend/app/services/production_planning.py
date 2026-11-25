@@ -128,15 +128,40 @@ def schedule_order(db: Session, order_id: str, start_at, username: str) -> dict:
 
 def oee_metrics(db: Session) -> dict:
     entries=db.query(models.ProductionEntry).all()
-    production=sum(e.quantity for e in entries)
+    produced=sum(e.quantity for e in entries)
     accepted=sum(e.accepted_qty or 0 for e in entries)
     rejected=sum(e.rejected_qty or 0 for e in entries)
     scrap=sum(e.actual_scrap or 0 for e in entries)
-    quality=accepted/production if production else 0
     costs=db.query(models.ProductionCost).all()
     total_cost=sum(c.total_cost for c in costs)
-    # OEE components are only available where planned schedule and actual production data exist.
-    scheduled_minutes=sum(s.duration_minutes for s in db.query(models.OperationSchedule).filter_by(status="scheduled").all())
-    downtime_minutes=sum((d.end_at-d.start_at).total_seconds()/60 for d in db.query(models.MachineDowntime).filter(models.MachineDowntime.end_at.isnot(None)).all())
-    availability=max(0,(scheduled_minutes-downtime_minutes)/scheduled_minutes) if scheduled_minutes else None
-    return {"production_quantity":production,"accepted_quantity":accepted,"rejected_quantity":rejected,"scrap_quantity":scrap,"quality_ratio":quality,"availability_ratio":availability,"performance_ratio":None,"oee_ratio":None,"total_cost":total_cost,"costed_batches":len(costs),"note":"Performance and OEE are not reported until target cycle-time data and scheduled production time are available."}
+    order_rows=[]
+    orders=db.query(models.ProductionOrder).all()
+    for order in orders:
+        operations=db.query(models.ProductionOrderOperation).filter_by(production_order_id=order.id).order_by(models.ProductionOrderOperation.sequence).all()
+        order_rows.append({"order_id":order.id,"order_no":order.order_no,"status":order.status,"planned_qty":order.quantity,"completed_qty":sum(o.completed_qty for o in operations)/len(operations) if operations else 0,"operations":[{"sequence":o.sequence,"planned_qty":o.planned_qty,"completed_qty":o.completed_qty,"status":o.status} for o in operations]})
+    wc_rows=[]
+    schedules=db.query(models.OperationSchedule).filter_by(status="scheduled").all()
+    for wc in db.query(models.Workcenter).all():
+        wc_schedules=[s for s in schedules if s.workcenter_id==wc.id]
+        planned_qty=sum(db.get(models.ProductionOrderOperation,s.operation_row_id).planned_qty for s in wc_schedules if db.get(models.ProductionOrderOperation,s.operation_row_id))
+        hours=sum(s.duration_minutes for s in wc_schedules)/60
+        cap=wc.capacity_per_hour
+        load_ratio=(planned_qty/(cap*hours)) if cap>0 and hours>0 else None
+        actual=sum(e.quantity for e in entries if e.workcenter_id==wc.id)
+        wc_rows.append({"workcenter_id":wc.id,"code":wc.code,"name":wc.name,"scheduled_hours":round(hours,2),"scheduled_operation_count":len(wc_schedules),"planned_qty":planned_qty,"capacity_load_ratio":load_ratio,"actual_qty":actual})
+    employees={}
+    for e in entries:
+        if e.employee_id:
+            item=employees.setdefault(e.employee_id,{"employee_id":e.employee_id,"produced_qty":0,"production_entries":0})
+            item["produced_qty"]+=e.quantity;item["production_entries"]+=1
+    material_planned=sum(c.planned_quantity for e in entries for c in e.consumption)
+    material_actual=sum(c.quantity for e in entries for c in e.consumption)
+    return {
+      "production_quantity":produced,"accepted_quantity":accepted,"rejected_quantity":rejected,"scrap_quantity":scrap,
+      "yield_ratio":accepted/produced if produced else None,"rejection_ratio":rejected/produced if produced else None,
+      "scrap_ratio":scrap/produced if produced else None,
+      "plan_vs_actual_by_order":order_rows,"workcenter_capacity_load":wc_rows,"employee_productivity":list(employees.values()),
+      "planned_material_quantity":material_planned,"actual_material_quantity":material_actual,"material_variance":round(material_actual-material_planned,6),
+      "total_cost":total_cost,"costed_batches":len(costs),"availability_ratio":None,"performance_ratio":None,"oee_ratio":None,
+      "note":"Availability, performance, and OEE are intentionally not calculated yet: machine-specific schedules and target cycle-time data are not linked. Capacity load is a planning indicator, not OEE."
+    }
