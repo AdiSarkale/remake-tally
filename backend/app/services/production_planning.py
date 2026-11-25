@@ -81,7 +81,7 @@ def mrp_net_requirements(db: Session) -> list[dict]:
                     open_po+=remaining
                     if remaining:
                         receipts.append({"po_no":po.po_no,"expected_date":str(po.expected_date) if po.expected_date else None,"open_quantity":remaining})
-        net_available=max(0,m.stock-reserved)+open_po
+        net_available=max(0,m.stock)+open_po
         safety=m.min_stock or 0
         shortage=max(0,round(gross+safety-net_available,6))
         output.append({"material_id":m.id,"material_code":m.code,"material_name":m.name,"unit":m.unit,"gross_demand":round(gross,6),"safety_stock":safety,"physical_stock":m.stock,"reserved":reserved,"open_purchase_order_supply":round(open_po,6),"net_available_supply":round(net_available,6),"reserved_supply_informational":round(reserved,6),"net_requirement":shortage,"demand_orders":order_refs[material_id],"open_purchase_orders":receipts})
