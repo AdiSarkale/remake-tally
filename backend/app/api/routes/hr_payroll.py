@@ -25,7 +25,6 @@ from app import models, schemas
 from app.api.deps import require_area
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
-from app.services.inventory import log_audit
 
 router = APIRouter(prefix="/hr", tags=["hr", "payroll"])
 hr_access = Depends(require_area("hr"))
@@ -159,7 +158,6 @@ def _calculate_employee_monthly_payroll(
     calendar_overrides: dict[date, str],
 ) -> dict[str, Any]:
     components = _salary_components(profile)
-
     month_start = date(year, month, 1)
     month_end = date(year, month, calendar.monthrange(year, month)[1])
     employment_start = max(month_start, employee.joining_date) if employee.joining_date else month_start
@@ -187,11 +185,6 @@ def _calculate_employee_monthly_payroll(
     elif salary_count_mode == "calendar_days":
         employment_fraction = Decimal(eligible_calendar_days) / Decimal(month_end.day)
     elif salary_count_mode == "fixed_days":
-        # The fixed divisor is a daily-rate basis, not a proxy for how much
-        # of the month the employee was employed. Compare eligible scheduled
-        # days with the month's full scheduled days so a full-month employee
-        # receives a full monthly gross even when the month has fewer than 26
-        # scheduled days (for example, because of holidays).
         full_month_working_days = len(scheduled_days)
         employment_fraction = (
             Decimal(len(eligible_working_days)) / Decimal(full_month_working_days)
@@ -206,15 +199,10 @@ def _calculate_employee_monthly_payroll(
     employment_fraction = min(Decimal("1"), max(Decimal("0"), employment_fraction))
     effective_gross = _money(components["monthly_gross"] * employment_fraction)
 
-    divisor = _salary_count_divisor(
-        year, month, salary_count_mode, monthly_salary_days, week_off_days, calendar_overrides
-    )
-
     present_days = half_days = absent_days = paid_leave_days = unpaid_leave_days = Decimal("0")
     unpaid_equivalent_days = Decimal("0")
     overtime_minutes = 0
     for row in attendance_rows:
-
         work_date = getattr(row, "work_date", None)
         in_employment_period = (
             work_date is not None and employment_active
@@ -223,15 +211,6 @@ def _calculate_employee_monthly_payroll(
         scheduled_workday = (
             in_employment_period
             and _calendar_type(work_date, week_off_days, calendar_overrides) == "working_day"
-
-        # Attendance on an overridden holiday or configured week-off is not a
-        # scheduled absence. Still show the recorded attendance in the summary.
-        work_date = getattr(row, "work_date", None)
-        scheduled_workday = (
-            _calendar_type(work_date, week_off_days, calendar_overrides) == "working_day"
-            if work_date is not None
-            else True
-
         )
         if row.status == "present":
             present_days += Decimal("1")
@@ -249,7 +228,6 @@ def _calculate_employee_monthly_payroll(
             unpaid_leave_days += Decimal("1")
             if scheduled_workday:
                 unpaid_equivalent_days += Decimal("1")
-
         if in_employment_period and row.status in {"present", "half_day"}:
             overtime_minutes += max(0, int(row.overtime_minutes or 0))
 
@@ -271,42 +249,18 @@ def _calculate_employee_monthly_payroll(
     net_pay = max(
         Decimal("0.00"),
         _money(effective_gross - absence_deduction - prorated_pf - prorated_pt - prorated_tds + overtime_pay),
-
-        # Rejecting or ignoring overtime for absence/leave rows avoids paying
-        # overtime that cannot be reconciled to actual attendance.
-        if row.status in {"present", "half_day"}:
-            overtime_minutes += max(0, int(row.overtime_minutes or 0))
-
-    daily_rate = components["monthly_gross"] / Decimal(divisor)
-    absence_deduction = min(
-        components["monthly_gross"],
-        _money(daily_rate * unpaid_equivalent_days),
-    )
-    overtime_pay = _money((daily_rate / Decimal("8")) * Decimal(overtime_minutes) / Decimal("60"))
-    net_pay = max(
-        Decimal("0.00"),
-        _money(
-            components["monthly_gross"] - absence_deduction - components["employee_pf"]
-            - components["professional_tax"] - components["tds"] + overtime_pay
-        ),
-
     )
     return {
         "employee_id": employee.id, "employee_code": employee.emp_code, "employee_name": employee.name,
         "department": employee.department or "", "configured": profile is not None and components["annual_salary"] > 0,
         **components,
-
         "monthly_gross": effective_gross,
         "employee_pf": prorated_pf, "professional_tax": prorated_pt, "tds": prorated_tds,
-
         "present_days": _money(present_days), "half_days": _money(half_days),
         "absent_days": _money(absent_days), "paid_leave_days": _money(paid_leave_days),
         "unpaid_leave_days": _money(unpaid_leave_days), "overtime_minutes": overtime_minutes,
         "absence_deduction": absence_deduction, "overtime_pay": overtime_pay, "net_pay": net_pay,
     }
-
-
-
 
 
 def _validate_period(year: int, month: int) -> None:
@@ -394,22 +348,15 @@ def _run_output(db: Session, run: models.HRPayrollRun, include_items: bool = Tru
 
 def _attendance_output(
     employee: models.Employee, work_date: date, row: models.EmployeeAttendance | None,
-
     calendar_type: str, calendar_description: str, tenant_tz: ZoneInfo,
-
-    calendar_type: str, calendar_description: str,
-
 ) -> dict[str, Any]:
     return {
         "id": row.id if row else None, "employee_id": employee.id, "employee_code": employee.emp_code,
         "employee_name": employee.name, "work_date": work_date,
         "status": row.status if row else (calendar_type if calendar_type in {"holiday", "week_off"} else "unmarked"),
         "calendar_type": calendar_type, "calendar_description": calendar_description,
-
-        "punch_in": _to_local(row.punch_in, tenant_tz) if row else None, "punch_out": _to_local(row.punch_out, tenant_tz) if row else None,
-
-        "punch_in": row.punch_in if row else None, "punch_out": row.punch_out if row else None,
-
+        "punch_in": _to_local(row.punch_in, tenant_tz) if row else None,
+        "punch_out": _to_local(row.punch_out, tenant_tz) if row else None,
         "overtime_minutes": row.overtime_minutes if row else 0, "note": row.note if row else "",
     }
 
@@ -538,17 +485,11 @@ def _parse_attendance_workbook(
     year: int,
     month: int,
     employees_by_code: dict[str, Any],
-
     tenant_tz: ZoneInfo | None = None,
 ) -> list[dict[str, Any]]:
     """Validate the entire workbook before the caller makes any database changes."""
     _validate_period(year, month)
     tenant_tz = tenant_tz or ZoneInfo("Asia/Kolkata")
-
-) -> list[dict[str, Any]]:
-    """Validate the entire workbook before the caller makes any database changes."""
-    _validate_period(year, month)
-
     try:
         workbook = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
     except (InvalidFileException, BadZipFile, OSError, ValueError) as exc:
@@ -613,17 +554,13 @@ def _parse_attendance_workbook(
             try:
                 parsed_time = _parse_attendance_excel_time(raw_punch_in)
                 if parsed_time is not None and work_date is not None:
-
                     punch_in = datetime.combine(work_date, parsed_time, tzinfo=tenant_tz).astimezone(timezone.utc)
-
-                    punch_in = datetime.combine(work_date, parsed_time).replace(tzinfo=timezone.utc)
-
             except ValueError as exc:
                 errors.append(f"Row {row_number}: Punch In {exc}.")
             try:
                 parsed_time = _parse_attendance_excel_time(raw_punch_out)
                 if parsed_time is not None and work_date is not None:
-                    punch_out = datetime.combine(work_date, parsed_time).replace(tzinfo=timezone.utc)
+                    punch_out = datetime.combine(work_date, parsed_time, tzinfo=tenant_tz).astimezone(timezone.utc)
             except ValueError as exc:
                 errors.append(f"Row {row_number}: Punch Out {exc}.")
             if punch_in is not None and punch_out is not None and punch_out <= punch_in:
@@ -827,11 +764,10 @@ def get_monthly_attendance(
 
     tenant_tz = _tenant_timezone(db)
     return [
-        _attendance_output(employee, day, by_date.get(day), _calendar_type(day, week_off_days, overrides), descriptions.get(day, ""), tenant_tz)
-
-    return [
-        _attendance_output(employee, day, by_date.get(day), _calendar_type(day, week_off_days, overrides), descriptions.get(day, ""))
-
+        _attendance_output(
+            employee, day, by_date.get(day),
+            _calendar_type(day, week_off_days, overrides), descriptions.get(day, ""), tenant_tz,
+        )
         for day in (date(year, month, number) for number in range(1, end.day + 1))
     ]
 
@@ -872,7 +808,6 @@ async def import_attendance_from_excel(
 
     employees_by_code = {
         row.emp_code.strip().upper(): row
-
         for row in db.query(models.Employee).filter(
             models.Employee.active.is_(True),
             models.Employee.joining_date <= date(year, month, calendar.monthrange(year, month)[1]),
@@ -881,12 +816,6 @@ async def import_attendance_from_excel(
     }
     try:
         rows = _parse_attendance_workbook(content, year, month, employees_by_code, _tenant_timezone(db))
-
-        for row in db.query(models.Employee).filter(models.Employee.active.is_(True)).all()
-    }
-    try:
-        rows = _parse_attendance_workbook(content, year, month, employees_by_code)
-
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -943,12 +872,6 @@ def upsert_daily_attendance(
     punch_in = _to_utc(payload.punch_in, tenant_tz)
     punch_out = _to_utc(payload.punch_out, tenant_tz)
 
-    punch_in, punch_out = payload.punch_in, payload.punch_out
-    if punch_in is not None and punch_in.tzinfo is None:
-        punch_in = punch_in.replace(tzinfo=timezone.utc)
-    if punch_out is not None and punch_out.tzinfo is None:
-        punch_out = punch_out.replace(tzinfo=timezone.utc)
-
     if punch_in and punch_out and punch_out <= punch_in:
         raise HTTPException(status_code=422, detail="Punch-out must be after punch-in")
     row = db.query(models.EmployeeAttendance).filter_by(employee_id=payload.employee_id, work_date=payload.work_date).first()
@@ -974,10 +897,9 @@ def upsert_daily_attendance(
     override = db.query(models.HRCalendarDay).filter_by(work_date=payload.work_date).first()
     calendar_type = _calendar_type(payload.work_date, _week_offs(settings), {payload.work_date: override.day_type} if override else {})
 
-    return _attendance_output(employee, payload.work_date, row, calendar_type, override.description if override else "", tenant_tz)
-
-    return _attendance_output(employee, payload.work_date, row, calendar_type, override.description if override else "")
-
+    return _attendance_output(
+        employee, payload.work_date, row, calendar_type, override.description if override else "", tenant_tz,
+    )
 
 
 @router.delete("/attendance/{employee_id}/{work_date}", status_code=204)
