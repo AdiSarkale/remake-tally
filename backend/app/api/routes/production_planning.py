@@ -140,6 +140,7 @@ def reschedule_operation(operation_row_id:str,payload:RescheduleIn,db:Session=De
     operation=db.get(models.RoutingOperation,row.operation_id)
     machine,required_duration=select_machine_and_duration(db,wc,row,operation,payload.planned_start,payload.machine_id)
     requested_duration=(payload.planned_end-payload.planned_start).total_seconds()/60
+    if not validate_shift_window(db,wc.id,payload.planned_start,payload.planned_end): raise HTTPException(409,"Reschedule must fit within a configured workcenter shift")
     if requested_duration+0.001<required_duration: raise HTTPException(409,f"Scheduled duration is shorter than capacity requirement ({required_duration:.2f} minutes)")
     if machine:
         downtime=db.query(models.MachineDowntime).filter(models.MachineDowntime.machine_id==machine.id,models.MachineDowntime.start_at<payload.planned_end,((models.MachineDowntime.end_at.is_(None))|(models.MachineDowntime.end_at>payload.planned_start))).first()
@@ -310,8 +311,17 @@ def list_workcenter_shifts(workcenter_id:str,db:Session=Depends(get_db),user:mod
 def replace_workcenter_shifts(workcenter_id:str,payload:list[WorkcenterShiftIn],db:Session=Depends(get_db),user:models.User=guard):
     wc=db.get(models.Workcenter,workcenter_id)
     if not wc: raise HTTPException(404,"Workcenter not found")
-    for row in payload:
-        if row.start_time==row.end_time: raise HTTPException(400,"Shift start and end cannot be identical")
+    ranges={}
+    for item in payload:
+        if item.start_time==item.end_time: raise HTTPException(400,"Shift start and end cannot be identical")
+        start_min=int(item.start_time[:2])*60+int(item.start_time[3:])
+        end_min=int(item.end_time[:2])*60+int(item.end_time[3:])
+        if end_min>start_min: segments=[(start_min,end_min)]
+        else: segments=[(start_min,1440),(0,end_min)]
+        for a,b in segments:
+            for existing_a,existing_b,code in ranges.setdefault(item.weekday,[]):
+                if max(a,existing_a)<min(b,existing_b): raise HTTPException(400,f"Overlapping shifts on weekday {item.weekday}: {item.shift_code} and {code}")
+            ranges[item.weekday].append((a,b,item.shift_code))
     db.query(models.WorkcenterShift).filter_by(workcenter_id=workcenter_id).delete(synchronize_session=False)
     rows=[models.WorkcenterShift(workcenter_id=workcenter_id,**item.model_dump()) for item in payload]
     db.add_all(rows)
