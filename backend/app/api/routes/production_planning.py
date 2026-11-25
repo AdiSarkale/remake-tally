@@ -7,7 +7,7 @@ from app import models
 from app.api.deps import require_area
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
-from app.services.production_planning import material_requirements, reserve_order_materials, mrp_net_requirements, schedule_order, oee_metrics
+from app.services.production_planning import material_requirements, reserve_order_materials, mrp_net_requirements, schedule_order, select_machine_and_duration, oee_metrics
 
 router=APIRouter(prefix="/manufacturing/planning",tags=["production-planning"])
 guard=Depends(require_area("production"))
@@ -20,6 +20,7 @@ class RescheduleIn(BaseModel):
     planned_start: datetime
     planned_end: datetime
     employee_id: str | None=None
+    machine_id: str | None=None
     reason: str=Field(default="",max_length=500)
 class MachineIn(BaseModel):
     code: str=Field(min_length=1,max_length=32)
@@ -34,6 +35,8 @@ class DowntimeIn(BaseModel):
     machine_id: str
     start_at: datetime
     end_at: datetime | None=None
+class DowntimeEndIn(BaseModel):
+    end_at: datetime
     reason_code: str=""
     reason: str=""
     maintenance: bool=False
@@ -121,28 +124,42 @@ def reschedule_operation(operation_row_id:str,payload:RescheduleIn,db:Session=De
     if next_sched and payload.planned_end>next_sched.planned_start: raise HTTPException(409,"Reschedule violates routing sequence: next operation starts before this operation ends")
     wc=db.get(models.Workcenter,row.workcenter_id)
     if not wc or not wc.active or wc.status in {"Under Maintenance","Breakdown"}: raise HTTPException(409,"Workcenter unavailable")
-    overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.workcenter_id==wc.id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.planned_start<payload.planned_end,models.OperationSchedule.planned_end>payload.planned_start).all()
+    operation=db.get(models.RoutingOperation,row.operation_id)
+    machine,required_duration=select_machine_and_duration(db,wc,row,operation,payload.planned_start,payload.machine_id)
+    requested_duration=(payload.planned_end-payload.planned_start).total_seconds()/60
+    if requested_duration+0.001<required_duration: raise HTTPException(409,f"Scheduled duration is shorter than capacity requirement ({required_duration:.2f} minutes)")
+    if machine:
+        downtime=db.query(models.MachineDowntime).filter(models.MachineDowntime.machine_id==machine.id,models.MachineDowntime.start_at<payload.planned_end,((models.MachineDowntime.end_at.is_(None))|(models.MachineDowntime.end_at>payload.planned_start))).first()
+        if downtime: raise HTTPException(409,"Machine downtime overlaps requested schedule")
+        machine_overlap=db.query(models.OperationSchedule).filter(models.OperationSchedule.machine_id==machine.id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required"}),models.OperationSchedule.planned_start<payload.planned_end,models.OperationSchedule.planned_end>payload.planned_start).first()
+        if machine_overlap: raise HTTPException(409,"Machine schedule overlap")
+    overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.workcenter_id==wc.id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required"}),models.OperationSchedule.planned_start<payload.planned_end,models.OperationSchedule.planned_end>payload.planned_start).all()
     if overlaps: raise HTTPException(409,"Workcenter schedule overlap")
     emp_id=payload.employee_id if payload.employee_id is not None else row.assigned_employee_id
     if emp_id:
         emp=db.get(models.Employee,emp_id)
-        operation=db.get(models.RoutingOperation,row.operation_id)
         if not emp or not emp.active: raise HTTPException(400,"Employee inactive or missing")
         if operation.required_skill and not db.query(models.EmployeeSkill).filter_by(employee_id=emp.id,skill=operation.required_skill,active=True).first(): raise HTTPException(400,"Employee lacks required skill")
-        emp_overlap=db.query(models.OperationSchedule).filter(models.OperationSchedule.employee_id==emp_id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.planned_start<payload.planned_end,models.OperationSchedule.planned_end>payload.planned_start).first()
+        emp_overlap=db.query(models.OperationSchedule).filter(models.OperationSchedule.employee_id==emp_id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required"}),models.OperationSchedule.planned_start<payload.planned_end,models.OperationSchedule.planned_end>payload.planned_start).first()
         if emp_overlap: raise HTTPException(409,"Employee schedule overlap")
     sched=db.query(models.OperationSchedule).filter_by(operation_row_id=row.id).first()
     if not sched:
-        sched=models.OperationSchedule(operation_row_id=row.id,workcenter_id=wc.id,employee_id=emp_id,planned_start=payload.planned_start,planned_end=payload.planned_end,duration_minutes=(payload.planned_end-payload.planned_start).total_seconds()/60,status="scheduled",reschedule_reason=payload.reason)
+        sched=models.OperationSchedule(operation_row_id=row.id,workcenter_id=wc.id,machine_id=machine.id if machine else None,employee_id=emp_id,planned_start=payload.planned_start,planned_end=payload.planned_end,duration_minutes=requested_duration,status="scheduled",reschedule_reason=payload.reason)
         db.add(sched)
     else:
-        sched.employee_id=emp_id;sched.planned_start=payload.planned_start;sched.planned_end=payload.planned_end;sched.duration_minutes=(payload.planned_end-payload.planned_start).total_seconds()/60;sched.status="scheduled";sched.reschedule_reason=payload.reason
+        sched.machine_id=machine.id if machine else None
+        sched.employee_id=emp_id
+        sched.planned_start=payload.planned_start
+        sched.planned_end=payload.planned_end
+        sched.duration_minutes=requested_duration
+        sched.status="scheduled"
+        sched.reschedule_reason=payload.reason
     row.status="Scheduled"
     parent_order=db.get(models.ProductionOrder,row.production_order_id)
     if parent_order and parent_order.status in {"Ready","Materials Pending"}: parent_order.status="Scheduled"
     log_audit(db,user.username,"RESCHEDULE","production_operation",operation_row_id)
     db.commit()
-    return {"operation_row_id":row.id,"planned_start":payload.planned_start,"planned_end":payload.planned_end,"duration_minutes":sched.duration_minutes,"employee_id":emp_id}
+    return {"operation_row_id":row.id,"planned_start":payload.planned_start,"planned_end":payload.planned_end,"duration_minutes":sched.duration_minutes,"machine_id":machine.id if machine else None,"employee_id":emp_id}
 
 @router.get("/machines")
 def list_machines(db:Session=Depends(get_db),user:models.User=guard):
@@ -171,6 +188,20 @@ def update_machine(machine_id:str,payload:MachineIn,db:Session=Depends(get_db),u
 def list_downtime(db:Session=Depends(get_db),user:models.User=guard):
     return db.query(models.MachineDowntime).order_by(models.MachineDowntime.start_at.desc()).all()
 
+@router.patch("/downtime/{downtime_id}/close")
+def close_downtime(downtime_id:str,payload:DowntimeEndIn,db:Session=Depends(get_db),user:models.User=guard):
+    row=db.get(models.MachineDowntime,downtime_id)
+    if not row: raise HTTPException(404,"Downtime record not found")
+    if row.end_at is not None: raise HTTPException(409,"Downtime record is already closed")
+    if payload.end_at<=row.start_at: raise HTTPException(400,"Downtime end must be after start")
+    row.end_at=payload.end_at
+    machine=db.get(models.MachineResource,row.machine_id)
+    open_rows=db.query(models.MachineDowntime).filter(models.MachineDowntime.machine_id==machine.id,models.MachineDowntime.id!=row.id,models.MachineDowntime.end_at.is_(None)).all()
+    if machine and machine.active:
+        machine.status="maintenance" if any(x.maintenance for x in open_rows) else ("down" if open_rows else "available")
+    log_audit(db,user.username,"DOWNTIME_END","machine",machine.code if machine else row.machine_id)
+    db.commit();db.refresh(row);return row
+
 @router.post("/downtime",status_code=201)
 def create_downtime(payload:DowntimeIn,db:Session=Depends(get_db),user:models.User=guard):
     if payload.end_at and payload.end_at<=payload.start_at: raise HTTPException(400,"Downtime end must be after start")
@@ -178,9 +209,13 @@ def create_downtime(payload:DowntimeIn,db:Session=Depends(get_db),user:models.Us
     if not machine: raise HTTPException(404,"Machine not found")
     row=models.MachineDowntime(**payload.model_dump(),created_by=user.username)
     db.add(row)
+    affected=db.query(models.OperationSchedule).filter(models.OperationSchedule.machine_id==machine.id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.planned_start<payload.end_at if payload.end_at else models.OperationSchedule.planned_start<datetime.max,models.OperationSchedule.planned_end>payload.start_at).all()
+    for schedule in affected:
+        schedule.status="reschedule_required"
     machine.status="maintenance" if payload.maintenance and payload.end_at is None else ("down" if payload.end_at is None else machine.status)
     log_audit(db,user.username,"DOWNTIME","machine",machine.code+":"+payload.reason_code)
-    db.commit();db.refresh(row);return row
+    db.commit();db.refresh(row)
+    return {"downtime":row,"affected_operation_schedules":[x.id for x in affected],"reschedule_required":len(affected)}
 
 @router.post("/costs/{production_entry_id}")
 def record_cost(production_entry_id:str,payload:CostIn,db:Session=Depends(get_db),user:models.User=guard):
