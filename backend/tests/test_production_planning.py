@@ -172,3 +172,32 @@ def test_overnight_shift_covers_early_morning_after_midnight():
     aligned,end=align_to_shift(db,wc.id,start,60)
     assert aligned==start and end.hour==3
     db.close()
+
+def test_auto_costing_prorates_schedule_cost_for_partial_batch():
+    from datetime import datetime, timezone
+    from app.api.routes.production_planning import auto_cost
+    db=make_db()
+    product=models.Product(code="FG-PART",name="Partial cost")
+    material=models.RawMaterial(code="RM-PART",name="Partial material",unit="KG",stock=10,min_stock=0,cost=4)
+    wc=models.Workcenter(code="WC-PART",name="Partial WC",capacity_per_hour=60,labor_hourly_rate=50,overhead_hourly_rate=20,status="Available",active=True)
+    user=models.User(username="partial",full_name="Test",password_hash="x")
+    db.add_all([product,material,wc,user]);db.flush()
+    routing=models.Routing(product_id=product.id,version=1,active=True,name="Partial route");db.add(routing);db.flush()
+    operation=models.RoutingOperation(routing_id=routing.id,sequence=1,code="OP-P",name="Partial operation",workcenter_id=wc.id,required_skill="",setup_minutes=0,run_minutes_per_unit=1,active=True);db.add(operation);db.flush()
+    order=models.ProductionOrder(order_no="PO-PART",order_date=date.today(),product_id=product.id,quantity=10,due_date=None,routing_id=routing.id,status="In Progress",remarks="");db.add(order);db.flush()
+    op_row=models.ProductionOrderOperation(production_order_id=order.id,operation_id=operation.id,sequence=1,workcenter_id=wc.id,assigned_employee_id=None,status="In Progress",planned_qty=10,completed_qty=5)
+    machine=models.MachineResource(code="M-PART",name="Partial machine",workcenter_id=wc.id,capacity_per_hour=60,hourly_rate=120,status="available",active=True);db.add_all([op_row,machine]);db.flush()
+    schedule=models.OperationSchedule(operation_row_id=op_row.id,workcenter_id=wc.id,machine_id=machine.id,employee_id=None,planned_start=datetime(2026,11,25,9,tzinfo=timezone.utc),planned_end=datetime(2026,11,25,10,tzinfo=timezone.utc),duration_minutes=60,status="completed",reschedule_reason="")
+    entry=models.ProductionEntry(batch_no="B-PART",entry_date=date.today(),product_id=product.id,quantity=5,machine=machine.code,workcenter_id=wc.id,routing_id=routing.id,operation_id=operation.id,production_order_id=order.id,employee_id=None,operator="Test",shift="A",remarks="",actual_scrap=0,quality_status="Accepted",accepted_qty=5,rejected_qty=0,quality_remarks="")
+    db.add_all([schedule,entry]);db.flush()
+    db.add(models.ProductionConsumption(production_id=entry.id,material_id=material.id,planned_quantity=2,quantity=2));db.flush()
+    result=auto_cost(entry.id,db,user)
+    cost=result["cost_record"]
+    assert result["calculation_basis"]["planned_minutes"]==30
+    assert cost.material_cost==8
+    assert cost.machine_cost==60
+    assert cost.labor_cost==25
+    assert cost.overhead_cost==10
+    assert cost.total_cost==103
+    assert cost.unit_cost==20.6
+    db.close()
