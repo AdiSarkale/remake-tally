@@ -103,7 +103,7 @@ def schedule_order(db: Session, order_id: str, start_at, username: str) -> dict:
         duration=op.setup_minutes+(op.run_minutes_per_unit*row.planned_qty)
         if duration<=0: duration=max(1,row.planned_qty*60/wc.capacity_per_hour)
         end=cursor+timedelta(minutes=duration)
-        overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.workcenter_id==wc.id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.planned_start<end,models.OperationSchedule.planned_end>cursor).all()
+        overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.workcenter_id==wc.id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.planned_start<end,models.OperationSchedule.planned_end>cursor).all()
         if overlaps: raise HTTPException(409,f"Workcenter {wc.code} has overlapping schedule")
         employee_id=row.assigned_employee_id
         if employee_id:
@@ -111,7 +111,7 @@ def schedule_order(db: Session, order_id: str, start_at, username: str) -> dict:
             if not emp or not emp.active: raise HTTPException(409,"Assigned employee is inactive")
             if op.required_skill and not db.query(models.EmployeeSkill).filter_by(employee_id=emp.id,skill=op.required_skill,active=True).first():
                 raise HTTPException(409,f"Assigned employee lacks required skill: {op.required_skill}")
-            employee_overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.employee_id==employee_id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.planned_start<end,models.OperationSchedule.planned_end>cursor).all()
+            employee_overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.employee_id==employee_id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.planned_start<end,models.OperationSchedule.planned_end>cursor).all()
             if employee_overlaps: raise HTTPException(409,"Assigned employee has schedule overlap")
         existing=db.query(models.OperationSchedule).filter_by(operation_row_id=row.id).first()
         if existing:
