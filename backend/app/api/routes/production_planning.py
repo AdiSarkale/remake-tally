@@ -131,7 +131,7 @@ def reschedule_operation(operation_row_id:str,payload:RescheduleIn,db:Session=De
     if machine:
         downtime=db.query(models.MachineDowntime).filter(models.MachineDowntime.machine_id==machine.id,models.MachineDowntime.start_at<payload.planned_end,((models.MachineDowntime.end_at.is_(None))|(models.MachineDowntime.end_at>payload.planned_start))).first()
         if downtime: raise HTTPException(409,"Machine downtime overlaps requested schedule")
-        machine_overlap=db.query(models.OperationSchedule).filter(models.OperationSchedule.machine_id==machine.id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required"}),models.OperationSchedule.planned_start<payload.planned_end,models.OperationSchedule.planned_end>payload.planned_start).first()
+        machine_overlap=db.query(models.OperationSchedule).filter(models.OperationSchedule.machine_id==machine.id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required","completed"}),models.OperationSchedule.planned_start<payload.planned_end,models.OperationSchedule.planned_end>payload.planned_start).first()
         if machine_overlap: raise HTTPException(409,"Machine schedule overlap")
     overlaps=db.query(models.OperationSchedule).filter(models.OperationSchedule.workcenter_id==wc.id,models.OperationSchedule.operation_row_id!=row.id,models.OperationSchedule.status.in_({"scheduled","reschedule_required"}),models.OperationSchedule.planned_start<payload.planned_end,models.OperationSchedule.planned_end>payload.planned_start).all()
     if overlaps: raise HTTPException(409,"Workcenter schedule overlap")
@@ -209,7 +209,7 @@ def create_downtime(payload:DowntimeIn,db:Session=Depends(get_db),user:models.Us
     if not machine: raise HTTPException(404,"Machine not found")
     row=models.MachineDowntime(**payload.model_dump(),created_by=user.username)
     db.add(row)
-    affected_query=db.query(models.OperationSchedule).filter(models.OperationSchedule.machine_id==machine.id,models.OperationSchedule.status=="scheduled",models.OperationSchedule.planned_end>payload.start_at)
+    affected_query=db.query(models.OperationSchedule).filter(models.OperationSchedule.machine_id==machine.id,models.OperationSchedule.status.in_({"scheduled","completed"}),models.OperationSchedule.planned_end>payload.start_at)
     if payload.end_at:
         affected_query=affected_query.filter(models.OperationSchedule.planned_start<payload.end_at)
     affected=affected_query.all()
