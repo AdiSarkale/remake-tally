@@ -23,6 +23,7 @@ class OperationSchedule(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
     operation_row_id: Mapped[str] = mapped_column(ForeignKey("production_order_operations.id", ondelete="CASCADE"), index=True)
     workcenter_id: Mapped[str] = mapped_column(ForeignKey("workcenters.id"), index=True)
+    machine_id: Mapped[str | None] = mapped_column(ForeignKey("machine_resources.id"), nullable=True, index=True)
     employee_id: Mapped[str | None] = mapped_column(ForeignKey("employees.id"), nullable=True, index=True)
     planned_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     planned_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
