@@ -28,7 +28,7 @@ class MachineIn(BaseModel):
     workcenter_id: str
     capacity_per_hour: float=Field(ge=0)
     hourly_rate: float=Field(ge=0)
-    status: str="available"
+    status: str=Field(default="available",pattern="^(available|down|maintenance|disabled)$")
     active: bool=True
     maintenance_due: date | None=None
 class DowntimeIn(BaseModel):
@@ -53,7 +53,7 @@ class WIPIn(BaseModel):
     production_order_id: str | None=None
     quantity: float=Field(ge=0)
     unit_cost: float=Field(ge=0)
-    status: str="available"
+    status: str=Field(default="available",pattern="^(available|reserved|quality_hold|consumed)$")
 
 
 @router.patch("/orders/{order_id}/status")
