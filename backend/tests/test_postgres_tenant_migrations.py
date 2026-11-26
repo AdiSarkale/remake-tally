@@ -284,7 +284,7 @@ def test_postgres_company_provisioning_and_fleet_migration():
                     revision = connection.execute(
                         text("SELECT version_num FROM alembic_version")
                     ).scalar_one()
-                assert revision == "p0_hr_att_reconcile_020"
+                assert revision == "p0_hr_att_summary_021"
                 with engine.connect() as connection:
                     attendance_grants = {
                         (row[0], row[1], row[2], row[3])
