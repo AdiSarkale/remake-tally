@@ -328,6 +328,32 @@ class HRWorkforcePolicyVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+
+
+class HROvertimePolicyVersion(Base):
+    """Tenant-local, effective-dated overtime and compensatory policy snapshot."""
+
+    __tablename__ = "hr_overtime_policy_versions"
+    __table_args__ = (
+        UniqueConstraint("version_code", name="uq_hr_overtime_policy_version_code"),
+        CheckConstraint("effective_to IS NULL OR effective_to >= effective_from", name="ck_hr_overtime_policy_effective_dates"),
+        CheckConstraint("status IN ('draft', 'published', 'retired')", name="ck_hr_overtime_policy_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    version_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(16), default="draft", nullable=False)
+    scope: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    configuration: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    published_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
 class HRShiftType(Base):
     """Reusable local-time shift definition; roster rows retain immutable snapshots."""
 
