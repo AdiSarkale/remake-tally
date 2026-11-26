@@ -1346,13 +1346,13 @@ A test plan is not a test result. Do not mark CI passed until the run exists and
 | P0.1-05 Timezone engine | Branch timezone with tenant fallback, overnight boundaries, branch-scoped import context | **Shift-window core implemented** — UTC boundary and DST rejection tests pass; branch-aware attendance/import context remains pending. |
 | P0.1-06 Attendance event intake | Manual, employee and Excel raw event ingestion; legacy summary compatibility | Event idempotency and import atomicity pass. |
 | P0.1-07 Reconciliation | Tenant margin setting, source comparison, anomaly queue and resolution | No last-write-wins; anomaly tests pass. |
-| P0.1-08 Attendance summary/correction | Daily summary projection/revisions, missing-punch and invalid-sequence exceptions, reviewed punch correction workflow | Backend slice implemented on feature branch; fresh CI pending. Dedicated spec: [P0.1-08 v1.0](NEXORA_HR_P0.1-08_DAILY_ATTENDANCE_SUMMARY_CORRECTION_SPEC_v1.0.md) |
+| P0.1-08 Attendance summary/correction | Daily summary projection/revisions, missing-punch and invalid-sequence exceptions, reviewed punch correction workflow | Backend slice implemented and CI-verified; UI/payroll integration deferred. Dedicated spec: [P0.1-08 v1.0](NEXORA_HR_P0.1-08_DAILY_ATTENDANCE_SUMMARY_CORRECTION_SPEC_v1.0.md) |
 | P0.1-09 Overtime | Candidate calculation, supervisor approval, HR verification | Payable gating tests pass. |
 | P0.1-10 Payroll integration | Shift-aware readiness, divisor safety guard, daily snapshot, exception blocking, revisions | Payroll and Finance regressions pass. |
 | P0.1-11 Reports/UI | Roster, attendance, overtime and exception screens/reports | Frontend typecheck/build and browser smoke pass. |
 | P0.1-12 Release hardening | Authorization, tenant isolation, audit, migration, CI and documentation | All applicable acceptance criteria pass. |
 
-Recommended order: P0.1-00 through P0.1-07 backend slices are implemented and CI-verified on the integration branch. P0.1-08 daily summary/correction backend is in progress on a feature branch; fresh CI is pending. Shift catalog, assignment and roster read/view UI remain pending. The existing Playwright smoke is API-mocked and does not verify roster UI. Do not implement payroll shift logic ahead of a persisted, tested roster.
+Recommended order: P0.1-00 through P0.1-07 backend slices are implemented and CI-verified on the integration branch. P0.1-08 daily summary/correction backend is implemented and CI-verified in the integration branch. Shift catalog, assignment and roster read/view UI remain pending. The existing Playwright smoke is API-mocked and does not verify roster UI. Do not implement payroll shift logic ahead of a persisted, tested roster.
 
 ---
 
