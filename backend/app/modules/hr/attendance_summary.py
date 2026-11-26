@@ -16,6 +16,7 @@ from app.modules.hr.payroll import (
     HRAttendanceSummaryRevision,
     HRAttendanceEvent,
     HRShiftRosterEntry,
+    Employee,
 )
 
 
@@ -152,6 +153,9 @@ def recalculate_attendance_summary(
     db: Session, employee_id: str, work_date: date, *, calculated_by: str,
 ) -> tuple[HRAttendanceDailySummary, HRAttendanceSummaryRevision, bool]:
     """Persist a current projection and immutable revision; unchanged inputs are idempotent."""
+    # Serialize projection revisions for this employee; PostgreSQL row-locks the
+    # employee so concurrent event appends cannot race summary creation/versioning.
+    db.query(Employee).filter(Employee.id == employee_id).with_for_update().first()
     projection = calculate_attendance_projection(db, employee_id, work_date)
     summary = db.query(HRAttendanceDailySummary).filter_by(
         employee_id=employee_id, work_date=work_date,
