@@ -125,6 +125,10 @@ def append_attendance_event(
     db.add(event)
     db.flush()
     reconcile_attendance_event(db, event)
+    # Projection is refreshed in the same transaction as the raw-event append.
+    # Import locally to avoid a module-level circular dependency.
+    from app.modules.hr.attendance_summary import recalculate_attendance_summary
+    recalculate_attendance_summary(db, employee_id, work_date, calculated_by=recorded_by)
     return event, True
 
 
