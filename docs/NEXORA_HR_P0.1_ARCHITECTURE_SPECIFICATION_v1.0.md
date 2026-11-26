@@ -1346,7 +1346,7 @@ A test plan is not a test result. Do not mark CI passed until the run exists and
 | P0.1-05 Timezone engine | Branch timezone with tenant fallback, overnight boundaries, branch-scoped import context | **Shift-window core implemented** — UTC boundary and DST rejection tests pass; branch-aware attendance/import context remains pending. |
 | P0.1-06 Attendance event intake | Manual, employee and Excel raw event ingestion; legacy summary compatibility | Event idempotency and import atomicity pass. |
 | P0.1-07 Reconciliation | Tenant margin setting, source comparison, anomaly queue and resolution | No last-write-wins; anomaly tests pass. |
-| P0.1-08 Attendance summary/correction | Daily summary projection, missing punch exception, correction workflow | HR correction and audit tests pass. |
+| P0.1-08 Attendance summary/correction | Daily summary projection/revisions, missing-punch and invalid-sequence exceptions, reviewed punch correction workflow | Backend slice implemented on feature branch; fresh CI pending. Dedicated spec: [P0.1-08 v1.0](NEXORA_HR_P0.1-08_DAILY_ATTENDANCE_SUMMARY_CORRECTION_SPEC_v1.0.md) |
 | P0.1-09 Overtime | Candidate calculation, supervisor approval, HR verification | Payable gating tests pass. |
 | P0.1-10 Payroll integration | Shift-aware readiness, divisor safety guard, daily snapshot, exception blocking, revisions | Payroll and Finance regressions pass. |
 | P0.1-11 Reports/UI | Roster, attendance, overtime and exception screens/reports | Frontend typecheck/build and browser smoke pass. |
