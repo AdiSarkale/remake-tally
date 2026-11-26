@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models
-from app.api.deps import employee_scope_ids, require_permission
+from app.api.deps import current_user, employee_scope_ids, require_permission
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
 from app.modules.hr.attendance_events import AttendanceEventError, append_attendance_event
@@ -424,12 +424,26 @@ def resubmit_attendance_correction(
     request_id: str,
     payload: CorrectionResubmit,
     db: Session = Depends(get_db),
-    user: models.User = Depends(require_permission("hr", "attendance_corrections", "create", "self")),
+    user: models.User = Depends(current_user),
 ):
     link = db.query(models.EmployeeUserLink).filter_by(user_id=user.id).first()
     row = db.get(models.HRAttendanceCorrectionRequest, request_id)
-    if link is None or row is None or row.employee_id != link.employee_id:
+    if row is None:
         raise HTTPException(status_code=404, detail="Correction request not found")
+    grants = db.query(models.RolePermissionGrant).filter_by(
+        role=user.role.value, module="hr", feature="attendance_corrections",
+        action="create", allowed=True,
+    ).all()
+    tenant_grant = any(grant.data_scope == "tenant" for grant in grants)
+    self_grant = any(grant.data_scope == "self" for grant in grants)
+    if tenant_grant:
+        scope = _correction_scope(db, user, row.work_date, "create")
+        if scope is not None and row.employee_id not in scope:
+            raise HTTPException(status_code=403, detail="Employee is outside your correction resubmission scope")
+    elif self_grant and link is not None and row.employee_id == link.employee_id and row.requested_by == user.username:
+        pass
+    else:
+        raise HTTPException(status_code=403, detail="Missing attendance correction resubmission permission")
     if row.status != "returned":
         raise HTTPException(status_code=409, detail="Only returned correction requests may be resubmitted")
     if _payroll_frozen(db, row.work_date):
