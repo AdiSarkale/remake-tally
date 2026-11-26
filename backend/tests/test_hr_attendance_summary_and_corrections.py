@@ -57,6 +57,11 @@ def _user(db, username="summary-reviewer", role=models.Role.hr):
         must_change_password=False,
     )
     db.add(user)
+    if role == models.Role.hr:
+        db.add(models.RolePermissionGrant(
+            role="HR", module="hr", feature="attendance_corrections", action="review",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ))
     db.commit()
     return user
 
