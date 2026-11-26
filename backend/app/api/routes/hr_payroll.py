@@ -35,6 +35,7 @@ from app.modules.hr.shift_assignment import (
     resolve_attendance_work_date,
     resolve_shift_for_work_date,
 )
+from app.modules.hr.attendance_summary import recalculate_attendance_summary
 from app.modules.hr.attendance_events import (
     AttendanceEventError,
     append_attendance_event,
@@ -1091,6 +1092,7 @@ async def import_attendance_from_excel(
                     recorded_by=user.username,
                     import_batch_id=batch.id,
                     roster_entry_id=roster.id if roster else None,
+                    refresh_summary=False,
                     note=item["note"],
                 )
                 created_events += int(event_created)
@@ -1121,6 +1123,8 @@ async def import_attendance_from_excel(
                 existing.punch_out = item["punch_out"]
                 existing.note = item["note"]
                 updated += 1
+        for employee_id, work_date in sorted({(item["employee_id"], item["work_date"]) for item in rows}):
+            recalculate_attendance_summary(db, employee_id, work_date, calculated_by=user.username)
         batch.status = "imported"
         batch.rows_imported = len(rows)
         batch.rows_rejected = 0
@@ -1133,7 +1137,7 @@ async def import_attendance_from_excel(
             f"{year}-{month:02d}: branch={actual_branch or 'unassigned'}; timezone={selected_timezone}; rows={len(rows)}; created={created}; updated={updated}; cleared={cleared}",
         )
         db.commit()
-    except (IntegrityError, AttendanceEventError) as exc:
+    except (IntegrityError, AttendanceEventError, ValueError) as exc:
         db.rollback()
         failed_batch = db.get(models.HRAttendanceImportBatch, batch.id)
         if failed_batch is not None:
