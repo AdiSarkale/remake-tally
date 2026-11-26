@@ -100,7 +100,7 @@ def append_attendance_event(
         return existing, False
 
     if supersedes_event_id:
-        prior = db.get(HRAttendanceEvent, supersedes_event_id)
+        prior = db.query(HRAttendanceEvent).filter_by(id=supersedes_event_id).with_for_update().first()
         if prior is None or prior.employee_id != employee_id or prior.work_date != work_date:
             raise AttendanceEventError("The correction target must be an existing event for the same employee and work date")
         if prior.voided_at is not None:
