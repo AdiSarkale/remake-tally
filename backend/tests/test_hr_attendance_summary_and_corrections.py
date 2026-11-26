@@ -1,5 +1,5 @@
 """P0.1-08 daily attendance summary and correction workflow regressions."""
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import create_engine
@@ -37,7 +37,7 @@ def _event(db, employee, event_type, minute, reference, *, supersedes=None):
         employee_id=employee.id,
         work_date=date(2026, 11, 10),
         event_type=event_type,
-        occurred_at_utc=datetime(2026, 11, 10, 3, minute, tzinfo=timezone.utc),
+        occurred_at_utc=datetime(2026, 11, 10, 0, 0, tzinfo=timezone.utc) + timedelta(minutes=minute),
         timezone_name="Asia/Kolkata",
         source_type="manual_hr",
         source_reference=reference,
@@ -192,7 +192,7 @@ def test_requester_cannot_review_own_correction():
                 request.id, CorrectionReview(decision="approve", reason="Not allowed"),
                 db, requester,
             )
-        assert "Requester cannot review" in str(exc.value)
+        assert "Requester cannot review" in exc.value.detail
         assert request.status == "submitted"
     finally:
         db.close()
