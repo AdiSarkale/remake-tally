@@ -11,12 +11,12 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from sqlalchemy.orm import Session
 
+from app.modules.hr.models import Employee
 from app.modules.hr.payroll import (
     HRAttendanceDailySummary,
     HRAttendanceSummaryRevision,
     HRAttendanceEvent,
     HRShiftRosterEntry,
-    Employee,
 )
 
 
