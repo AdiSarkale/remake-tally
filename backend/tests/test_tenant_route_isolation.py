@@ -216,37 +216,7 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
                 data_scope=scope, allowed=True, updated_by="test",
             ))
         db.add_all([user, customer, supplier, product, material, invoice, requisition, payment, *module_grants, *payroll_grants, *leave_grants, *finance_accounts, payroll_mapping, shift_type, shift_assignment, *shift_assignment_grants])
-        db.add_all([
-            models.Employee(
-                id=f"summary-employee-{suffix}", emp_code=f"SUM-{suffix.upper()}",
-                name=f"{company_label} Summary Employee", employee_type="staff",
-                joining_date=date(2026, 1, 1), active=True,
-            ),
-            models.HRAttendanceSummaryRevision(
-                id=f"summary-revision-{suffix}", employee_id=f"summary-employee-{suffix}",
-                work_date=date(2026, 11, 10), revision=1, roster_entry_id=None,
-                timezone_name="Asia/Kolkata", source_event_ids=[], first_punch_in_utc=None,
-                last_punch_out_utc=None, elapsed_minutes=0, paired_break_minutes=0,
-                classification="no_events", exception_codes=[], input_fingerprint=("a" if suffix == "a" else "b") * 64,
-                calculated_by="test",
-            ),
-            models.HRAttendanceDailySummary(
-                id=f"summary-row-{suffix}", employee_id=f"summary-employee-{suffix}",
-                work_date=date(2026, 11, 10), current_revision=1, roster_entry_id=None,
-                timezone_name="Asia/Kolkata", source_event_ids=[], first_punch_in_utc=None,
-                last_punch_out_utc=None, elapsed_minutes=0, paired_break_minutes=0,
-                classification="no_events", exception_codes=[], input_fingerprint=("a" if suffix == "a" else "b") * 64,
-                calculated_by="test",
-            ),
-            models.HRAttendanceCorrectionRequest(
-                id=f"correction-row-{suffix}", employee_id=f"summary-employee-{suffix}",
-                work_date=date(2026, 11, 10), correction_kind="add", target_event_id=None,
-                proposed_event_type="punch_in", proposed_at_utc=__import__("datetime").datetime(2026, 11, 10, 3, 30),
-                timezone_name="Asia/Kolkata", break_rule_id=None, reason="Test request",
-                evidence_reference="", status="submitted", requested_by="admin",
-            ),
-            *attendance_summary_correction_grants,
-        ])
+        db.add_all([*attendance_summary_correction_grants])
         db.commit()
         db.close()
 
@@ -334,6 +304,47 @@ def test_route_db_dependency_is_tenant_scoped(isolated_tenants):
 
 
 def test_attendance_summary_and_correction_routes_are_tenant_scoped(isolated_tenants):
+    # Seed only for this isolation test so unrelated payroll/leave tests retain
+    # their original employee populations.
+    for Session, suffix, label in (
+        (isolated_tenants["sessions"][0], "a", "Company A"),
+        (isolated_tenants["sessions"][1], "b", "Company B"),
+    ):
+        tenant = Session()
+        employee_id = f"summary-employee-{suffix}"
+        fingerprint = ("a" if suffix == "a" else "b") * 64
+        tenant.add(models.Employee(
+            id=employee_id, emp_code=f"SUM-{suffix.upper()}",
+            name=f"{label} Summary Employee", employee_type="staff",
+            joining_date=date(2026, 1, 1), active=True,
+        ))
+        tenant.add(models.HRAttendanceSummaryRevision(
+            id=f"summary-revision-{suffix}", employee_id=employee_id,
+            work_date=date(2026, 11, 10), revision=1, roster_entry_id=None,
+            timezone_name="Asia/Kolkata", source_event_ids=[], first_punch_in_utc=None,
+            last_punch_out_utc=None, elapsed_minutes=0, paired_break_minutes=0,
+            classification="no_events", exception_codes=[], input_fingerprint=fingerprint,
+            calculated_by="test",
+        ))
+        tenant.add(models.HRAttendanceDailySummary(
+            id=f"summary-row-{suffix}", employee_id=employee_id,
+            work_date=date(2026, 11, 10), current_revision=1, roster_entry_id=None,
+            timezone_name="Asia/Kolkata", source_event_ids=[], first_punch_in_utc=None,
+            last_punch_out_utc=None, elapsed_minutes=0, paired_break_minutes=0,
+            classification="no_events", exception_codes=[], input_fingerprint=fingerprint,
+            calculated_by="test",
+        ))
+        tenant.add(models.HRAttendanceCorrectionRequest(
+            id=f"correction-row-{suffix}", employee_id=employee_id,
+            work_date=date(2026, 11, 10), correction_kind="add", target_event_id=None,
+            proposed_event_type="punch_in",
+            proposed_at_utc=__import__("datetime").datetime(2026, 11, 10, 3, 30),
+            timezone_name="Asia/Kolkata", break_rule_id=None, reason="Test request",
+            evidence_reference="", status="submitted", requested_by="admin",
+        ))
+        tenant.commit()
+        tenant.close()
+
     client = isolated_tenants["client"]
     a = _login(client, "AA")
     b = _login(client, "BB")
