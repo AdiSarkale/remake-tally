@@ -66,6 +66,8 @@ def append_attendance_event(
     import_batch_id: str | None = None,
     roster_entry_id: str | None = None,
     break_rule_id: str | None = None,
+    supersedes_event_id: str | None = None,
+    refresh_summary: bool = True,
     note: str = "",
 ) -> tuple[HRAttendanceEvent, bool]:
     """Append an event or return the identical event for an idempotent retry."""
@@ -91,10 +93,20 @@ def append_attendance_event(
             and _utc(existing.occurred_at_utc) == instant
             and existing.timezone_name == timezone_name
             and existing.break_rule_id == break_rule_id
+            and existing.supersedes_event_id == supersedes_event_id
         )
         if not same_event:
             raise AttendanceEventError("This source reference has already been used for a different attendance event")
         return existing, False
+
+    if supersedes_event_id:
+        prior = db.query(HRAttendanceEvent).filter_by(id=supersedes_event_id).with_for_update().first()
+        if prior is None or prior.employee_id != employee_id or prior.work_date != work_date:
+            raise AttendanceEventError("The correction target must be an existing event for the same employee and work date")
+        if prior.voided_at is not None:
+            raise AttendanceEventError("A voided attendance event cannot be superseded")
+        if db.query(HRAttendanceEvent.id).filter_by(supersedes_event_id=prior.id).first():
+            raise AttendanceEventError("The correction target has already been superseded")
 
     event = HRAttendanceEvent(
         employee_id=employee_id,
@@ -108,11 +120,17 @@ def append_attendance_event(
         import_batch_id=import_batch_id,
         roster_entry_id=roster_entry_id,
         break_rule_id=break_rule_id,
+        supersedes_event_id=supersedes_event_id,
         note=note or "",
     )
     db.add(event)
     db.flush()
     reconcile_attendance_event(db, event)
+    # Projection is refreshed in the same transaction as the raw-event append.
+    # Import locally to avoid a module-level circular dependency.
+    from app.modules.hr.attendance_summary import recalculate_attendance_summary
+    if refresh_summary:
+        recalculate_attendance_summary(db, employee_id, work_date, calculated_by=recorded_by)
     return event, True
 
 
