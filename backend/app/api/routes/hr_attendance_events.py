@@ -24,6 +24,7 @@ from app.modules.hr.attendance_reconciliation import (
     reconcile_attendance_event,
     reconcile_attendance_work_date,
 )
+from app.modules.hr.attendance_summary import recalculate_attendance_summary
 from app.modules.hr.attendance_events import (
     AttendanceEventError,
     append_attendance_event,
@@ -756,15 +757,18 @@ async def import_attendance_event_workbook(
                 import_batch_id=batch.id,
                 roster_entry_id=row["roster_entry_id"],
                 break_rule_id=row["break_rule_id"],
+                refresh_summary=False,
                 note=row["note"],
             )
             created_count += int(created)
+        for employee_id, work_date in sorted({(row["employee_id"], row["work_date"]) for row in rows}):
+            recalculate_attendance_summary(db, employee_id, work_date, calculated_by=user.username)
         batch.status = "imported"
         batch.rows_imported = len(rows)
         batch.rows_rejected = 0
         log_audit(db, user.username, "IMPORT", "hr_attendance_import_batch", f"{batch.id}: rows={len(rows)}; new_events={created_count}")
         db.commit()
-    except (AttendanceEventError, IntegrityError) as exc:
+    except (AttendanceEventError, IntegrityError, ValueError) as exc:
         db.rollback()
         persisted = db.get(models.HRAttendanceImportBatch, batch.id)
         if persisted is not None:
