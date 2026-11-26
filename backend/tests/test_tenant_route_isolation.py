@@ -151,6 +151,16 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
             for role in ("Admin", "HR")
             for action in ("read", "write", "prepare", "approve", "finalize", "lock", "reverse")
         ]
+        attendance_summary_correction_grants = [
+            models.RolePermissionGrant(
+                role="Admin", module="hr", feature="attendance_summaries",
+                action="view", data_scope="tenant", allowed=True, updated_by="test",
+            ),
+            models.RolePermissionGrant(
+                role="Admin", module="hr", feature="attendance_corrections",
+                action="view", data_scope="tenant", allowed=True, updated_by="test",
+            ),
+        ]
         finance_accounts = [
             models.FinanceAccount(id=f"salary-expense-{suffix}", code="5100", name="Salary Expense", account_type="expense", active=True, system_account=True, created_by="test"),
             models.FinanceAccount(id=f"salary-payable-{suffix}", code="2100", name="Salary Payable", account_type="liability", active=True, system_account=True, created_by="test"),
@@ -206,6 +216,37 @@ def isolated_tenants(tmp_path: Path, monkeypatch):
                 data_scope=scope, allowed=True, updated_by="test",
             ))
         db.add_all([user, customer, supplier, product, material, invoice, requisition, payment, *module_grants, *payroll_grants, *leave_grants, *finance_accounts, payroll_mapping, shift_type, shift_assignment, *shift_assignment_grants])
+        db.add_all([
+            models.Employee(
+                id=f"summary-employee-{suffix}", emp_code=f"SUM-{suffix.upper()}",
+                name=f"{company_label} Summary Employee", employee_type="staff",
+                joining_date=date(2026, 1, 1), active=True,
+            ),
+            models.HRAttendanceSummaryRevision(
+                id=f"summary-revision-{suffix}", employee_id=f"summary-employee-{suffix}",
+                work_date=date(2026, 11, 10), revision=1, roster_entry_id=None,
+                timezone_name="Asia/Kolkata", source_event_ids=[], first_punch_in_utc=None,
+                last_punch_out_utc=None, elapsed_minutes=0, paired_break_minutes=0,
+                classification="no_events", exception_codes=[], input_fingerprint=("a" if suffix == "a" else "b") * 64,
+                calculated_by="test",
+            ),
+            models.HRAttendanceDailySummary(
+                id=f"summary-row-{suffix}", employee_id=f"summary-employee-{suffix}",
+                work_date=date(2026, 11, 10), current_revision=1, roster_entry_id=None,
+                timezone_name="Asia/Kolkata", source_event_ids=[], first_punch_in_utc=None,
+                last_punch_out_utc=None, elapsed_minutes=0, paired_break_minutes=0,
+                classification="no_events", exception_codes=[], input_fingerprint=("a" if suffix == "a" else "b") * 64,
+                calculated_by="test",
+            ),
+            models.HRAttendanceCorrectionRequest(
+                id=f"correction-row-{suffix}", employee_id=f"summary-employee-{suffix}",
+                work_date=date(2026, 11, 10), correction_kind="add", target_event_id=None,
+                proposed_event_type="punch_in", proposed_at_utc=__import__("datetime").datetime(2026, 11, 10, 3, 30),
+                timezone_name="Asia/Kolkata", break_rule_id=None, reason="Test request",
+                evidence_reference="", status="submitted", requested_by="admin",
+            ),
+            *attendance_summary_correction_grants,
+        ])
         db.commit()
         db.close()
 
@@ -288,6 +329,30 @@ def test_route_db_dependency_is_tenant_scoped(isolated_tenants):
         assert expected_b not in a_values
         assert expected_a not in b_values
         assert set(a_values).isdisjoint(b_values)
+
+
+
+
+def test_attendance_summary_and_correction_routes_are_tenant_scoped(isolated_tenants):
+    client = isolated_tenants["client"]
+    a = _login(client, "AA")
+    b = _login(client, "BB")
+    a_headers = {"Authorization": f"Bearer {a['access_token']}"}
+    b_headers = {"Authorization": f"Bearer {b['access_token']}"}
+
+    a_summaries = client.get("/api/v1/hr/attendance/summaries", headers=a_headers)
+    b_summaries = client.get("/api/v1/hr/attendance/summaries", headers=b_headers)
+    assert a_summaries.status_code == 200, a_summaries.text
+    assert b_summaries.status_code == 200, b_summaries.text
+    assert [row["employee_id"] for row in a_summaries.json()] == ["summary-employee-a"]
+    assert [row["employee_id"] for row in b_summaries.json()] == ["summary-employee-b"]
+
+    a_corrections = client.get("/api/v1/hr/attendance/corrections", headers=a_headers)
+    b_corrections = client.get("/api/v1/hr/attendance/corrections", headers=b_headers)
+    assert a_corrections.status_code == 200, a_corrections.text
+    assert b_corrections.status_code == 200, b_corrections.text
+    assert [row["id"] for row in a_corrections.json()] == ["correction-row-a"]
+    assert [row["id"] for row in b_corrections.json()] == ["correction-row-b"]
 
 
 def test_aggregate_routes_are_tenant_scoped(isolated_tenants):
