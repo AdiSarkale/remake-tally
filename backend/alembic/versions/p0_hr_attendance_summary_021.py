@@ -14,6 +14,16 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # A raw source event may be superseded only once, preventing concurrent
+    # correction approvals from creating competing replacement facts.
+    op.create_index(
+        "uq_hr_attendance_event_supersedes",
+        "hr_attendance_events",
+        ["supersedes_event_id"],
+        unique=True,
+        postgresql_where=sa.text("supersedes_event_id IS NOT NULL"),
+        sqlite_where=sa.text("supersedes_event_id IS NOT NULL"),
+    )
     op.create_table(
         "hr_attendance_summary_revisions",
         sa.Column("id", sa.String(length=36), primary_key=True),
@@ -134,6 +144,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index("uq_hr_attendance_event_supersedes", table_name="hr_attendance_events")
     bind = op.get_bind()
     grants = sa.Table("role_permission_grants", sa.MetaData(), autoload_with=bind)
     op.execute(sa.delete(grants).where(
