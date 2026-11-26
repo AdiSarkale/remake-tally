@@ -2,7 +2,7 @@
 
 **Document ID:** NEX-HR-P0.1-09-SPEC-001  
 **Version:** 1.0  
-**Status:** Implementation specification — product decisions locked; implementation not started  
+**Status:** Specification locked; implementation in progress (slice 01; CI pending)  
 **Baseline:** 27 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
 **Decision authority:** Nexora HR Decision Register v1.0 (HR-18–HR-20, HR-25–HR-27, HR-29–HR-30)  
@@ -270,5 +270,22 @@ Audit:
 P0.1-09 is complete only when candidate calculation, policy configuration, approval/HR verification, compensatory credit ledger, audit, tests, CI and documentation pass.
 
 **Explicitly not in P0.1-09:** payroll integration, comp-leave balances/redemption, statutory overtime certification, attendance UI/reporting completion, and policy outcomes that require tenant configuration but have not been configured.
+
+
+
+## 15. Implementation progress record
+
+### Slice 01 — Policy storage and HR Admin settings API (in progress)
+
+- Added versioned overtime policy model and migration 022.
+- Added exact HR/Admin grants for policy view/manage/publish in migration 023.
+- Added list/create/update/publish/retire policy endpoints under `/api/v1/hr/settings/overtime-policies`.
+- Added validation for scope keys, day types, required eligibility fields, rounding configuration, compensation method and compensatory conversion ratio.
+- Published policies are immutable; updates require a new draft/version.
+- Same-scope effective-date overlap is rejected.
+- Added policy settings lifecycle/validation tests.
+- CI for this slice is pending. This record is not a verification claim.
+
+**Remaining P0.1-09 slices:** effective policy resolution, overtime candidate calculation and source provenance, approval/HR verification workflow, comp-leave earning ledger/reversals, tests and UI integration.
 
 **End of specification.**
