@@ -110,6 +110,7 @@ def upgrade() -> None:
         ("HR", "attendance_corrections", "view", "tenant"),
         ("HR", "attendance_corrections", "create", "tenant"),
         ("HR", "attendance_corrections", "review", "tenant"),
+        ("Operator", "attendance_summaries", "view", "self"),
         ("Operator", "attendance_corrections", "view", "self"),
         ("Operator", "attendance_corrections", "create", "self"),
     ]
