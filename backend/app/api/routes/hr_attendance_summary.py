@@ -389,31 +389,35 @@ def review_attendance_correction(
         row.status = "returned"
         log_audit(db, user.username, "RETURN", "hr_attendance_correction_request", f"{row.id}:{payload.reason[:300]}")
     else:
-        target = _validate_target(db, row.employee_id, row.work_date, row.correction_kind, row.target_event_id)
-        event, created = append_attendance_event(
-            db,
-            employee_id=row.employee_id,
-            work_date=row.work_date,
-            event_type=row.proposed_event_type,
-            occurred_at_utc=row.proposed_at_utc,
-            timezone_name=row.timezone_name,
-            source_type="manual_hr",
-            source_reference=f"correction-{row.id}",
-            recorded_by=user.username,
-            roster_entry_id=target.roster_entry_id if target else None,
-            break_rule_id=row.break_rule_id,
-            supersedes_event_id=target.id if target else None,
-            note=f"Approved correction request {row.id}",
-        )
-        row.applied_event_id = event.id
-        row.status = "applied"
-        summary, revision, revision_created = recalculate_attendance_summary(
-            db, row.employee_id, row.work_date, calculated_by=user.username,
-        )
-        log_audit(
-            db, user.username, "APPLY", "hr_attendance_correction_request",
-            f"{row.id}: event={event.id}; summary_revision={summary.current_revision}; reason={payload.reason[:300]}",
-        )
+        try:
+            target = _validate_target(db, row.employee_id, row.work_date, row.correction_kind, row.target_event_id)
+            event, created = append_attendance_event(
+                db,
+                employee_id=row.employee_id,
+                work_date=row.work_date,
+                event_type=row.proposed_event_type,
+                occurred_at_utc=row.proposed_at_utc,
+                timezone_name=row.timezone_name,
+                source_type="manual_hr",
+                source_reference=f"correction-{row.id}",
+                recorded_by=user.username,
+                roster_entry_id=target.roster_entry_id if target else None,
+                break_rule_id=row.break_rule_id,
+                supersedes_event_id=target.id if target else None,
+                note=f"Approved correction request {row.id}",
+            )
+            row.applied_event_id = event.id
+            row.status = "applied"
+            summary, revision, revision_created = recalculate_attendance_summary(
+                db, row.employee_id, row.work_date, calculated_by=user.username,
+            )
+            log_audit(
+                db, user.username, "APPLY", "hr_attendance_correction_request",
+                f"{row.id}: event={event.id}; summary_revision={summary.current_revision}; reason={payload.reason[:300]}",
+            )
+        except (AttendanceEventError, IntegrityError) as exc:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Correction could not be applied because the source event changed or was already corrected") from exc
     db.commit()
     db.refresh(row)
     return _correction_output(row)
