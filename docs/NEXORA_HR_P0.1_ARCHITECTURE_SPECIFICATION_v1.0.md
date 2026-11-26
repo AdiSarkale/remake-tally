@@ -1352,7 +1352,7 @@ A test plan is not a test result. Do not mark CI passed until the run exists and
 | P0.1-11 Reports/UI | Roster, attendance, overtime and exception screens/reports | Frontend typecheck/build and browser smoke pass. |
 | P0.1-12 Release hardening | Authorization, tenant isolation, audit, migration, CI and documentation | All applicable acceptance criteria pass. |
 
-Recommended order: P0.1-00 through P0.1-04 backend slices are implemented and CI-verified. Proceed to P0.1-05 branch-aware timezone and attendance context. Shift catalog, assignment and roster read/view UI remain pending. The existing Playwright smoke is API-mocked and does not verify roster UI. Do not implement payroll shift logic ahead of a persisted, tested roster.
+Recommended order: P0.1-00 through P0.1-07 backend slices are implemented and CI-verified on the integration branch. P0.1-08 daily summary/correction backend is in progress on a feature branch; fresh CI is pending. Shift catalog, assignment and roster read/view UI remain pending. The existing Playwright smoke is API-mocked and does not verify roster UI. Do not implement payroll shift logic ahead of a persisted, tested roster.
 
 ---
 
