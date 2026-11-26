@@ -305,6 +305,8 @@ def create_self_attendance_correction(
     link = db.query(models.EmployeeUserLink).filter_by(user_id=user.id).first()
     if link is None:
         raise HTTPException(status_code=403, detail="This login is not linked to an employee record")
+    if payload.employee_id and payload.employee_id != link.employee_id:
+        raise HTTPException(status_code=403, detail="Self-correction submission cannot target another employee")
     scope = _correction_scope(db, user, payload.work_date, "create")
     if scope is not None and link.employee_id not in scope:
         raise HTTPException(status_code=403, detail="Employee self-correction scope is not configured")
@@ -433,6 +435,8 @@ def resubmit_attendance_correction(
     if _payroll_frozen(db, row.work_date):
         raise HTTPException(status_code=409, detail="Attendance correction is blocked for frozen payroll")
     target = _validate_target(db, row.employee_id, row.work_date, payload.correction_kind, payload.target_event_id)
+    if payload.break_code and payload.proposed_event_type not in {"break_start", "break_end"}:
+        raise HTTPException(status_code=422, detail="Break Code is only valid for break events")
     try:
         context, roster, instant, break_rule_id = _local_event_context(
             db, row.employee_id, row.work_date, payload.occurred_at, payload.break_code,
