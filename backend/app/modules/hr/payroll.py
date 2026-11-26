@@ -157,6 +157,87 @@ class HRAttendanceAnomaly(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+class HRAttendanceDailySummary(Base):
+    """Current derived attendance projection for one employee/local work date."""
+
+    __tablename__ = "hr_attendance_daily_summaries"
+    __table_args__ = (UniqueConstraint("employee_id", "work_date", name="uq_hr_attendance_summary_employee_day"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    employee_id: Mapped[str] = mapped_column(ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False, index=True)
+    work_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    current_revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    roster_entry_id: Mapped[str | None] = mapped_column(ForeignKey("hr_shift_roster_entries.id", ondelete="RESTRICT"), nullable=True)
+    timezone_name: Mapped[str] = mapped_column(String(64), nullable=False, default="UTC")
+    source_event_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    first_punch_in_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_punch_out_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    elapsed_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    paired_break_minutes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    classification: Mapped[str] = mapped_column(String(24), nullable=False, default="no_events")
+    exception_codes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    calculated_by: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    calculated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class HRAttendanceSummaryRevision(Base):
+    """Immutable calculation revision for a daily attendance summary."""
+
+    __tablename__ = "hr_attendance_summary_revisions"
+    __table_args__ = (
+        UniqueConstraint("employee_id", "work_date", "revision", name="uq_hr_attendance_summary_revision"),
+        CheckConstraint("revision > 0", name="ck_hr_attendance_summary_revision_positive"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    employee_id: Mapped[str] = mapped_column(ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False, index=True)
+    work_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    roster_entry_id: Mapped[str | None] = mapped_column(ForeignKey("hr_shift_roster_entries.id", ondelete="RESTRICT"), nullable=True)
+    timezone_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_event_ids: Mapped[list] = mapped_column(JSON, nullable=False)
+    first_punch_in_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_punch_out_utc: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    elapsed_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    paired_break_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    classification: Mapped[str] = mapped_column(String(24), nullable=False)
+    exception_codes: Mapped[list] = mapped_column(JSON, nullable=False)
+    input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    calculated_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class HRAttendanceCorrectionRequest(Base):
+    """Reasoned request to append or supersede a raw attendance event."""
+
+    __tablename__ = "hr_attendance_correction_requests"
+    __table_args__ = (
+        CheckConstraint("correction_kind IN ('add', 'replace')", name="ck_hr_attendance_correction_kind"),
+        CheckConstraint("status IN ('submitted', 'approved', 'rejected', 'returned', 'applied')", name="ck_hr_attendance_correction_status"),
+        CheckConstraint("(correction_kind = 'add' AND target_event_id IS NULL) OR (correction_kind = 'replace' AND target_event_id IS NOT NULL)", name="ck_hr_attendance_correction_target"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    employee_id: Mapped[str] = mapped_column(ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False, index=True)
+    work_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    correction_kind: Mapped[str] = mapped_column(String(12), nullable=False)
+    target_event_id: Mapped[str | None] = mapped_column(ForeignKey("hr_attendance_events.id", ondelete="RESTRICT"), nullable=True)
+    proposed_event_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    proposed_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    timezone_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    break_rule_id: Mapped[str | None] = mapped_column(ForeignKey("hr_shift_break_rules.id", ondelete="RESTRICT"), nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_reference: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="submitted")
+    requested_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    reviewer: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    decision_reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    applied_event_id: Mapped[str | None] = mapped_column(ForeignKey("hr_attendance_events.id", ondelete="RESTRICT"), nullable=True)
+
+
 class HRPayrollRun(Base):
     __tablename__ = "hr_payroll_runs"
     __table_args__ = (UniqueConstraint("year", "month", "revision", name="uq_hr_payroll_period_revision"),)
