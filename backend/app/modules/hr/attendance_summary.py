@@ -176,11 +176,14 @@ def recalculate_attendance_summary(
         db.flush()
 
     revision_number = summary.current_revision + 1
+    revision_data = dict(projection)
+    revision_data.pop("employee_id", None)
+    revision_data.pop("work_date", None)
     revision = HRAttendanceSummaryRevision(
         employee_id=employee_id,
         work_date=work_date,
         revision=revision_number,
-        **projection,
+        **revision_data,
         calculated_by=calculated_by[:64],
     )
     db.add(revision)
