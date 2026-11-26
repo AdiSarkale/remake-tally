@@ -82,13 +82,16 @@ def test_policy_routes_require_exact_view_manage_publish_grants(db, user):
         (route.publish_policy, "publish"),
         (route.retire_policy, "publish"),
     )
+    granted_actions = set()
     for endpoint, action in endpoints:
         dependency = inspect.signature(endpoint).parameters["user"].default
         assert isinstance(dependency, DependsParam)
-        with pytest.raises(HTTPException) as denied:
-            dependency.dependency(user=user, db=db)
-        assert denied.value.status_code == 403
-        _grant(db, action)
+        if action not in granted_actions:
+            with pytest.raises(HTTPException) as denied:
+                dependency.dependency(user=user, db=db)
+            assert denied.value.status_code == 403
+            _grant(db, action)
+            granted_actions.add(action)
         assert dependency.dependency(user=user, db=db) is user
 
 
@@ -138,12 +141,11 @@ def test_publish_requires_explicit_complete_policy_and_no_same_scope_overlap(db,
 def test_policy_scope_and_rounding_validation_fail_closed(db, user):
     _grant(db, "manage")
     _grant(db, "publish")
-    invalid_scope = route.create_policy(
-        _payload(code="OT-SCOPE", scope={"day_types": ["weekend"]}, config=_valid_config()),
-        user, db,
-    )
     with pytest.raises(HTTPException) as scope_error:
-        route.publish_policy(invalid_scope["id"], user, db)
+        route.create_policy(
+            _payload(code="OT-SCOPE", scope={"day_types": ["weekend"]}, config=_valid_config()),
+            user, db,
+        )
     assert scope_error.value.status_code == 422
 
     bad_rounding = _valid_config()
