@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.25  
+**Version:** 1.26  
 **Status:** Active implementation tracker  
 **Baseline:** 9 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -471,9 +471,9 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - Added correction requests for adding a missing punch or replacing a referenced punch event, with reason and optional evidence reference. Workflow: submitted → approve/reject/return; returned requests can be resubmitted; approval appends a linked superseding raw event, recalculates the summary and marks the request applied atomically. Requesters cannot approve their own requests. Prepared/approved/finalized/locked payroll periods block correction mutation.
 - Added regression tests for complete/incomplete/invalid sequences, revision idempotency, superseding corrections, self-approval denial and two-tenant summary/correction isolation.
 - **Not included:** daily status override workflow, late/early/absence/half-day rules, detailed break-pay rules, overtime/compensatory leave, payroll snapshot/finalization integration, UI/reporting, evidence-file upload or payroll reopening. P0.1-10/11 remain owners of those integrations.
-- **Verification:** Fresh backend, tenant-isolation, PostgreSQL migration/provisioning, frontend and integrated CI have not yet been confirmed. Local clone/test execution was unavailable in this environment; the implementation branch must be validated by CI before being considered verified.
+- **Verification: P0.1-08 verified on integration commit `7e877fe42668a001ebcd798ea48b8ca88ab47326`.** Standalone Backend Tests: 190 passed, 5 skipped, 7 warnings; Backend tenant isolation passed. Integrated [Minitally CI #45911119136](https://github.com/AdiSarkale/remake-tally/actions/runs/45911119136) passed backend tests/compile, PostgreSQL control-plane and tenant migrations, PostgreSQL tenant provisioning lifecycle, frontend typecheck/build and Playwright smoke. An earlier full run exposed stale tests expecting migration 020; those migration/provisioning expectations were updated to 021 and the rerun passed. Local clone/test execution was unavailable in this environment; CI is the verification source.
 
-**Next action:** Verify P0.1-08 backend implementation through fresh CI and fix failures. Then proceed to P0.1-09 overtime/compensatory leave. Keep roster read/view UI and anomaly screens tracked for P0.1-11, and do not implement deferred T-01 to T-14 by assumption.
+**Next action:** Proceed to P0.1-09 overtime/compensatory leave, after locking its policy specification. P0.1-08 backend is CI-verified; attendance UI/reporting, payroll snapshots and policy-deferred outcomes remain outstanding. Keep roster read/view UI and anomaly screens tracked for P0.1-11, and do not implement deferred T-01 to T-14 by assumption.
 
 ---
 
@@ -506,7 +506,8 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 | 1.22 | 9 November 2026 | Records CI corrections and successful verification for P0.1-05 on integration commit 390b8ef: 167 passed, 5 skipped, 7 warnings in each standalone backend suite; tenant isolation passed; integrated PostgreSQL migration/provisioning, frontend build and Playwright smoke passed. |
 | 1.23 | 9 November 2026 | Implements and CI-verifies P0.1-06 raw attendance events and import batches: migration 019, manual/self-punch APIs, legacy summary event capture, v2 event workbook/template, exact permissions, idempotency and atomic import. Backend and tenant-isolation suites: 176 passed, 5 skipped, 7 warnings; PostgreSQL migrations/provisioning, frontend and Playwright smoke passed. |
 | 1.24 | 9 November 2026 | Implements and CI-verifies P0.1-07 tenant-configured source reconciliation and anomaly handling: migration 020, effective-dated threshold versions, cross-source mismatch detection, bounded re-reconciliation, scoped anomaly listing, reasoned resolution/false-positive decisions and audit. Backend: 184 passed, 5 skipped, 7 warnings; tenant isolation and integrated PostgreSQL/frontend/Playwright CI passed. |
-| 1.25 | 27 November 2026 | Adds P0.1-08 daily summary projection/revisions, sequence exceptions, correction request workflow, superseding raw events, automatic/batched projection refresh, exact grants, API endpoints and tests. Fresh CI pending; UI, payroll snapshot integration and policy-deferred attendance outcomes remain out of scope. |
+| 1.25 | 27 November 2026 | Adds P0.1-08 daily summary projection/revisions, sequence exceptions, correction request workflow, superseding raw events, automatic/batched projection refresh, exact grants, API endpoints and tests. CI pending; UI, payroll snapshot integration and policy-deferred attendance outcomes remain out of scope. |
+| 1.26 | 27 November 2026 | Records P0.1-08 verification: 190 backend tests passed (5 skipped), tenant isolation passed, and integrated Minitally CI #45911119136 passed PostgreSQL migrations/provisioning, frontend typecheck/build and Playwright smoke. Updates stale PostgreSQL migration-head expectations from 020 to 021. |
 
 ## 11. Integration and verification record
 
