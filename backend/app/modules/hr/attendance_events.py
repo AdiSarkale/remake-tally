@@ -67,6 +67,7 @@ def append_attendance_event(
     roster_entry_id: str | None = None,
     break_rule_id: str | None = None,
     supersedes_event_id: str | None = None,
+    refresh_summary: bool = True,
     note: str = "",
 ) -> tuple[HRAttendanceEvent, bool]:
     """Append an event or return the identical event for an idempotent retry."""
@@ -128,7 +129,8 @@ def append_attendance_event(
     # Projection is refreshed in the same transaction as the raw-event append.
     # Import locally to avoid a module-level circular dependency.
     from app.modules.hr.attendance_summary import recalculate_attendance_summary
-    recalculate_attendance_summary(db, employee_id, work_date, calculated_by=recorded_by)
+    if refresh_summary:
+        recalculate_attendance_summary(db, employee_id, work_date, calculated_by=recorded_by)
     return event, True
 
 
