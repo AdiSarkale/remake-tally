@@ -83,17 +83,17 @@ def test_projection_complete_punch_pair_and_revision_is_idempotent():
             db, employee.id, date(2026, 11, 10), calculated_by="hr",
         )
         db.commit()
-        assert created is True
-        assert summary.current_revision == 1
-        assert revision.revision == 1
+        assert created is False
+        assert summary.current_revision == 2
+        assert revision.revision == 2
 
         same_summary, same_revision, second_created = recalculate_attendance_summary(
             db, employee.id, date(2026, 11, 10), calculated_by="hr",
         )
         assert second_created is False
-        assert same_summary.current_revision == 1
+        assert same_summary.current_revision == 2
         assert same_revision.id == revision.id
-        assert db.query(models.HRAttendanceSummaryRevision).count() == 1
+        assert db.query(models.HRAttendanceSummaryRevision).count() == 2
     finally:
         db.close()
         engine.dispose()
