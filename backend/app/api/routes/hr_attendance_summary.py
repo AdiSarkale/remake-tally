@@ -154,6 +154,7 @@ def list_daily_attendance_summaries(
     to_date: date | None = None,
     employee_id: str | None = Query(default=None, max_length=36),
     limit: int = Query(default=500, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0, le=1000000),
     db: Session = Depends(get_db),
     user: models.User = Depends(require_permission("hr", "attendance_summaries", "view", "tenant")),
 ):
@@ -164,10 +165,14 @@ def list_daily_attendance_summaries(
         query = query.filter(models.HRAttendanceDailySummary.work_date <= to_date)
     if employee_id:
         query = query.filter(models.HRAttendanceDailySummary.employee_id == employee_id)
+
+    # Scope before pagination. Otherwise an inaccessible row can consume the
+    # SQL limit and silently hide a later in-scope employee-day.
     rows = query.order_by(
         models.HRAttendanceDailySummary.work_date.desc(),
         models.HRAttendanceDailySummary.employee_id.asc(),
-    ).limit(limit).all()
+        models.HRAttendanceDailySummary.id.asc(),
+    ).all()
     visible = []
     for row in rows:
         scope = _summary_scope(db, user, row.work_date)
@@ -178,7 +183,7 @@ def list_daily_attendance_summaries(
             visible.append(summary_output(row, revision))
     if employee_id and rows and not visible:
         raise HTTPException(status_code=403, detail="Employee is outside your attendance summary access scope")
-    return visible
+    return visible[offset:offset + limit]
 
 
 @router.get("/summaries/self")
