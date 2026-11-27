@@ -2,7 +2,7 @@
 from datetime import date,datetime,timezone
 from typing import Literal
 from fastapi import APIRouter,Depends,HTTPException,Query
-from pydantic import BaseModel,Field
+from pydantic import BaseModel,Field\nfrom sqlalchemy.orm import Session
 from app import models
 from app.api.deps import current_user,employee_scope_ids,require_permission
 from app.db.session import get_db
