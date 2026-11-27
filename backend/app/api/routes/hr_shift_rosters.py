@@ -52,9 +52,15 @@ def list_shift_rosters(
         query = query.filter(models.HRShiftRosterEntry.branch_id == branch_id)
     if department:
         query = query.filter(models.HRShiftRosterEntry.department_snapshot.ilike(department.strip()))
-    rows = query.order_by(models.HRShiftRosterEntry.work_date, models.HRShiftRosterEntry.employee_id).limit(limit).all()
+    # Apply employee scope before pagination so restricted rows cannot consume a
+    # page's limit and cause later authorized records to disappear.
+    ordered = query.order_by(
+        models.HRShiftRosterEntry.work_date,
+        models.HRShiftRosterEntry.employee_id,
+        models.HRShiftRosterEntry.id,
+    ).all()
     visible = []
-    for row in rows:
+    for row in ordered:
         allowed = employee_scope_ids(db, user, "hr", "employees", "read", as_of_date=row.work_date)
         if allowed is not None and row.employee_id not in set(allowed):
             continue
@@ -81,7 +87,7 @@ def list_shift_rosters(
             "break_rules": row.break_rules_snapshot,
             "created_by": row.created_by,
         })
-    return visible
+    return visible[offset:offset + limit]
 
 
 @router.get("/self", response_model=list[dict])
