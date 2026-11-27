@@ -1070,7 +1070,7 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
                 emp_code="PAY-A-001",
                 name="Payroll Employee",
                 employee_type="staff",
-                department="Production",
+                department="Payroll Legacy",
                 designation="Operator",
                 joining_date=date(2026, 10, 1),
                 active=True,
