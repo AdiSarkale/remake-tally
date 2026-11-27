@@ -115,7 +115,7 @@ def test_prepared_and_approved_payroll_revisions_can_be_superseded_with_reason()
                 run_id, PayrollSupersedePayload(reason="Corrected attendance source records"),
                 db, actor, permission,
             )
-            assert result.status == "superseded"
+            assert result["status"] == "superseded"
         approved_refresh = db.get(models.HRPayrollRun, approved.id)
         assert approved_refresh.status == "superseded"
         assert approved_refresh.approved_by is None
