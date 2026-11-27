@@ -1405,8 +1405,13 @@ def _payroll_readiness(db: Session, year: int, month: int) -> tuple[dict[str, An
     tenant_divisor = _salary_count_divisor(
         year, month, settings.salary_count_mode, settings.monthly_salary_days, week_off_days, overrides,
     )
+    configured_employee_ids = {
+        row.employee_id for row in db.query(models.EmployeeSalaryProfile).filter(
+            models.EmployeeSalaryProfile.annual_salary > 0,
+        ).all()
+    }
     for employee in employees:
-        if employee.id not in {row.employee_id for row in db.query(models.EmployeeSalaryProfile).filter(models.EmployeeSalaryProfile.annual_salary > 0).all()}:
+        if employee.id not in configured_employee_ids:
             continue
         daily = daily_inputs_by_employee.get(employee.id, [])
         exceptions = sorted({row.get("exception") for row in daily if row.get("exception")})
