@@ -1507,6 +1507,50 @@ def _snapshot_payroll_run(
     return run
 
 
+class PayrollSupersedePayload(BaseModel):
+    reason: str = Field(min_length=10, max_length=2000)
+
+
+@router.post("/payroll/runs/{run_id}/supersede", response_model=schemas.PayrollRunOut)
+def supersede_payroll_run(
+    run_id: str, payload: PayrollSupersedePayload,
+    db: Session = Depends(get_db), user: models.User = hr_access,
+    permission: models.User = Depends(require_permission("hr", "payroll", "prepare", "tenant")),
+):
+    run = db.query(models.HRPayrollRun).filter_by(id=run_id).with_for_update().first()
+    if run is None:
+        raise HTTPException(404, "Payroll run not found")
+    if run.status not in {"prepared", "approved"}:
+        raise HTTPException(409, "Only prepared or approved payroll snapshots can be superseded")
+    if run.status == "approved":
+        run.approved_by = None
+        run.approved_at = None
+    run.status = "superseded"
+    log_audit(db, user.username, "SUPERSEDE", "hr_payroll_run", f"{run.year}-{run.month:02d}; revision={run.revision}; reason={payload.reason}")
+    db.commit()
+    db.refresh(run)
+    return _run_output(db, run)
+
+
+@router.get("/payroll/runs/{run_id}/exceptions")
+def list_payroll_exceptions(
+    run_id: str, db: Session = Depends(get_db),
+    user: models.User = Depends(require_permission("hr", "payroll", "read", "tenant")),
+):
+    run = db.get(models.HRPayrollRun, run_id)
+    if run is None:
+        raise HTTPException(404, "Payroll run not found")
+    rows = db.query(models.HRPayrollException).filter_by(payroll_run_id=run_id).order_by(
+        models.HRPayrollException.work_date, models.HRPayrollException.code,
+    ).all()
+    return [{
+        "id": row.id, "employee_id": row.employee_id, "work_date": row.work_date,
+        "code": row.code, "severity": row.severity, "status": row.status,
+        "detail": row.detail, "source_reference": row.source_reference,
+        "created_at": row.created_at,
+    } for row in rows]
+
+
 @router.post("/payroll/runs/{year}/{month}/prepare", response_model=schemas.PayrollRunOut)
 def prepare_monthly_payroll(
     year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access,
@@ -1517,8 +1561,8 @@ def prepare_monthly_payroll(
     if existing is not None:
         if existing.status == "prepared":
             return _run_output(db, existing)
-        if existing.status != "reversed":
-            raise HTTPException(409, f"Payroll period already has a {existing.status} run; use the appropriate approval or reversal action")
+        if existing.status not in {"reversed", "superseded"}:
+            raise HTTPException(409, f"Payroll period already has a {existing.status} run; use the appropriate approval, supersession or reversal action")
         revision = existing.revision + 1
     else:
         revision = 1
