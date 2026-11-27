@@ -8,7 +8,8 @@ from app import models
 from app.api.deps import current_user,employee_scope_ids,require_permission
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
-from app.modules.hr.overtime import calculate_candidate\nfrom app.api.routes.approvals import ApprovalRequest, Department
+from app.modules.hr.overtime import calculate_candidate
+from app.api.routes.approvals import ApprovalRequest, Department
 router=APIRouter(prefix="/hr/overtime",tags=["hr","overtime"])
 class Calc(BaseModel):
  from_date:date
