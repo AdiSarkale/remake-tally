@@ -202,3 +202,44 @@ def test_requester_cannot_review_own_correction():
     finally:
         db.close()
         engine.dispose()
+
+
+def test_attendance_summary_route_applies_offset_after_employee_scope(monkeypatch):
+    """A restricted row must not consume a page slot before visible rows."""
+    from types import SimpleNamespace
+    from app.api.routes import hr_attendance_summary as route
+
+    user = SimpleNamespace(username="scoped-hr")
+    rows = [
+        SimpleNamespace(work_date=date(2026, 11, 12), employee_id="hidden", current_revision=1),
+        SimpleNamespace(work_date=date(2026, 11, 11), employee_id="visible-a", current_revision=1),
+        SimpleNamespace(work_date=date(2026, 11, 10), employee_id="visible-b", current_revision=1),
+    ]
+
+    class Query:
+        def __init__(self, data):
+            self.data = data
+
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def all(self):
+            return self.data
+
+    class Db:
+        def query(self, model):
+            return Query(rows if model is models.HRAttendanceDailySummary else [])
+
+    monkeypatch.setattr(route, "_summary_scope", lambda _db, _user, work_date: (
+        {"visible-a", "visible-b"} if work_date != date(2026, 11, 12) else set()
+    ))
+    monkeypatch.setattr(route, "summary_output", lambda row, _revision: {"employee_id": row.employee_id})
+
+    result = route.list_daily_attendance_summaries(
+        from_date=None, to_date=None, employee_id=None, limit=1, offset=1,
+        db=Db(), user=user,
+    )
+    assert result == [{"employee_id": "visible-b"}]
