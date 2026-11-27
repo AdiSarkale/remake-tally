@@ -178,7 +178,7 @@ Implemented in the integration branch:
 - Revisions and correction lifecycle regression tests.
 - Finalization readiness recheck against current source revisions.
 - Payroll exception UI and provenance detail UI.
-- Additional missing/ambiguous roster, divisor, OT duplication, stale input, and Finance-posting tests.
+- CI verification of missing/ambiguous roster, divisor, OT duplication, stale input, exception blocking, and Finance-posting regressions.
 - Review of source data scope/tenant authorization.
 - Full CI and acceptance review.
 
