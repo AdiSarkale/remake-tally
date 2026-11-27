@@ -66,6 +66,7 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
   const [exceptions, setExceptions] = useState<PayrollException[]>([]);
   const [dailySnapshots, setDailySnapshots] = useState<PayrollDailySnapshot[]>([]);
   const [showDailySnapshots, setShowDailySnapshots] = useState(false);
+  const [snapshotEmployeeId, setSnapshotEmployeeId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -212,6 +213,8 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
       setShowDailySnapshots(false);
       return;
     }
+    setDailySnapshots([]);
+    setShowDailySnapshots(false);
     void api.get<PayrollException[]>("/hr/payroll/runs/" + selectedRun.id + "/exceptions")
       .then(setExceptions).catch(fail);
   }, [tab, selectedRun?.id]);
@@ -237,11 +240,16 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
       await refreshPayroll();
     } catch (err) { fail(err); } finally { setBusy(false); }
   };
+  useEffect(() => {
+    if (!snapshotEmployeeId && selectedEmployee) setSnapshotEmployeeId(selectedEmployee);
+  }, [snapshotEmployeeId, selectedEmployee]);
+
   const loadDailySnapshots = async () => {
     if (!selectedRun) return;
     setBusy(true);
     try {
-      setDailySnapshots(await api.get<PayrollDailySnapshot[]>("/hr/payroll/runs/" + selectedRun.id + "/daily-snapshots"));
+      const query = snapshotEmployeeId ? "?employee_id=" + encodeURIComponent(snapshotEmployeeId) : "";
+      setDailySnapshots(await api.get<PayrollDailySnapshot[]>("/hr/payroll/runs/" + selectedRun.id + "/daily-snapshots" + query));
       setShowDailySnapshots(true);
     } catch (err) { fail(err); } finally { setBusy(false); }
   };
@@ -419,7 +427,8 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
           {canEdit && (selectedRun?.status === "finalized" || selectedRun?.status === "locked") ? <Button variant="destructive" disabled={busy} onClick={() => void reversePayroll()}>Reverse</Button> : null}
         </div>
       </div>
-      {selectedRun ? <div className="flex flex-wrap gap-2">
+      {selectedRun ? <div className="flex flex-wrap items-end gap-2">
+        <label className="min-w-[220px] space-y-1 text-xs"><span className="block font-medium">Daily snapshot employee</span><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={snapshotEmployeeId} onChange={(event) => setSnapshotEmployeeId(event.target.value)}><option value="">All employees (large result)</option>{employees.map((employee) => <option key={employee.employee_id} value={employee.employee_id}>{employee.employee_code} · {employee.employee_name}</option>)}</select></label>
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void loadDailySnapshots()}>View daily source snapshots</Button>
         <span className="self-center text-xs text-muted-foreground">{exceptions.filter((row) => row.status === "open" && row.severity === "blocking").length} blocking exception(s)</span>
       </div> : null}
