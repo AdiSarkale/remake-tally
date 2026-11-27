@@ -8,7 +8,7 @@ from app import models
 from app.api.deps import current_user,employee_scope_ids,require_permission
 from app.db.session import get_db
 from app.modules.core.audit import log_audit
-from app.modules.hr.overtime import calculate_candidate
+from app.modules.hr.overtime import calculate_candidate\nfrom app.api.routes.approvals import ApprovalRequest, Department
 router=APIRouter(prefix="/hr/overtime",tags=["hr","overtime"])
 class Calc(BaseModel):
  from_date:date
@@ -18,7 +18,7 @@ class Review(BaseModel):
  decision:Literal["approve","reject","return"]
  reason:str=Field(min_length=3,max_length=1000)
 def frozen(db,d):return db.query(models.HRPayrollRun).filter(models.HRPayrollRun.year==d.year,models.HRPayrollRun.month==d.month,models.HRPayrollRun.status.in_(["prepared","approved","finalized","locked"])).first() is not None
-def out(r):return {k:getattr(r,k) for k in ["id","employee_id","work_date","revision","status","day_type","policy_id","policy_version","raw_candidate_minutes","rounded_candidate_minutes","calculation_snapshot","input_fingerprint","source_event_ids","summary_id","summary_revision","roster_entry_id","requested_by","submitted_at","supervisor_username","supervisor_decision","supervisor_reason","supervisor_at","hr_verifier","hr_decision","hr_reason","hr_verified_at"]}
+def out(r):return {k:getattr(r,k) for k in ["id","employee_id","work_date","revision","status","day_type","policy_id","policy_version","raw_candidate_minutes","rounded_candidate_minutes","calculation_snapshot","input_fingerprint","source_event_ids","summary_id","summary_revision","roster_entry_id","approval_request_id","requested_by","submitted_at","supervisor_username","supervisor_decision","supervisor_reason","supervisor_at","hr_verifier","hr_decision","hr_reason","hr_verified_at"]}
 @router.post("/calculate")
 def calculate(p:Calc,db:Session=Depends(get_db),u:models.User=Depends(require_permission("hr","overtime","calculate","tenant"))):
  if p.to_date<p.from_date or (p.to_date-p.from_date).days>92:raise HTTPException(422,"Invalid or too-long date range")
@@ -74,12 +74,17 @@ def submit(cid:str,db:Session=Depends(get_db),u:models.User=Depends(current_user
  if u.role not in (models.Role.admin,models.Role.hr) and (not link or link.employee_id!=r.employee_id):raise HTTPException(403,"Self-only submit")
  if r.requested_by and r.requested_by!=u.username:raise HTTPException(403,"Original requester only")
  emp=db.get(models.Employee,r.employee_id)
- a=db.query(models.EmployeeOrgAssignment).filter(models.EmployeeOrgAssignment.employee_id==emp.id,models.EmployeeOrgAssignment.valid_from<=r.work_date,(models.EmployeeOrgAssignment.valid_to.is_(None)|(models.EmployeeOrgAssignment.valid_to>=r.work_date))).order_by(models.EmployeeOrgAssignment.valid_from.desc()).first()
- mgr=db.get(models.Employee,a.manager_employee_id) if a and a.manager_employee_id else None
- link=db.query(models.EmployeeUserLink).filter_by(employee_id=mgr.id).first() if mgr else None
- sup=db.get(models.User,link.user_id) if link else None
- if not sup or not sup.active or sup.username==u.username:raise HTTPException(409,"Valid separate supervisor account required")
- r.requested_by=u.username;r.supervisor_username=sup.username;r.status="submitted";r.submitted_at=datetime.now(timezone.utc);log_audit(db,u.username,"SUBMIT","hr_overtime_candidate",r.id);db.commit();db.refresh(r);return out(r)
+ assignment=db.query(models.EmployeeOrgAssignment).filter(models.EmployeeOrgAssignment.employee_id==emp.id,models.EmployeeOrgAssignment.valid_from<=r.work_date,(models.EmployeeOrgAssignment.valid_to.is_(None)|(models.EmployeeOrgAssignment.valid_to>=r.work_date))).order_by(models.EmployeeOrgAssignment.valid_from.desc()).first()
+ dept_name=assignment.department if assignment and assignment.department else emp.department
+ dept=db.query(Department).filter(Department.active.is_(True),Department.code==dept_name).first()
+ if dept is None:dept=db.query(Department).filter(Department.active.is_(True),Department.name==dept_name).first()
+ if dept is None:raise HTTPException(409,"Department Core Approval routing is not configured for this employee/date")
+ if dept.hod_username==u.username:raise HTTPException(409,"Requester cannot be the department HOD approver")
+ approval=ApprovalRequest(department_id=dept.id,request_type="HR Overtime",reference_id=r.id,reference_no=f"{emp.emp_code}-{r.work_date.isoformat()}",title=f"Overtime approval: {emp.emp_code} {r.work_date}",amount=0,requested_by=u.username,status="Pending",remarks=f"Candidate {r.id}; raw {r.raw_candidate_minutes} min; rounded {r.rounded_candidate_minutes} min")
+ db.add(approval);db.flush()
+ r.requested_by=u.username;r.supervisor_username=dept.hod_username;r.approval_request_id=approval.id;r.status="submitted";r.submitted_at=datetime.now(timezone.utc)
+ log_audit(db,u.username,"SUBMIT","hr_overtime_candidate",f"{r.id}; Core Approval request={approval.id}; department={dept.code}")
+ db.commit();db.refresh(r);return out(r)
 def earn(db,r,actor):
  c=r.calculation_snapshot.get("compensation_snapshot") or {}
  if c.get("method") not in {"comp_leave","both"}:return
@@ -95,12 +100,20 @@ def review(cid:str,p:Review,db:Session=Depends(get_db),u:models.User=Depends(cur
  if not r:raise HTTPException(404,"Candidate missing")
  if frozen(db,r.work_date):raise HTTPException(409,"Payroll frozen")
  if r.status=="submitted":
-  if u.username!=r.supervisor_username or u.username==r.requested_by:raise HTTPException(403,"Assigned supervisor and no self-approval")
-  r.status={"approve":"supervisor_approved","reject":"rejected","return":"returned"}[p.decision];r.supervisor_decision=p.decision;r.supervisor_reason=p.reason;r.supervisor_at=datetime.now(timezone.utc)
+  approval=db.get(ApprovalRequest,r.approval_request_id) if r.approval_request_id else None
+  if not approval:raise HTTPException(409,"Core Approval request is missing")
+  if approval.status=="Pending":raise HTTPException(409,"Department HOD/Core Approval is still pending")
+  if approval.status=="Rejected":
+   r.status="rejected";r.supervisor_decision="reject";r.supervisor_reason=approval.remarks or "Rejected in Core Approvals";r.supervisor_at=approval.decided_at or datetime.now(timezone.utc)
+   log_audit(db,u.username,"SYNC_REJECT","hr_overtime_candidate",r.id);db.commit();db.refresh(r);return out(r)
+  if approval.status!="Approved":raise HTTPException(409,"Core Approval is not approved")
+  r.status="supervisor_approved";r.supervisor_decision="approve";r.supervisor_reason=approval.remarks or "Department HOD approved";r.supervisor_at=approval.decided_at or datetime.now(timezone.utc)
+  log_audit(db,u.username,"SYNC_APPROVAL","hr_overtime_candidate",f"{r.id}; approval={approval.id}; approver={approval.decided_by}")
+  db.commit();db.refresh(r);return out(r)
  elif r.status=="supervisor_approved":
   if u.role not in (models.Role.admin,models.Role.hr) or u.username in {r.requested_by,r.supervisor_username}:raise HTTPException(403,"Distinct HR/Admin verifier required")
   r.status={"approve":"approved","reject":"rejected","return":"returned"}[p.decision];r.hr_decision="verify" if p.decision=="approve" else p.decision;r.hr_reason=p.reason;r.hr_verifier=u.username;r.hr_verified_at=datetime.now(timezone.utc)
- else:raise HTTPException(409,"Candidate not awaiting review")
+ else:raise HTTPException(409,"Candidate not awaiting Core Approval/HR verification")
  log_audit(db,u.username,p.decision.upper(),"hr_overtime_candidate",r.id)
  if r.status=="approved":earn(db,r,u.username)
  db.commit();db.refresh(r);return out(r)
