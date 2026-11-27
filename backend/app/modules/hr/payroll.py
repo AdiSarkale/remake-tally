@@ -254,6 +254,9 @@ class HRPayrollRun(Base):
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reversal_reason: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    superseded_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    superseded_reason: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
 
 class HRPayrollItem(Base):
