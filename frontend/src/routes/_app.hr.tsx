@@ -86,7 +86,7 @@ function HrPage() {
         <Button size="sm" variant={activeTab === "codes" ? "default" : "outline"} role="tab" aria-selected={activeTab === "codes"} onClick={() => setActiveTab("codes")}>Employee Code Rules</Button>
         {canEdit ? <Button size="sm" variant={activeTab === "payroll" ? "default" : "outline"} role="tab" aria-selected={activeTab === "payroll"} onClick={() => setActiveTab("payroll")}>Payroll</Button> : null}
         <Button size="sm" variant={activeTab === "leave" ? "default" : "outline"} role="tab" aria-selected={activeTab === "leave"} onClick={() => setActiveTab("leave")}>Leave</Button>
-        {canEdit ? <Button size="sm" variant={activeTab === "overtime" ? "default" : "outline"} role="tab" aria-selected={activeTab === "overtime"} onClick={() => setActiveTab("overtime")}>Overtime & Comp-Off</Button> : null}
+        <Button size="sm" variant={activeTab === "overtime" ? "default" : "outline"} role="tab" aria-selected={activeTab === "overtime"} onClick={() => setActiveTab("overtime")}>Overtime & Comp-Off</Button>
         {canManageAccess ? <Button size="sm" variant={activeTab === "access" ? "default" : "outline"} role="tab" aria-selected={activeTab === "access"} onClick={() => setActiveTab("access")}>Access Control</Button> : null}
       </div>
       {activeTab === "types" ? <EmployeeTypesPanel canEdit={canEdit} /> : activeTab === "codes" ? <EmployeeCodeConfigPanel canEdit={canEdit} /> : activeTab === "payroll" ? <PayrollPanel canEdit={canEdit} username={profile?.username ?? ""} />  : activeTab === "leave" ? <LeavePanel canManage={canEdit} username={profile?.username ?? ""} /> : activeTab === "overtime" ? <OvertimePanel canManage={canEdit} /> : activeTab === "access" && canManageAccess ? <AuthorizationPanel /> : <>
