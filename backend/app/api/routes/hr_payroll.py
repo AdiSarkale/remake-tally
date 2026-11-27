@@ -1636,6 +1636,46 @@ def approve_monthly_payroll(
     return _run_output(db, run)
 
 
+def _payroll_snapshot_input_recheck(db: Session, run: models.HRPayrollRun) -> list[str]:
+    """Fail closed if any daily source fingerprint changed since payroll preparation."""
+    start, end, settings, overrides, _active_employees = _period_data(db, run.year, run.month)
+    item_employee_ids = [
+        row.employee_id for row in db.query(models.HRPayrollItem).filter_by(payroll_run_id=run.id).all()
+    ]
+    employees = db.query(models.Employee).filter(models.Employee.id.in_(item_employee_ids)).all() if item_employee_ids else []
+    attendance_rows = db.query(models.EmployeeAttendance).filter(
+        models.EmployeeAttendance.employee_id.in_(item_employee_ids),
+        models.EmployeeAttendance.work_date >= start,
+        models.EmployeeAttendance.work_date <= end,
+    ).all() if item_employee_ids else []
+    current_inputs = build_payroll_daily_inputs(
+        db, employees, start, end, _week_offs(settings), overrides, attendance_rows,
+    )
+    saved_rows = db.query(models.HRPayrollDailySnapshot).filter_by(payroll_run_id=run.id).all()
+    if not saved_rows:
+        return ["This payroll revision has no daily source snapshots; supersede and prepare a new revision."]
+    saved = {(row.employee_id, row.work_date): row.input_fingerprint for row in saved_rows}
+    changed = []
+    for employee_id, days in current_inputs.items():
+        for day in days:
+            key = (employee_id, day["work_date"])
+            saved_fingerprint = saved.get(key)
+            if saved_fingerprint != day["fingerprint"]:
+                changed.append(f"{employee_id} ({day['work_date']})")
+    if changed:
+        examples = ", ".join(changed[:20])
+        extra = f"; and {len(changed) - 20} more" if len(changed) > 20 else ""
+        return [f"Payroll source inputs changed after preparation: {examples}{extra}. Supersede and prepare a new revision."]
+    missing = set(saved) - {
+        (employee_id, day["work_date"])
+        for employee_id, days in current_inputs.items()
+        for day in days
+    }
+    if missing:
+        return [f"Payroll daily snapshot source scope changed ({len(missing)} saved employee-day(s) no longer resolve). Supersede and prepare a new revision."]
+    return []
+
+
 @router.post("/payroll/runs/{year}/{month}/finalize", response_model=schemas.PayrollRunOut)
 def finalize_monthly_payroll(
     year: int, month: int, db: Session = Depends(get_db), user: models.User = hr_access,
@@ -1657,6 +1697,9 @@ def finalize_monthly_payroll(
     if open_blocking:
         preview_codes = ", ".join(f"{row.code} ({row.work_date})" for row in open_blocking[:20])
         raise HTTPException(409, "Payroll finalization blocked by unresolved attendance exceptions: " + preview_codes)
+    source_recheck_issues = _payroll_snapshot_input_recheck(db, run)
+    if source_recheck_issues:
+        raise HTTPException(409, "Payroll finalization blocked: " + " | ".join(source_recheck_issues))
     now = datetime.now(timezone.utc)
     try:
         journal = post_payroll_journal(db, run, user.username)
