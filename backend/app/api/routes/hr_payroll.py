@@ -1554,7 +1554,7 @@ def supersede_payroll_run(
     return _run_output(db, run)
 
 
-@router.get("/payroll/runs/{run_id}/daily-snapshots")
+@router.get("/payroll/revisions/{run_id}/daily-snapshots")
 def list_payroll_daily_snapshots(
     run_id: str, employee_id: str | None = None, db: Session = Depends(get_db),
     user: models.User = Depends(require_permission("hr", "payroll", "read", "tenant")),
@@ -1573,7 +1573,7 @@ def list_payroll_daily_snapshots(
     } for row in rows]
 
 
-@router.get("/payroll/runs/{run_id}/exceptions")
+@router.get("/payroll/revisions/{run_id}/exceptions")
 def list_payroll_exceptions(
     run_id: str, db: Session = Depends(get_db),
     user: models.User = Depends(require_permission("hr", "payroll", "read", "tenant")),
