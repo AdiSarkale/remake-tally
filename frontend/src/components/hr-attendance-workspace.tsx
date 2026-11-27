@@ -15,8 +15,14 @@ type BreakRule = { id:string; shift_type_id:string; code:string; name:string; se
 type Assignment = { id: string; scope_type: string; employee_id?: string; branch_id?: string; department?: string; shift_type_id: string; weekdays: number[]; valid_from: string; valid_to?: string; created_by: string };
 type Overtime = { id: string; employee_id: string; work_date: string; status: string; raw_candidate_minutes: number; rounded_candidate_minutes: number; revision: number };
 type EventRow = { id:string; employee_id:string; work_date:string; event_type:string; occurred_at_utc:string; timezone_name:string; source_type:string; source_reference:string; note?:string; voided_at?:string|null; supersedes_event_id?:string|null };
-const today = () => new Date().toISOString().slice(0,10);
-const weekEnd = () => { const d=new Date();d.setDate(d.getDate()+6);return d.toISOString().slice(0,10); };
+const localDate = (value:Date) => {
+ const year=value.getFullYear();
+ const month=String(value.getMonth()+1).padStart(2,"0");
+ const day=String(value.getDate()).padStart(2,"0");
+ return year+"-"+month+"-"+day;
+};
+const today = () => localDate(new Date());
+const weekEnd = () => { const d=new Date();d.setDate(d.getDate()+6);return localDate(d); };
 const queryDates = (from:string,to:string,employee?:string) => "?from_date="+encodeURIComponent(from)+"&to_date="+encodeURIComponent(to)+(employee?"&employee_id="+encodeURIComponent(employee):"");
 const labelDay = (d:string) => new Date(d+"T00:00:00").toLocaleDateString();
 const mins = (n:number) => Math.floor((n||0)/60)+"h "+((n||0)%60)+"m";
