@@ -53,17 +53,36 @@ def list_shift_rosters(
         query = query.filter(models.HRShiftRosterEntry.branch_id == branch_id)
     if department:
         query = query.filter(models.HRShiftRosterEntry.department_snapshot.ilike(department.strip()))
-    # Keep ordering stable across requests; offset applies to the already-scoped
-    # candidate set below so out-of-scope rows cannot hide later authorized rows.
-    candidate_rows = query.order_by(
+
+    # Resolve scope in SQL before pagination. Applying a Python filter after
+    # LIMIT/OFFSET lets inaccessible records consume slots and causes gaps.
+    allowed_by_date: dict[date, set[str] | None] = {}
+    visible_query = query.order_by(
         models.HRShiftRosterEntry.work_date,
         models.HRShiftRosterEntry.employee_id,
         models.HRShiftRosterEntry.id,
-    ).all()
+    )
+    scoped_ids_by_date: dict[date, set[str]] = {}
+    for work_date, in db.query(models.HRShiftRosterEntry.work_date).filter(
+        models.HRShiftRosterEntry.work_date >= from_date,
+        models.HRShiftRosterEntry.work_date <= to_date,
+    ).distinct().all():
+        ids = employee_scope_ids(db, user, "hr", "employees", "read", as_of_date=work_date)
+        if ids is not None:
+            scoped_ids_by_date[work_date] = set(ids)
+
+    # A date-specific scope can vary over the selected window. A single SQL
+    # IN filter cannot express that safely, so apply scope during an ordered
+    # scan and stop once the requested window has been collected.
     visible = []
-    for row in candidate_rows:
-        allowed = employee_scope_ids(db, user, "hr", "employees", "read", as_of_date=row.work_date)
-        if allowed is not None and row.employee_id not in set(allowed):
+    skipped = 0
+    rows = visible_query.yield_per(250)
+    for row in rows:
+        scoped_ids = scoped_ids_by_date.get(row.work_date)
+        if scoped_ids is not None and row.employee_id not in scoped_ids:
+            continue
+        if skipped < offset:
+            skipped += 1
             continue
         employee = db.get(models.Employee, row.employee_id)
         visible.append({
@@ -88,7 +107,9 @@ def list_shift_rosters(
             "break_rules": row.break_rules_snapshot,
             "created_by": row.created_by,
         })
-    return visible[offset:offset + limit]
+        if len(visible) >= limit:
+            break
+    return visible
 
 
 @router.get("/self", response_model=list[dict])
