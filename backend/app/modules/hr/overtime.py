@@ -31,7 +31,8 @@ def calculate_candidate(db,eid,d,actor):
  day="weekly_off" if roster and roster.status=="weekly_off" else "holiday" if roster and roster.status=="holiday" else "scheduled_workday"
  if not roster:
   cal=db.query(models.HRCalendarDay).filter_by(work_date=d).first()
-  if cal and cal.day_type=="holiday":day="holiday"\n  elif cal and cal.day_type=="week_off":day="weekly_off"
+  if cal and cal.day_type=="holiday":day="holiday"
+  elif cal and cal.day_type=="week_off":day="weekly_off"
  pol,org,state=resolve_policy(db,emp,d,roster,day)
  if not pol:return {"state":"blocked","reason":state}
  c=pol.configuration or {};elig=c.get("eligibility") or {};rnd=c.get("rounding") or {};comp=c.get("compensation") or {}
@@ -75,7 +76,9 @@ def calculate_candidate(db,eid,d,actor):
      lo=max(a,x);hi=min(b,y)
      if hi>lo:total+=int((hi-lo).total_seconds()//60)
   return total
- unpaid_actual=breakmins(work) if breaks else 0\n if breaks and unpaid_actual is None:return {"state":"blocked","reason":"break_rule_missing"}\n actual=max(0,mins(work)-unpaid_actual);mode=c.get("workday_mode") if day=="scheduled_workday" else c.get(day+"_mode");raw=0
+ unpaid_actual=breakmins(work) if breaks else 0
+ if breaks and unpaid_actual is None:return {"state":"blocked","reason":"break_rule_missing"}
+ actual=max(0,mins(work)-unpaid_actual);mode=c.get("workday_mode") if day=="scheduled_workday" else c.get(day+"_mode");raw=0
  if comp.get("method")=="disabled" or mode=="disabled":pass
  elif day!="scheduled_workday" and mode=="actual_work":raw=actual
  elif day=="scheduled_workday" and mode=="beyond_scheduled_net":
@@ -86,7 +89,9 @@ def calculate_candidate(db,eid,d,actor):
   eligible=[]
   if elig.get("pre_shift"):eligible += [(a,min(b,roster.scheduled_start_at_utc)) for a,b in work if a<roster.scheduled_start_at_utc and min(b,roster.scheduled_start_at_utc)>a]
   if elig.get("post_shift"):eligible += [(max(a,roster.scheduled_end_at_utc),b) for a,b in work if b>roster.scheduled_end_at_utc and b>max(a,roster.scheduled_end_at_utc)]
-  unpaid_extra=breakmins(eligible) if breaks else 0\n  if breaks and unpaid_extra is None:return {"state":"blocked","reason":"break_rule_missing"}\n  raw=max(0,mins(eligible)-unpaid_extra)
+  unpaid_extra=breakmins(eligible) if breaks else 0
+  if breaks and unpaid_extra is None:return {"state":"blocked","reason":"break_rule_missing"}
+  raw=max(0,mins(eligible)-unpaid_extra)
  else:return {"state":"blocked","reason":"invalid_policy_mode"}
  if raw<int(elig.get("minimum_minutes",0)):raw=0
  cap=elig.get("maximum_minutes_per_day")
