@@ -32,7 +32,9 @@ interface PayrollItem {
   present_days: number; half_days: number; absent_days: number; paid_leave_days: number; unpaid_leave_days: number; overtime_minutes: number;
 }
 interface PayrollPreview { year: number; month: number; salary_count_mode: SalaryMode; salary_count_days: number; items: PayrollItem[]; }
-interface PayrollRun { id: string; year: number; month: number; status: string; revision: number; created_by: string; created_at: string; finalized_at: string | null; approved_by?: string | null; approved_at?: string | null; locked_at?: string | null; reversed_at?: string | null; reversal_reason?: string; employee_count: number; net_total: number; }
+interface PayrollRun { id: string; year: number; month: number; status: string; revision: number; created_by: string; created_at: string; finalized_at: string | null; approved_by?: string | null; approved_at?: string | null; locked_at?: string | null; reversed_at?: string | null; reversal_reason?: string; superseded_by?: string | null; superseded_at?: string | null; superseded_reason?: string; employee_count: number; net_total: number; }
+interface PayrollException { id: string; employee_id: string | null; work_date: string | null; code: string; severity: "blocking" | "warning"; status: string; detail: string; source_reference: string; }
+interface PayrollDailySnapshot { id: string; employee_id: string; work_date: string; input_fingerprint: string; snapshot: Record<string, unknown>; created_at: string; }
 const emptySalary: SalaryInput = {
   annual_salary: 0, basic_pct: 50, hra_pct: 40, da_pct: 0, conveyance_monthly: 0,
   medical_allowance_monthly: 0, pf_pct: 12, professional_tax_monthly: 200, tds_monthly: 0,
@@ -61,6 +63,9 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
   const [salaryForm, setSalaryForm] = useState<SalaryInput>(emptySalary);
   const [preview, setPreview] = useState<PayrollPreview | null>(null);
   const [runs, setRuns] = useState<PayrollRun[]>([]);
+  const [exceptions, setExceptions] = useState<PayrollException[]>([]);
+  const [dailySnapshots, setDailySnapshots] = useState<PayrollDailySnapshot[]>([]);
+  const [showDailySnapshots, setShowDailySnapshots] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -200,6 +205,16 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
   const selectedRun = runs
     .filter((run) => run.year === year && run.month === month)
     .sort((a, b) => b.revision - a.revision)[0];
+  useEffect(() => {
+    if (tab !== "payroll" || !selectedRun) {
+      setExceptions([]);
+      setDailySnapshots([]);
+      setShowDailySnapshots(false);
+      return;
+    }
+    void api.get<PayrollException[]>("/hr/payroll/runs/" + selectedRun.id + "/exceptions")
+      .then(setExceptions).catch(fail);
+  }, [tab, selectedRun?.id]);
 
   const refreshPayroll = async () => Promise.all([loadPreview(), loadRuns()]);
 
@@ -209,6 +224,25 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
       const run = await api.post<PayrollRun>("/hr/payroll/runs/" + year + "/" + month + "/prepare");
       toast.success("Payroll snapshot prepared — revision " + run.revision);
       await refreshPayroll();
+    } catch (err) { fail(err); } finally { setBusy(false); }
+  };
+  const supersedePayroll = async () => {
+    if (!selectedRun) return;
+    const reason = window.prompt("Reason for superseding this payroll revision (minimum 10 characters):");
+    if (!reason?.trim() || reason.trim().length < 10) return;
+    setBusy(true);
+    try {
+      await api.post("/hr/payroll/runs/" + selectedRun.id + "/supersede", { reason });
+      toast.success("Payroll revision superseded; the original snapshot remains in history.");
+      await refreshPayroll();
+    } catch (err) { fail(err); } finally { setBusy(false); }
+  };
+  const loadDailySnapshots = async () => {
+    if (!selectedRun) return;
+    setBusy(true);
+    try {
+      setDailySnapshots(await api.get<PayrollDailySnapshot[]>("/hr/payroll/runs/" + selectedRun.id + "/daily-snapshots"));
+      setShowDailySnapshots(true);
     } catch (err) { fail(err); } finally { setBusy(false); }
   };
   const approvePayroll = async () => {
@@ -376,7 +410,8 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" disabled={busy} onClick={() => void refreshPayroll()}>Refresh</Button>
-          {canEdit && (!selectedRun || selectedRun.status === "reversed") ? <Button disabled={busy || !preview?.items.some((item) => item.configured)} onClick={() => void preparePayroll()}>Prepare snapshot</Button> : null}
+          {canEdit && (!selectedRun || selectedRun.status === "reversed" || selectedRun.status === "superseded") ? <Button disabled={busy || !preview?.items.some((item) => item.configured)} onClick={() => void preparePayroll()}>Prepare snapshot</Button> : null}
+          {canEdit && (selectedRun?.status === "prepared" || selectedRun?.status === "approved") ? <Button variant="outline" disabled={busy} onClick={() => void supersedePayroll()}>Supersede revision</Button> : null}
           {canEdit && selectedRun?.status === "prepared" && selectedRun.created_by !== username ? <Button disabled={busy} onClick={() => void approvePayroll()}>Approve</Button> : null}
           {canEdit && selectedRun?.status === "prepared" && selectedRun.created_by === username ? <span className="self-center text-xs text-muted-foreground">Awaiting a different approver</span> : null}
           {canEdit && selectedRun?.status === "approved" ? <Button disabled={busy} onClick={() => void finalizePayroll()}>Finalize</Button> : null}
@@ -384,6 +419,25 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
           {canEdit && (selectedRun?.status === "finalized" || selectedRun?.status === "locked") ? <Button variant="destructive" disabled={busy} onClick={() => void reversePayroll()}>Reverse</Button> : null}
         </div>
       </div>
+      {selectedRun ? <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void loadDailySnapshots()}>View daily source snapshots</Button>
+        <span className="self-center text-xs text-muted-foreground">{exceptions.filter((row) => row.status === "open" && row.severity === "blocking").length} blocking exception(s)</span>
+      </div> : null}
+      {exceptions.length ? <div className="space-y-2 rounded-lg border p-3">
+        <h3 className="font-semibold">Payroll exceptions</h3>
+        <div className="space-y-2">{exceptions.map((row) => <div key={row.id} className="rounded-md border p-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{row.code}</span><span className={row.severity === "blocking" ? "text-destructive font-medium" : "text-muted-foreground"}>{row.severity}</span><span className="text-muted-foreground">{row.status}</span><span>{row.work_date ?? "Period-level"}</span></div>
+          <p className="mt-1">{row.detail}</p>{row.source_reference ? <p className="mt-1 text-xs text-muted-foreground">Source: {row.source_reference}</p> : null}
+        </div>)}</div>
+      </div> : null}
+      {showDailySnapshots ? <div className="space-y-2 rounded-lg border p-3">
+        <div className="flex items-center justify-between"><h3 className="font-semibold">Immutable daily source snapshots</h3><Button size="sm" variant="outline" onClick={() => setShowDailySnapshots(false)}>Hide</Button></div>
+        <div className="overflow-x-auto"><table className="w-full min-w-[850px] text-sm"><thead className="bg-muted/50 text-left"><tr>{["Employee ID","Work date","Day type","Roster","Attendance","Approved OT","Source anomalies","Fingerprint"].map(h=><th key={h} className="px-2 py-2">{h}</th>)}</tr></thead>
+        <tbody>{dailySnapshots.map(row=>{
+          const s=row.snapshot as {day_type?:string;roster?:{status?:string;shift_code?:string};attendance?:{status?:string};approved_payable_overtime_minutes?:number;source_anomalies?:unknown[]};
+          return <tr key={row.id} className="border-t"><td className="px-2 py-2">{row.employee_id}</td><td className="px-2 py-2">{row.work_date}</td><td className="px-2 py-2">{s.day_type ?? "—"}</td><td className="px-2 py-2">{s.roster?.status ? s.roster.status + (s.roster.shift_code ? " · "+s.roster.shift_code : "") : "—"}</td><td className="px-2 py-2">{s.attendance?.status ?? "—"}</td><td className="px-2 py-2">{s.approved_payable_overtime_minutes ?? 0} min</td><td className="px-2 py-2">{s.source_anomalies?.length ?? 0}</td><td className="px-2 py-2"><details><summary className="cursor-pointer text-xs">Inspect</summary><pre className="mt-2 max-w-xl overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(row.snapshot,null,2)}</pre><p className="mt-1 text-xs text-muted-foreground">{row.input_fingerprint}</p></details></td></tr>
+        })}{dailySnapshots.length===0?<tr><td colSpan={8} className="px-3 py-4 text-center text-muted-foreground">No daily snapshots found.</td></tr>:null}</tbody></table></div>
+      </div> : null}
       <div className="overflow-x-auto rounded-lg border"><table className="w-full min-w-[1050px] text-sm"><thead className="bg-muted/50 text-left"><tr>{["Employee", "Annual salary", "Gross/month", "Absent", "Half days", "Unpaid leave", "Total deductions", "Overtime pay", "Net payable", "Slip"].map((title) => <th key={title} className="px-3 py-2 font-medium">{title}</th>)}</tr></thead>
         <tbody>{(preview?.items ?? []).map((item) => <tr key={item.employee_id} className="border-t"><td className="px-3 py-2"><div>{item.employee_name}</div><div className="text-xs text-muted-foreground">{item.employee_code}{item.configured ? "" : " · Salary missing"}</div></td>
           <td className="px-3 py-2 tabular-nums">{money(item.annual_salary)}</td><td className="px-3 py-2 tabular-nums">{money(item.monthly_gross)}</td><td className="px-3 py-2">{item.absent_days}</td><td className="px-3 py-2">{item.half_days}</td><td className="px-3 py-2">{item.unpaid_leave_days}</td>
