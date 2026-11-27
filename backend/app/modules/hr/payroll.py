@@ -515,3 +515,45 @@ class HROvertimePolicyVersion(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class HRPayrollDailySnapshot(Base):
+    """Immutable daily input/provenance snapshot attached to a payroll revision."""
+
+    __tablename__ = "hr_payroll_daily_snapshots"
+    __table_args__ = (
+        UniqueConstraint("payroll_run_id", "employee_id", "work_date", name="uq_hr_payroll_daily_snapshot"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    payroll_run_id: Mapped[str] = mapped_column(ForeignKey("hr_payroll_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    employee_id: Mapped[str] = mapped_column(ForeignKey("employees.id", ondelete="RESTRICT"), nullable=False, index=True)
+    work_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class HRPayrollException(Base):
+    """Payroll readiness/calculation exception persisted for a specific run revision."""
+
+    __tablename__ = "hr_payroll_exceptions"
+    __table_args__ = (
+        UniqueConstraint("payroll_run_id", "employee_id", "work_date", "code", name="uq_hr_payroll_exception_scope"),
+        CheckConstraint("severity IN ('blocking', 'warning')", name="ck_hr_payroll_exception_severity"),
+        CheckConstraint("status IN ('open', 'resolved', 'acknowledged')", name="ck_hr_payroll_exception_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    payroll_run_id: Mapped[str] = mapped_column(ForeignKey("hr_payroll_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    employee_id: Mapped[str | None] = mapped_column(ForeignKey("employees.id", ondelete="RESTRICT"), nullable=True, index=True)
+    work_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    code: Mapped[str] = mapped_column(String(64), nullable=False)
+    severity: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open")
+    detail: Mapped[str] = mapped_column(Text, nullable=False)
+    source_reference: Mapped[str] = mapped_column(String(120), nullable=False, default="")
+    resolved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution_note: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
