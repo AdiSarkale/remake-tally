@@ -1323,7 +1323,8 @@ def get_payroll_run(
 
 
 def _missing_payroll_attendance(
-    db: Session, year: int, month: int
+    db: Session, year: int, month: int,
+    daily_inputs_by_employee: dict[str, list[dict[str, Any]]] | None = None,
 ) -> tuple[list[tuple[str, date]], list[str]]:
     """Find missing daily statuses and salaried employees with unknown joining dates."""
     start, end, settings, overrides, employees = _period_data(db, year, month)
@@ -1358,8 +1359,14 @@ def _missing_payroll_attendance(
         # Unknown legacy joining dates are not guessed. They are reported above,
         # and the full month remains subject to attendance completeness until HR
         # enters the actual joining date.
+        employee_daily = (daily_inputs_by_employee or {}).get(employee.id, [])
+        has_shift_context = any(
+            row.get("roster") is not None or row.get("exception") == "missing_roster"
+            for row in employee_daily
+        )
+        employee_scheduled_days = scheduled_days_from_daily_inputs(employee_daily) if has_shift_context else scheduled_days
         eligible_days = [
-            day for day in scheduled_days
+            day for day in employee_scheduled_days
             if (employee.joining_date is None or day >= employee.joining_date)
             and (employee.end_date is None or day <= employee.end_date)
         ]
@@ -1381,7 +1388,40 @@ def _payroll_readiness(db: Session, year: int, month: int) -> tuple[dict[str, An
     issues: list[str] = []
     if not configured_items:
         issues.append("Configure annual salary for at least one active employee")
-    missing_attendance, unknown_joining_dates = _missing_payroll_attendance(db, year, month)
+    start, end, settings, overrides, employees = _period_data(db, year, month)
+    week_off_days = _week_offs(settings)
+    attendance_rows = db.query(models.EmployeeAttendance).filter(
+        models.EmployeeAttendance.work_date >= start,
+        models.EmployeeAttendance.work_date <= end,
+    ).all()
+    daily_inputs_by_employee = build_payroll_daily_inputs(
+        db, employees, start, end, week_off_days, overrides, attendance_rows,
+    )
+    missing_attendance, unknown_joining_dates = _missing_payroll_attendance(
+        db, year, month, daily_inputs_by_employee,
+    )
+    shift_roster_issues = []
+    divisor_issues = []
+    tenant_divisor = _salary_count_divisor(
+        year, month, settings.salary_count_mode, settings.monthly_salary_days, week_off_days, overrides,
+    )
+    for employee in employees:
+        if employee.id not in {row.employee_id for row in db.query(models.EmployeeSalaryProfile).filter(models.EmployeeSalaryProfile.annual_salary > 0).all()}:
+            continue
+        daily = daily_inputs_by_employee.get(employee.id, [])
+        exceptions = sorted({row.get("exception") for row in daily if row.get("exception")})
+        if exceptions:
+            shift_roster_issues.append(f"{employee.emp_code}: {', '.join(exceptions)}")
+        if settings.salary_count_mode == "working_days" and any(
+            row.get("roster") is not None or row.get("exception") == "missing_roster" for row in daily
+        ):
+            scheduled_count = len(scheduled_days_from_daily_inputs(daily))
+            if scheduled_count != tenant_divisor:
+                divisor_issues.append(f"{employee.emp_code}: roster has {scheduled_count} scheduled days; tenant divisor is {tenant_divisor}")
+    if shift_roster_issues:
+        issues.append("Shift roster issues: " + "; ".join(shift_roster_issues[:20]))
+    if divisor_issues:
+        issues.append("Shift/working-days divisor incompatibility: " + "; ".join(divisor_issues[:20]))
     if unknown_joining_dates:
         issues.append(
             "Joining dates are missing for active salaried employee(s): "
