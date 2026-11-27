@@ -24,16 +24,26 @@ def upgrade() -> None:
         ))
     }
     rows = []
-    for role in ("Admin", "HR"):
-        key = (role, "hr", "shift_rosters", "read", "tenant")
+    grant_specs = [
+        (role, feature, action, "tenant")
+        for role in ("Admin", "HR")
+        for feature, actions in (
+            ("shifts", ("read", "write")),
+            ("shift_assignments", ("read", "write")),
+            ("shift_rosters", ("read", "write")),
+        )
+        for action in actions
+    ]
+    for role, feature, action, scope in grant_specs:
+        key = (role, "hr", feature, action, scope)
         if key not in existing:
             rows.append({
                 "id": str(uuid.uuid4()),
                 "role": role,
                 "module": "hr",
-                "feature": "shift_rosters",
-                "action": "read",
-                "data_scope": "tenant",
+                "feature": feature,
+                "action": action,
+                "data_scope": scope,
                 "allowed": True,
                 "updated_by": "migration:p0_hr_roster_ui_read_028",
             })
