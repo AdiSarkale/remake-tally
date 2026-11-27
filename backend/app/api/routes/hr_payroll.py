@@ -1416,6 +1416,14 @@ def _snapshot_payroll_run(
     db.add(run)
     db.flush()
     configured_items = [item for item in preview["items"] if item["configured"] and item["annual_salary"] > 0]
+    start, end, settings, overrides, employees = _period_data(db, year, month)
+    attendance_rows = db.query(models.EmployeeAttendance).filter(
+        models.EmployeeAttendance.work_date >= start,
+        models.EmployeeAttendance.work_date <= end,
+    ).all()
+    daily_inputs_by_employee = build_payroll_daily_inputs(
+        db, employees, start, end, _week_offs(settings), overrides, attendance_rows,
+    )
     for item in configured_items:
         db.add(models.HRPayrollItem(
             payroll_run_id=run.id, employee_id=item["employee_id"],
@@ -1430,6 +1438,21 @@ def _snapshot_payroll_run(
             absent_days=item["absent_days"], paid_leave_days=item["paid_leave_days"],
             unpaid_leave_days=item["unpaid_leave_days"], overtime_minutes=item["overtime_minutes"],
         ))
+        for day_input in daily_inputs_by_employee.get(item["employee_id"], []):
+            db.add(models.HRPayrollDailySnapshot(
+                payroll_run_id=run.id, employee_id=item["employee_id"],
+                work_date=day_input["work_date"], input_fingerprint=day_input["fingerprint"],
+                snapshot=day_input["snapshot"],
+            ))
+            summary = day_input.get("summary")
+            if day_input.get("scheduled") and summary is not None and summary.classification in {"incomplete", "invalid_sequence", "no_events"}:
+                code = "attendance_summary_" + summary.classification
+                db.add(models.HRPayrollException(
+                    payroll_run_id=run.id, employee_id=item["employee_id"], work_date=day_input["work_date"],
+                    code=code, severity="blocking", status="open",
+                    detail=f"Scheduled attendance summary is {summary.classification}; resolve the attendance correction before finalization.",
+                    source_reference=summary.id,
+                ))
     log_audit(db, user.username, "PREPARE", "hr_payroll_run", f"{year}-{month:02d}; revision={revision}")
     db.commit()
     db.refresh(run)
