@@ -41,6 +41,7 @@ from app.modules.hr.attendance_events import (
     append_attendance_event,
     build_event_source_reference,
 )
+from app.modules.hr.payroll_integration import build_payroll_daily_inputs, scheduled_days_from_daily_inputs
 
 router = APIRouter(prefix="/hr", tags=["hr", "payroll"])
 hr_access = Depends(require_permission("hr", "payroll", "read", "tenant"))
@@ -215,6 +216,7 @@ def _calculate_employee_monthly_payroll(
     monthly_salary_days: int,
     week_off_days: list[int],
     calendar_overrides: dict[date, str],
+    daily_inputs: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     components = _salary_components(profile)
     month_start = date(year, month, 1)
@@ -230,6 +232,10 @@ def _calculate_employee_monthly_payroll(
         for number in range(1, month_end.day + 1)
         if _calendar_type(date(year, month, number), week_off_days, calendar_overrides) == "working_day"
     ]
+    daily_input_by_date = {row["work_date"]: row for row in (daily_inputs or [])}
+    has_shift_context = any(row.get("roster") is not None or row.get("exception") == "missing_roster" for row in (daily_inputs or []))
+    if has_shift_context:
+        scheduled_days = scheduled_days_from_daily_inputs(daily_inputs or [])
     eligible_working_days = [
         day for day in scheduled_days
         if employment_active and employment_start <= day <= employment_end
@@ -273,7 +279,7 @@ def _calculate_employee_monthly_payroll(
         )
         if not in_employment_period:
             continue
-        scheduled_workday = _calendar_type(work_date, week_off_days, calendar_overrides) == "working_day"
+        scheduled_workday = (daily_input_by_date.get(work_date, {}).get("scheduled", False) if has_shift_context else _calendar_type(work_date, week_off_days, calendar_overrides) == "working_day")
         if row.status == "present":
             present_days += Decimal("1")
         elif row.status == "half_day":
@@ -298,8 +304,14 @@ def _calculate_employee_monthly_payroll(
             unpaid_leave_days += Decimal("0.5")
             if scheduled_workday:
                 unpaid_equivalent_days += Decimal("0.5")
-        if in_employment_period and row.status in {"present", "half_day"}:
+        if in_employment_period and row.status in {"present", "half_day"} and not has_shift_context:
             overtime_minutes += max(0, int(row.overtime_minutes or 0))
+    if has_shift_context:
+        overtime_minutes = sum(
+            int(day.get("approved_overtime_minutes", 0) or 0)
+            for day in (daily_inputs or [])
+            if employment_active and employment_start <= day["work_date"] <= employment_end
+        )
 
     absence_divisor = (
         Decimal(eligible_calendar_days) if salary_count_mode == "calendar_days"
@@ -367,11 +379,12 @@ def _preview_data(db: Session, year: int, month: int) -> dict[str, Any]:
     attendance_by_employee: dict[str, list[Any]] = {}
     for row in attendances:
         attendance_by_employee.setdefault(row.employee_id, []).append(row)
+    daily_inputs_by_employee = build_payroll_daily_inputs(db, employees, start, end, week_off_days, overrides, attendances)
     items = [
         _calculate_employee_monthly_payroll(
             employee, profiles.get(employee.id), attendance_by_employee.get(employee.id, []),
             year, month, settings.salary_count_mode, settings.monthly_salary_days,
-            week_off_days, overrides,
+            week_off_days, overrides, daily_inputs_by_employee.get(employee.id),
         )
         for employee in employees
     ]
