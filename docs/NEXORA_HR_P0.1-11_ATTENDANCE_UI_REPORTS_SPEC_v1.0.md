@@ -55,3 +55,11 @@ Deliver the missing HR-facing and employee-facing screens and reports that make 
 
 ## 6. Definition of Done
 Implementation, regression tests, scope/authorization tests, migration verification (if any), browser workflows, documentation/tracker updates, and a focused acceptance review all pass. UI presence or compilation alone does not complete this package.
+
+## 7. Implementation status (27 November 2026)
+
+**Slice 01 started:** the bounded roster read API is implemented with effective-date employee read-scope filtering and tenant grants for Admin/HR. Initial HR workspace tabs are present for roster generation/override/view, attendance summaries/raw event inspection/recalculation, anomaly resolution/false-positive review, correction submission/review, attendance/shift/OT reports, shift creation/activation, break-rule creation and employee assignment/end.
+
+**Verification status:** backend unit and tenant-isolation checks passed for the first implementation commit; integrated CI is still running for the latest frontend additions. A frontend strict-TypeScript issue was discovered by CI and corrected; final rerun pending.
+
+**Still incomplete:** employee self-service route and returned-correction resubmission; department-default assignment UI; roster pagination; comprehensive shift/break-rule edit/deactivation UI; explicit daily/monthly report views and export; supervisor dashboard; live API-backed browser acceptance beyond the current mock smoke. These are tracked as remaining slices, not silently considered complete.
