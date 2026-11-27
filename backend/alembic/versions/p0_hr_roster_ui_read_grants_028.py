@@ -47,6 +47,18 @@ def upgrade() -> None:
                 "allowed": True,
                 "updated_by": "migration:p0_hr_roster_ui_read_028",
             })
+    operator_key = ("Operator", "hr", "shift_rosters", "read", "self")
+    if operator_key not in existing:
+        rows.append({
+            "id": str(uuid.uuid4()),
+            "role": "Operator",
+            "module": "hr",
+            "feature": "shift_rosters",
+            "action": "read",
+            "data_scope": "self",
+            "allowed": True,
+            "updated_by": "migration:p0_hr_roster_ui_read_028",
+        })
     if rows:
         op.bulk_insert(grants, rows)
 
