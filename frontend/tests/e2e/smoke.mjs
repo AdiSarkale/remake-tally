@@ -67,6 +67,17 @@ try {
     await context.close();
   }
 
+  // Employee persona: self-service attendance and correction request screen.
+  {
+    const { context, page } = await persona("Operator", "attendance-self-service");
+    await page.goto(base + "/attendance");
+    await page.getByRole("heading", { name: "My Attendance & Shifts", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "My roster", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "My daily attendance summaries", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "Request an attendance correction", exact: true }).waitFor();
+    await context.close();
+  }
+
   // HR persona: can manage leave and payroll, but cannot administer system access.
   {
     const { context, page } = await persona("HR", "hr-manager");
