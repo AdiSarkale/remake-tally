@@ -1,12 +1,14 @@
 """P0.1-10 daily source provenance and approved overtime integration tests."""
 from datetime import date, datetime, time, timezone
 
+import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app import models
 from app.modules.hr.payroll_integration import build_payroll_daily_inputs
-from app.api.routes.hr_payroll import PayrollSupersedePayload, supersede_payroll_run
+from app.api.routes.hr_payroll import PayrollSupersedePayload, finalize_monthly_payroll, supersede_payroll_run
 
 
 def _db():
@@ -123,6 +125,34 @@ def test_prepared_and_approved_payroll_revisions_can_be_superseded_with_reason()
         assert approved_refresh.superseded_by == actor.username
         assert approved_refresh.superseded_reason == "Corrected attendance source records"
         assert approved_refresh.superseded_at is not None
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_finalization_is_blocked_by_open_blocking_payroll_exception():
+    engine, db = _db()
+    try:
+        run = models.HRPayrollRun(
+            id="payroll-blocking-finalize", year=2026, month=11,
+            status="approved", created_by="preparer", revision=1,
+            approved_by="approver", approved_at=datetime(2026, 11, 27, tzinfo=timezone.utc),
+        )
+        db.add(run)
+        db.flush()
+        db.add(models.HRPayrollException(
+            id="payroll-blocking-exception", payroll_run_id=run.id,
+            employee_id=None, work_date=date(2026, 11, 10),
+            code="attendance_summary_incomplete", severity="blocking",
+            status="open", detail="Incomplete attendance source", source_reference="summary-1",
+        ))
+        db.commit()
+        actor = type("Actor", (), {"username": "payroll-finalizer"})()
+        with pytest.raises(HTTPException) as exc:
+            finalize_monthly_payroll(2026, 11, db, actor, object())
+        assert exc.value.status_code == 409
+        assert "unresolved attendance exceptions" in exc.value.detail
+        assert db.get(models.HRPayrollRun, run.id).status == "approved"
     finally:
         db.close()
         engine.dispose()
