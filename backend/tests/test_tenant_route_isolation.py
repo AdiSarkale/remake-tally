@@ -1676,3 +1676,55 @@ def test_shift_roster_generation_cannot_reference_another_tenants_employee(isola
     )
     assert same_tenant.status_code == 422, same_tenant.text
     assert "Inactive employees" in same_tenant.text
+
+
+def test_shift_roster_read_list_is_tenant_isolated(isolated_tenants):
+    client = isolated_tenants["client"]
+    sessions = isolated_tenants["sessions"]
+    for Session, suffix in ((sessions[0], "a"), (sessions[1], "b")):
+        db = Session()
+        try:
+            employee_id = f"roster-read-isolation-{suffix}"
+            employee = models.Employee(
+                id=employee_id, emp_code=f"RR-{suffix.upper()}",
+                name=f"Roster Read {suffix.upper()}", joining_date=date(2026, 1, 1), active=True,
+            )
+            db.add(employee)
+            db.add_all([
+                models.RolePermissionGrant(
+                    role="Admin", module="hr", feature="shift_rosters",
+                    action="read", data_scope="tenant", allowed=True, updated_by="test",
+                ),
+                models.RolePermissionGrant(
+                    role="Admin", module="hr", feature="employees",
+                    action="read", data_scope="tenant", allowed=True, updated_by="test",
+                ),
+            ])
+            db.flush()
+            db.add(models.HRShiftRosterEntry(
+                employee_id=employee_id, work_date=date(2040, 1, 2),
+                status="weekly_off", shift_type_id=None, source_assignment_id=None,
+                is_override=False, override_reason="", branch_id=None,
+                department_snapshot="Production", timezone_name="Asia/Kolkata",
+                scheduled_start_at_utc=None, scheduled_end_at_utc=None,
+                shift_code_snapshot="", shift_name_snapshot="", break_rules_snapshot=[],
+                policy_version_id=None, created_by="test",
+            ))
+            db.commit()
+        finally:
+            db.close()
+
+    token_a = _login(client, "AA")
+    token_b = _login(client, "BB")
+    rows_a = client.get(
+        "/api/v1/hr/shift-rosters?from_date=2040-01-02&to_date=2040-01-02",
+        headers={"Authorization": f"Bearer {token_a['access_token']}"},
+    )
+    rows_b = client.get(
+        "/api/v1/hr/shift-rosters?from_date=2040-01-02&to_date=2040-01-02",
+        headers={"Authorization": f"Bearer {token_b['access_token']}"},
+    )
+    assert rows_a.status_code == 200, rows_a.text
+    assert rows_b.status_code == 200, rows_b.text
+    assert [row["employee_id"] for row in rows_a.json()] == ["roster-read-isolation-a"]
+    assert [row["employee_id"] for row in rows_b.json()] == ["roster-read-isolation-b"]
