@@ -24,7 +24,7 @@ This package does not change the existing salary-count modes or independently in
 - Attendance completeness checks using roster scheduled days for employees with effective shift schedules.
 - Legacy calendar-based readiness for employees without shift schedules.
 - Working-days divisor compatibility guard.
-- Payroll daily provenance snapshots for each employee/work date included in a payroll revision.
+- Payroll daily provenance snapshots for each employee/work date included in a payroll revision, including unresolved source-reconciliation anomaly references.
 - Approved overtime integration into payroll exactly once.
 - Payroll exception storage and finalization blocking for unresolved blocking attendance exceptions.
 - Controlled supersession of prepared/approved snapshots and revision preparation.
@@ -169,7 +169,7 @@ Implemented in the integration branch:
 - Finalization blocks open blocking payroll exceptions.
 - Exception-list API and controlled prepared/approved run supersession endpoint.
 - Prepare supports new revisions after supersession.
-- Added initial unit tests for approved OT gating, roster-based absence classification and scheduled-day helper.
+- Added initial unit tests for approved OT gating, roster-based absence classification, scheduled-day helper, daily OT/source-anomaly provenance and controlled supersession.
 
 **Not yet release-complete:** current CI is pending; additional tests and exception/UI workflow validation are required. The existing overtime-pay rate formula is provisional and must not be marketed as statutory compliance. The current implementation is an initial slice, not the complete P0.1-10 package.
 
