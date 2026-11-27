@@ -95,7 +95,7 @@ def build_payroll_daily_inputs(
             active_employee = [a for a in employee_assignments if a.valid_from <= work_date and (a.valid_to is None or a.valid_to >= work_date) and (a.branch_id is None or a.branch_id == branch_id)]
             active_department = [a for a in department_assignments if a.valid_from <= work_date and (a.valid_to is None or a.valid_to >= work_date) and (a.branch_id is None or a.branch_id == branch_id)]
             active_assignment = active_employee or active_department
-            assignment_conflict = len(active_assignment) > 1 and len({a.valid_from for a in active_assignment}) == 1
+            assignment_conflict = len(active_employee) > 1 or (not active_employee and len(active_department) > 1)
             expected_shift_day = bool(active_assignment) and not assignment_conflict and work_date.weekday() in (active_assignment[0].weekdays or [])
             exception = "ambiguous_shift_assignment" if assignment_conflict else None
             if expected_shift_day and roster is None:
