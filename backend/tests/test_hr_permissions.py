@@ -85,10 +85,10 @@ def test_tenant_hr_migration_chain_has_single_latest_head():
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     script = ScriptDirectory.from_config(config)
 
-    assert script.get_heads() == ["p0_hr_payroll_supersession_027"]
+    assert script.get_heads() == ["p0_hr_payroll_supersede_027"]
     assert script.get_revision("p0_hr_overtime_core_approval_025").down_revision == "p0_hr_overtime_workflow_024"
-    assert script.get_revision("p0_hr_payroll_daily_snapshots_026").down_revision == "p0_hr_overtime_core_approval_025"
-    assert script.get_revision("p0_hr_payroll_supersession_027").down_revision == "p0_hr_payroll_daily_snapshots_026"
+    assert script.get_revision("p0_hr_payroll_snap_026").down_revision == "p0_hr_overtime_core_approval_025"
+    assert script.get_revision("p0_hr_payroll_supersede_027").down_revision == "p0_hr_payroll_snap_026"
     assert script.get_revision("hr_role_001").down_revision == "employee_type_001"
     assert script.get_revision("hr_employee_types_002").down_revision == "hr_role_001"
     assert script.get_revision("hr_employee_codes_003").down_revision == "hr_employee_types_002"
