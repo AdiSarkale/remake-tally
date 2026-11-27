@@ -164,7 +164,7 @@ def test_existing_tenant_upgrades_from_previous_head_to_current_head():
         cfg = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
         cfg.set_main_option("sqlalchemy.url", database_url)
 
-        command.upgrade(cfg, "p0_hr_overtime_policy_auth_023")
+        command.upgrade(cfg, "8d4f6a1b2c3e")
 
         engine = create_engine(database_url)
         try:
