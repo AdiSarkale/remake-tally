@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.28  
+**Version:** 1.29  
 **Status:** Active implementation tracker  
 **Baseline:** 9 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -528,3 +528,5 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 | 1.27 | 27 November 2026 | Adds migration 027 for supersession actor/time/reason persistence and initial integration tests for approved OT/source anomaly snapshots and payroll supersession. CI and acceptance remain pending. |
 
 | 1.28 | 27 November 2026 | Adds payroll exception visibility, employee-filtered daily provenance viewer, supersession controls and reason display in revision history. CI and acceptance remain pending. |
+
+| 1.29 | 27 November 2026 | Adds finalization source fingerprint recheck; stale attendance, roster, summary, anomaly, calendar or OT inputs require supersession and re-preparation. Regression test added; latest CI pending. |
