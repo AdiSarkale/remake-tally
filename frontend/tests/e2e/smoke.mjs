@@ -81,6 +81,22 @@ try {
   }
 
 
+  // HR persona: P0.1-11 attendance workspace renders its scoped work areas.
+  {
+    const { context, page } = await persona("HR", "attendance-manager");
+    await page.goto(base + "/hr");
+    await page.getByRole("tab", { name: "Attendance & Shifts", exact: true }).click();
+    await page.getByRole("tab", { name: "Roster", exact: true }).waitFor();
+    await page.getByRole("tab", { name: "Attendance", exact: true }).click();
+    await page.getByRole("tab", { name: "Anomalies", exact: true }).click();
+    await page.getByRole("tab", { name: "Corrections", exact: true }).click();
+    await page.getByRole("tab", { name: "Reports", exact: true }).click();
+    await page.getByRole("tab", { name: "Shifts & Assignments", exact: true }).click();
+    await page.getByRole("heading", { name: "Create shift", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "Create employee assignment", exact: true }).waitFor();
+    await context.close();
+  }
+
   // HOD persona: a department approver can decide only requests assigned to their login.
   {
     let decision = "pending";
