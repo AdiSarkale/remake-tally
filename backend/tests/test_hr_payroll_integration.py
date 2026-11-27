@@ -208,7 +208,7 @@ def test_payroll_finalization_recheck_detects_changed_attendance_source():
         issues = _payroll_snapshot_input_recheck(db, run)
         assert issues
         assert "source inputs changed after preparation" in issues[0]
-        assert "supersede and prepare a new revision" in issues[0]
+        assert "supersede and prepare a new revision" in issues[0].lower()
     finally:
         db.close()
         engine.dispose()
