@@ -466,7 +466,7 @@ class HROvertimeCandidate(Base):
     summary_id:Mapped[str|None]=mapped_column(ForeignKey("hr_attendance_daily_summaries.id",ondelete="RESTRICT"))
     summary_revision:Mapped[int|None]=mapped_column(Integer)
     roster_entry_id:Mapped[str|None]=mapped_column(ForeignKey("hr_shift_roster_entries.id",ondelete="RESTRICT"))
-    requested_by:Mapped[str|None]=mapped_column(String(64))
+    approval_request_id:Mapped[str|None]=mapped_column(ForeignKey("approval_requests.id",ondelete="RESTRICT"))\n    requested_by:Mapped[str|None]=mapped_column(String(64))
     submitted_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
     supervisor_username:Mapped[str|None]=mapped_column(String(64))
     supervisor_decision:Mapped[str|None]=mapped_column(String(24))
