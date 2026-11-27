@@ -43,6 +43,8 @@ def list_shift_rosters(
         raise HTTPException(422, "Roster end date cannot precede start date")
     if (to_date - from_date).days + 1 > 31:
         raise HTTPException(422, "Roster query cannot exceed 31 calendar days")
+    if offset:
+        raise HTTPException(501, "Offset pagination is temporarily unavailable for roster reads")
     query = db.query(models.HRShiftRosterEntry).filter(
         models.HRShiftRosterEntry.work_date >= from_date,
         models.HRShiftRosterEntry.work_date <= to_date,
