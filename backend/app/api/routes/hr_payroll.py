@@ -1485,7 +1485,15 @@ def _snapshot_payroll_run(
                 snapshot=day_input["snapshot"],
             ))
             summary = day_input.get("summary")
-            if day_input.get("scheduled") and summary is not None and summary.classification in {"incomplete", "invalid_sequence", "no_events"}:
+            is_shift_day = day_input["snapshot"].get("roster") is not None or day_input.get("exception") == "missing_roster"
+            if day_input.get("scheduled") and is_shift_day and summary is None:
+                db.add(models.HRPayrollException(
+                    payroll_run_id=run.id, employee_id=item["employee_id"], work_date=day_input["work_date"],
+                    code="attendance_summary_missing", severity="blocking", status="open",
+                    detail="Scheduled shift has no daily attendance summary; resolve attendance before finalization.",
+                    source_reference="",
+                ))
+            elif day_input.get("scheduled") and summary is not None and summary.classification in {"incomplete", "invalid_sequence", "no_events"}:
                 code = "attendance_summary_" + summary.classification
                 db.add(models.HRPayrollException(
                     payroll_run_id=run.id, employee_id=item["employee_id"], work_date=day_input["work_date"],
@@ -1556,6 +1564,14 @@ def finalize_monthly_payroll(
         return _run_output(db, run)
     if run.status != "approved":
         raise HTTPException(409, "Payroll must be prepared and approved by a different authorized user before finalization")
+    open_blocking = db.query(models.HRPayrollException).filter(
+        models.HRPayrollException.payroll_run_id == run.id,
+        models.HRPayrollException.severity == "blocking",
+        models.HRPayrollException.status == "open",
+    ).all()
+    if open_blocking:
+        preview_codes = ", ".join(f"{row.code} ({row.work_date})" for row in open_blocking[:20])
+        raise HTTPException(409, "Payroll finalization blocked by unresolved attendance exceptions: " + preview_codes)
     now = datetime.now(timezone.utc)
     try:
         journal = post_payroll_journal(db, run, user.username)
