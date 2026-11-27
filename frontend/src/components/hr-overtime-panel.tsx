@@ -15,7 +15,8 @@ export function OvertimePanel({canManage}:{canManage:boolean}){
  useEffect(()=>{void load()},[]);
  const run=async(fn:()=>Promise<void>)=>{setBusy(true);try{await fn();await load()}catch(e){toast.error(e instanceof Error?e.message:"Action failed")}finally{setBusy(false)}};
  const create=()=>run(async()=>{const p=await api.post<P>("/hr/settings/overtime-policies",{version_code:code,effective_from:from,effective_to:null,scope:JSON.parse(scope),configuration:JSON.parse(cfg)});await api.post("/hr/settings/overtime-policies/"+p.id+"/publish",{});toast.success("Policy published")});
- const calculate=()=>run(async()=>{const x=await api.post<{processed:number}>("/hr/overtime/calculate",{from_date:from,to_date:to});toast.success("Calculation processed: "+x.processed)});\n const previewPolicy=()=>run(async()=>{setPreview(await api.post("/hr/settings/overtime-policies/preview",{employee_id:previewEmployee,work_date:from}))});
+ const calculate=()=>run(async()=>{const x=await api.post<{processed:number}>("/hr/overtime/calculate",{from_date:from,to_date:to});toast.success("Calculation processed: "+x.processed)});
+ const previewPolicy=()=>run(async()=>{setPreview(await api.post("/hr/settings/overtime-policies/preview",{employee_id:previewEmployee,work_date:from}))});
  const action=(path:string,body:unknown,label:string)=>run(async()=>{await api.post(path,body);toast.success(label)});
  const reverse=(id:string)=>{const reason=window.prompt("Reversal reason (required)");if(!reason||reason.trim().length<3)return;void run(async()=>{await api.post("/hr/overtime/compensatory-leave/credits/"+id+"/reverse?reason="+encodeURIComponent(reason));toast.success("Credit reversed")})};
  return <div className="space-y-5">
