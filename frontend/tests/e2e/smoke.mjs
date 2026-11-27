@@ -104,7 +104,7 @@ try {
     await page.getByRole("tab", { name: "Reports", exact: true }).click();
     await page.getByRole("tab", { name: "Shifts & Assignments", exact: true }).click();
     await page.getByRole("heading", { name: "Create shift", exact: true }).waitFor();
-    await page.getByRole("heading", { name: "Create employee assignment", exact: true }).waitFor();
+    await page.getByRole("heading", { name: "Create shift assignment", exact: true }).waitFor();
     await context.close();
   }
 
