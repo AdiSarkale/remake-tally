@@ -67,6 +67,7 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
   const [dailySnapshots, setDailySnapshots] = useState<PayrollDailySnapshot[]>([]);
   const [showDailySnapshots, setShowDailySnapshots] = useState(false);
   const [snapshotEmployeeId, setSnapshotEmployeeId] = useState("");
+  const [snapshotFilterInitialized, setSnapshotFilterInitialized] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -241,8 +242,11 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
     } catch (err) { fail(err); } finally { setBusy(false); }
   };
   useEffect(() => {
-    if (!snapshotEmployeeId && selectedEmployee) setSnapshotEmployeeId(selectedEmployee);
-  }, [snapshotEmployeeId, selectedEmployee]);
+    if (!snapshotFilterInitialized && selectedEmployee) {
+      setSnapshotEmployeeId(selectedEmployee);
+      setSnapshotFilterInitialized(true);
+    }
+  }, [snapshotFilterInitialized, selectedEmployee]);
 
   const loadDailySnapshots = async () => {
     if (!selectedRun) return;
