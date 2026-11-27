@@ -31,7 +31,7 @@ def calculate_candidate(db,eid,d,actor):
  day="weekly_off" if roster and roster.status=="weekly_off" else "holiday" if roster and roster.status=="holiday" else "scheduled_workday"
  if not roster:
   cal=db.query(models.HRCalendarDay).filter_by(work_date=d).first()
-  if cal and cal.day_type=="holiday":day="holiday"
+  if cal and cal.day_type=="holiday":day="holiday"\n  elif cal and cal.day_type=="week_off":day="weekly_off"
  pol,org,state=resolve_policy(db,emp,d,roster,day)
  if not pol:return {"state":"blocked","reason":state}
  c=pol.configuration or {};elig=c.get("eligibility") or {};rnd=c.get("rounding") or {};comp=c.get("compensation") or {}
