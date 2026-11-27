@@ -120,6 +120,9 @@ def test_prepared_and_approved_payroll_revisions_can_be_superseded_with_reason()
         assert approved_refresh.status == "superseded"
         assert approved_refresh.approved_by is None
         assert approved_refresh.approved_at is None
+        assert approved_refresh.superseded_by == actor.username
+        assert approved_refresh.superseded_reason == "Corrected attendance source records"
+        assert approved_refresh.superseded_at is not None
     finally:
         db.close()
         engine.dispose()
