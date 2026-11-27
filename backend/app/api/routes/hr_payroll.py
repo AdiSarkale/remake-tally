@@ -423,6 +423,8 @@ def _run_output(db: Session, run: models.HRPayrollRun, include_items: bool = Tru
         "created_by": run.created_by, "created_at": run.created_at, "finalized_at": run.finalized_at,
         "revision": run.revision, "approved_by": run.approved_by, "approved_at": run.approved_at,
         "locked_at": run.locked_at, "reversed_at": run.reversed_at, "reversal_reason": run.reversal_reason,
+        "superseded_by": run.superseded_by, "superseded_at": run.superseded_at,
+        "superseded_reason": run.superseded_reason,
         "employee_count": len(items), "net_total": round(sum(float(item.net_pay) for item in items), 2),
     }
     if include_items:
@@ -1543,6 +1545,9 @@ def supersede_payroll_run(
         run.approved_by = None
         run.approved_at = None
     run.status = "superseded"
+    run.superseded_by = user.username
+    run.superseded_at = datetime.now(timezone.utc)
+    run.superseded_reason = payload.reason
     log_audit(db, user.username, "SUPERSEDE", "hr_payroll_run", f"{run.year}-{run.month:02d}; revision={run.revision}; reason={payload.reason}")
     db.commit()
     db.refresh(run)
