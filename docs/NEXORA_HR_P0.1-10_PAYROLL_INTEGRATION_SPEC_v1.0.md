@@ -130,7 +130,7 @@ Warnings may be acknowledged only through an explicit authorized action and must
 - Supersede prepared/approved payroll with reason.
 - New revision prepare after supersession.
 - Finalize: independently recheck workflow state and unresolved blocking exceptions.
-- UI: exception list/detail, supersession reason dialog, revision history, daily provenance detail.
+- UI: exception list/detail, supersession reason dialog, revision history and employee-filtered daily provenance detail.
 
 ## 9. Acceptance criteria
 
@@ -159,7 +159,7 @@ Warnings may be acknowledged only through an explicit authorized action and must
 
 Implemented in the integration branch:
 
-- Migrations `p0_hr_payroll_daily_snapshots_026` and `p0_hr_payroll_supersession_027`: immutable daily provenance/exception tables and supersession attribution.
+- Migrations `p0_hr_payroll_snap_026` and `p0_hr_payroll_supersede_027`: immutable daily provenance/exception tables and supersession attribution.
 - Added ORM models and compatibility exports.
 - Batch daily-input resolver for roster, assignment, attendance, daily summary and approved overtime.
 - Payroll preview uses approved overtime candidates for shift-context employees and retains legacy OT behavior for employees without shift context.
