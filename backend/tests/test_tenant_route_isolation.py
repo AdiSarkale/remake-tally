@@ -1175,6 +1175,13 @@ def test_payroll_salary_attendance_calendar_finalization_and_slip_flow(isolated_
     assert prepared.json()["status"] == "prepared"
     frozen_run_id = prepared.json()["id"]
     assert prepared.json()["items"][0]["monthly_gross"] == 50000
+    daily_snapshots = client.get(f"/api/v1/hr/payroll/runs/{frozen_run_id}/daily-snapshots", headers=headers)
+    assert daily_snapshots.status_code == 200, daily_snapshots.text
+    assert len(daily_snapshots.json()) == 31
+    assert all(row["employee_id"] == employee_id for row in daily_snapshots.json())
+    payroll_exceptions = client.get(f"/api/v1/hr/payroll/runs/{frozen_run_id}/exceptions", headers=headers)
+    assert payroll_exceptions.status_code == 200, payroll_exceptions.text
+    assert payroll_exceptions.json() == []
 
     # The preparer cannot approve their own snapshot.
     self_approval = client.post(f"/api/v1/hr/payroll/runs/{frozen_run_id}/approve", headers=headers)
