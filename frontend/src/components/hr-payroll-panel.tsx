@@ -216,7 +216,7 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
     }
     setDailySnapshots([]);
     setShowDailySnapshots(false);
-    void api.get<PayrollException[]>("/hr/payroll/runs/" + selectedRun.id + "/exceptions")
+    void api.get<PayrollException[]>("/hr/payroll/revisions/" + selectedRun.id + "/exceptions")
       .then(setExceptions).catch(fail);
   }, [tab, selectedRun?.id]);
 
@@ -253,7 +253,7 @@ export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username
     setBusy(true);
     try {
       const query = snapshotEmployeeId ? "?employee_id=" + encodeURIComponent(snapshotEmployeeId) : "";
-      setDailySnapshots(await api.get<PayrollDailySnapshot[]>("/hr/payroll/runs/" + selectedRun.id + "/daily-snapshots" + query));
+      setDailySnapshots(await api.get<PayrollDailySnapshot[]>("/hr/payroll/revisions/" + selectedRun.id + "/daily-snapshots" + query));
       setShowDailySnapshots(true);
     } catch (err) { fail(err); } finally { setBusy(false); }
   };
