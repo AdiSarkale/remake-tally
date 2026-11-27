@@ -8,8 +8,8 @@ def scope_matches(scope,emp,org,roster,day):
  values={"branch_ids":org.branch_id if org else None,"departments":org.department if org else emp.department,"employee_types":emp.employee_type,"shift_ids":roster.shift_type_id if roster else None,"day_types":day}
  return all(not scope.get(k) or values[k] in scope[k] for k in values)
 def resolve_policy(db,e,d,roster,day):
- rows=db.query(models.HROvertimePolicyVersion).filter(models.HROvertimePolicyVersion.status=="published",models.HROvertimePolicyVersion.effective_from<=d,(models.HROvertimePolicyVersion.effective_to.is_(None)|(models.HROvertimePolicyVersion.effective_to>=d)).all()
- org=db.query(models.EmployeeOrgAssignment).filter(models.EmployeeOrgAssignment.employee_id==e.id,models.EmployeeOrgAssignment.valid_from<=d,(models.EmployeeOrgAssignment.valid_to.is_(None)|(models.EmployeeOrgAssignment.valid_to>=d)).order_by(models.EmployeeOrgAssignment.valid_from.desc()).first()
+ rows=db.query(models.HROvertimePolicyVersion).filter(models.HROvertimePolicyVersion.status=="published",models.HROvertimePolicyVersion.effective_from<=d,(models.HROvertimePolicyVersion.effective_to.is_(None)|(models.HROvertimePolicyVersion.effective_to>=d))).all()
+ org=db.query(models.EmployeeOrgAssignment).filter(models.EmployeeOrgAssignment.employee_id==e.id,models.EmployeeOrgAssignment.valid_from<=d,(models.EmployeeOrgAssignment.valid_to.is_(None)|(models.EmployeeOrgAssignment.valid_to>=d))).order_by(models.EmployeeOrgAssignment.valid_from.desc()).first()
  values={"branch_ids":org.branch_id if org else None,"departments":org.department if org else e.department,"employee_types":e.employee_type,"shift_ids":roster.shift_type_id if roster else None,"day_types":day}
  matches=[p for p in rows if scope_matches(p.scope or {},emp,org,roster,day)]
  if not matches:return None,org,"not_configured"
