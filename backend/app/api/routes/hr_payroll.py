@@ -1557,7 +1557,7 @@ def supersede_payroll_run(
 @router.get("/payroll/runs/{run_id}/daily-snapshots")
 def list_payroll_daily_snapshots(
     run_id: str, employee_id: str | None = None, db: Session = Depends(get_db),
-    user: models.User = Depends(require_permission("hr", "payroll", "read", "tenant)),
+    user: models.User = Depends(require_permission("hr", "payroll", "read", "tenant")),
 ):
     run = db.get(models.HRPayrollRun, run_id)
     if run is None:
