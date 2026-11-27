@@ -1690,16 +1690,17 @@ def test_shift_roster_read_list_is_tenant_isolated(isolated_tenants):
                 name=f"Roster Read {suffix.upper()}", joining_date=date(2026, 1, 1), active=True,
             )
             db.add(employee)
-            db.add_all([
-                models.RolePermissionGrant(
-                    role="Admin", module="hr", feature="shift_rosters",
-                    action="read", data_scope="tenant", allowed=True, updated_by="test",
-                ),
-                models.RolePermissionGrant(
-                    role="Admin", module="hr", feature="employees",
-                    action="read", data_scope="tenant", allowed=True, updated_by="test",
-                ),
-            ])
+            existing_grants = {
+                (g.role, g.module, g.feature, g.action, g.data_scope)
+                for g in db.query(models.RolePermissionGrant).all()
+            }
+            for feature in ("shift_rosters", "employees"):
+                key = ("Admin", "hr", feature, "read", "tenant")
+                if key not in existing_grants:
+                    db.add(models.RolePermissionGrant(
+                        role="Admin", module="hr", feature=feature,
+                        action="read", data_scope="tenant", allowed=True, updated_by="test",
+                    ))
             db.flush()
             db.add(models.HRShiftRosterEntry(
                 employee_id=employee_id, work_date=date(2040, 1, 2),
