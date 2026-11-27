@@ -54,22 +54,14 @@ def list_shift_rosters(
     if department:
         query = query.filter(models.HRShiftRosterEntry.department_snapshot.ilike(department.strip()))
 
-    # Resolve scope in SQL before pagination. Applying a Python filter after
-    # LIMIT/OFFSET lets inaccessible records consume slots and causes gaps.
-    allowed_by_date: dict[date, set[str] | None] = {}
+    # Keep the effective-date scope check ahead of offset/limit so restricted
+    # employees never consume page slots.
     visible_query = query.order_by(
         models.HRShiftRosterEntry.work_date,
         models.HRShiftRosterEntry.employee_id,
         models.HRShiftRosterEntry.id,
     )
-    scoped_ids_by_date: dict[date, set[str]] = {}
-    for work_date, in db.query(models.HRShiftRosterEntry.work_date).filter(
-        models.HRShiftRosterEntry.work_date >= from_date,
-        models.HRShiftRosterEntry.work_date <= to_date,
-    ).distinct().all():
-        ids = employee_scope_ids(db, user, "hr", "employees", "read", as_of_date=work_date)
-        if ids is not None:
-            scoped_ids_by_date[work_date] = set(ids)
+    scoped_ids_by_date: dict[date, set[str] | None] = {}
 
     # A date-specific scope can vary over the selected window. A single SQL
     # IN filter cannot express that safely, so apply scope during an ordered
@@ -78,7 +70,10 @@ def list_shift_rosters(
     skipped = 0
     rows = visible_query.yield_per(250)
     for row in rows:
-        scoped_ids = scoped_ids_by_date.get(row.work_date)
+        if row.work_date not in scoped_ids_by_date:
+            ids = employee_scope_ids(db, user, "hr", "employees", "read", as_of_date=row.work_date)
+            scoped_ids_by_date[row.work_date] = None if ids is None else set(ids)
+        scoped_ids = scoped_ids_by_date[row.work_date]
         if scoped_ids is not None and row.employee_id not in scoped_ids:
             continue
         if skipped < offset:
