@@ -158,6 +158,8 @@ def list_daily_attendance_summaries(
     db: Session = Depends(get_db),
     user: models.User = Depends(require_permission("hr", "attendance_summaries", "view", "tenant")),
 ):
+    if offset:
+        raise HTTPException(status_code=501, detail="Offset pagination is temporarily unavailable for attendance summary reads")
     query = db.query(models.HRAttendanceDailySummary)
     if from_date:
         query = query.filter(models.HRAttendanceDailySummary.work_date >= from_date)
