@@ -228,3 +228,47 @@ def retire_policy(
     db.commit()
     db.refresh(row)
     return _serialize(row)
+
+class PolicyPreviewIn(BaseModel):
+    employee_id: str = Field(min_length=1)
+    work_date: date
+
+@router.post("/preview")
+def preview_policy(
+    payload: PolicyPreviewIn,
+    user: models.User = Depends(require_permission("hr", "overtime_policies", "view", "tenant")),
+    db: Session = Depends(get_db),
+):
+    employee = db.get(models.Employee, payload.employee_id)
+    if employee is None or not employee.active:
+        raise HTTPException(404, detail="Employee not found or inactive")
+    roster = db.query(models.HRShiftRosterEntry).filter_by(employee_id=employee.id, work_date=payload.work_date).first()
+    day_type = "weekly_off" if roster and roster.status == "weekly_off" else "holiday" if roster and roster.status == "holiday" else "scheduled_workday"
+    if not roster:
+        calendar = db.query(models.HRCalendarDay).filter_by(work_date=payload.work_date).first()
+        if calendar and calendar.day_type == "holiday": day_type = "holiday"
+        elif calendar and calendar.day_type == "week_off": day_type = "weekly_off"
+    org = db.query(models.EmployeeOrgAssignment).filter(
+        models.EmployeeOrgAssignment.employee_id == employee.id,
+        models.EmployeeOrgAssignment.valid_from <= payload.work_date,
+        (models.EmployeeOrgAssignment.valid_to.is_(None) | (models.EmployeeOrgAssignment.valid_to >= payload.work_date)),
+    ).order_by(models.EmployeeOrgAssignment.valid_from.desc()).first()
+    values = {
+        "branch_ids": org.branch_id if org else None,
+        "departments": org.department if org else employee.department,
+        "employee_types": employee.employee_type,
+        "shift_ids": roster.shift_type_id if roster else None,
+        "day_types": day_type,
+    }
+    policies = db.query(models.HROvertimePolicyVersion).filter(
+        models.HROvertimePolicyVersion.status == "published",
+        models.HROvertimePolicyVersion.effective_from <= payload.work_date,
+        (models.HROvertimePolicyVersion.effective_to.is_(None) | (models.HROvertimePolicyVersion.effective_to >= payload.work_date)),
+    ).all()
+    matching = [p for p in policies if all(not (p.scope or {}).get(k) or v in (p.scope or {}).get(k, []) for k, v in values.items())]
+    specificity = lambda p: sum(bool((p.scope or {}).get(k)) for k in values)
+    if not matching:
+        return {"state": "configuration_required", "employee_id": employee.id, "work_date": payload.work_date, "day_type": day_type, "matches": []}
+    top = max(specificity(p) for p in matching)
+    winners = [p for p in matching if specificity(p) == top]
+    return {"state": "resolved" if len(winners) == 1 else "ambiguous", "employee_id": employee.id, "work_date": payload.work_date, "day_type": day_type, "specificity": top, "selected": _serialize(winners[0]) if len(winners) == 1 else None, "matches": [_serialize(p) for p in matching]}
