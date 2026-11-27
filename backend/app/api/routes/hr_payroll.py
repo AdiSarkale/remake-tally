@@ -1554,6 +1554,25 @@ def supersede_payroll_run(
     return _run_output(db, run)
 
 
+@router.get("/payroll/runs/{run_id}/daily-snapshots")
+def list_payroll_daily_snapshots(
+    run_id: str, employee_id: str | None = None, db: Session = Depends(get_db),
+    user: models.User = Depends(require_permission("hr", "payroll", "read", "tenant)),
+):
+    run = db.get(models.HRPayrollRun, run_id)
+    if run is None:
+        raise HTTPException(404, "Payroll run not found")
+    query = db.query(models.HRPayrollDailySnapshot).filter_by(payroll_run_id=run_id)
+    if employee_id:
+        query = query.filter(models.HRPayrollDailySnapshot.employee_id == employee_id)
+    rows = query.order_by(models.HRPayrollDailySnapshot.employee_id, models.HRPayrollDailySnapshot.work_date).all()
+    return [{
+        "id": row.id, "employee_id": row.employee_id, "work_date": row.work_date,
+        "input_fingerprint": row.input_fingerprint, "snapshot": row.snapshot,
+        "created_at": row.created_at,
+    } for row in rows]
+
+
 @router.get("/payroll/runs/{run_id}/exceptions")
 def list_payroll_exceptions(
     run_id: str, db: Session = Depends(get_db),
