@@ -102,6 +102,10 @@ try {
     await page.getByRole("tab", { name: "Anomalies", exact: true }).click();
     await page.getByRole("tab", { name: "Corrections", exact: true }).click();
     await page.getByRole("tab", { name: "Reports", exact: true }).click();
+    await page.getByRole("heading", { name: "Attendance report", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Export attendance CSV", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Export shift CSV", exact: true }).waitFor();
+    await page.getByRole("button", { name: "Export overtime CSV", exact: true }).waitFor();
     await page.getByRole("tab", { name: "Shifts & Assignments", exact: true }).click();
     await page.getByRole("heading", { name: "Create shift", exact: true }).waitFor();
     await page.getByRole("heading", { name: "Create shift assignment", exact: true }).waitFor();
