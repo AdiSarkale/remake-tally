@@ -32,7 +32,11 @@ def test_daily_snapshot_includes_only_approved_payable_overtime_and_open_anomaly
             effective_from=date(2026, 1, 1), status="published",
             scope={}, configuration={}, created_by="test",
         )
-        db.add_all([employee, shift, policy])
+        workforce_policy = models.HRWorkforcePolicyVersion(
+            id="payroll-integration-workforce-policy", version_code="PI-WF-1",
+            effective_from=date(2026, 1, 1), configuration={}, created_by="test",
+        )
+        db.add_all([employee, shift, policy, workforce_policy])
         db.flush()
         roster = models.HRShiftRosterEntry(
             id="payroll-integration-roster", employee_id=employee.id,
@@ -63,7 +67,7 @@ def test_daily_snapshot_includes_only_approved_payable_overtime_and_open_anomaly
             id="payroll-integration-anomaly", comparison_key="integration-anomaly-key",
             employee_id=employee.id, work_date=date(2026, 11, 10),
             anomaly_type="source_mismatch", source_event_ids=["event-1", "event-2"],
-            observed_delta_minutes=25, threshold_minutes=10, policy_version_id=policy.id,
+            observed_delta_minutes=25, threshold_minutes=10, policy_version_id=workforce_policy.id,
             status="open",
         )
         db.add_all([roster, approved_ot, approved_comp, open_anomaly])
