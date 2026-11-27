@@ -39,6 +39,10 @@ def calculate_candidate(db,eid,d,actor):
  events=db.query(models.HRAttendanceEvent).filter_by(employee_id=eid,work_date=d).filter(models.HRAttendanceEvent.voided_at.is_(None)).order_by(models.HRAttendanceEvent.occurred_at_utc,models.HRAttendanceEvent.id).all()
  superseded={x[0] for x in db.query(models.HRAttendanceEvent.supersedes_event_id).filter(models.HRAttendanceEvent.supersedes_event_id.is_not(None)).all()};events=[x for x in events if x.id not in superseded]
  if not events:return {"state":"blocked","reason":"no attendance events"}
+ summary=db.query(models.HRAttendanceDailySummary).filter_by(employee_id=eid,work_date=d).first()
+ if not summary or not summary.current_revision:return {"state":"blocked","reason":"attendance_summary_missing"}
+ leave=db.query(models.HRLeaveRequest).filter(models.HRLeaveRequest.employee_id==eid,models.HRLeaveRequest.status=="approved",models.HRLeaveRequest.start_date<=d,models.HRLeaveRequest.end_date>=d).first()
+ if leave:return {"state":"blocked","reason":"approved_leave_overlap","leave_request_id":leave.id}
  work=[];breaks=[];start=None;bstart=None;bid=None;errors=[]
  for ev in events:
   t=ev.occurred_at_utc;t=t.replace(tzinfo=timezone.utc) if t.tzinfo is None else t.astimezone(timezone.utc)
@@ -98,6 +102,5 @@ def calculate_candidate(db,eid,d,actor):
  if cap is not None:raw=min(raw,int(cap))
  rounded=round_minutes(raw,rnd)
  if rounded<=0:return {"state":"no_overtime","raw_candidate_minutes":raw}
- summary=db.query(models.HRAttendanceDailySummary).filter_by(employee_id=eid,work_date=d).first()
  fp=hashlib.sha256(json.dumps({"events":[[x.id,x.event_type,x.occurred_at_utc.isoformat(),x.break_rule_id] for x in events],"roster":roster.id if roster else None,"summary":summary.current_revision if summary else None,"policy":pol.id,"raw":raw,"rounded":rounded},sort_keys=True).encode()).hexdigest()
  return {"state":"candidate","employee_id":eid,"work_date":d,"day_type":day,"policy_id":pol.id,"policy_version":pol.version_code,"policy_scope":pol.scope,"calculation_mode":mode,"raw_candidate_minutes":raw,"rounded_candidate_minutes":rounded,"rounding_snapshot":rnd,"exception_codes":errors,"source_event_ids":[x.id for x in events],"summary_id":summary.id if summary else None,"summary_revision":summary.current_revision if summary else None,"roster_entry_id":roster.id if roster else None,"roster_version":roster.version if roster else None,"employee_branch_id":org.branch_id if org else None,"employee_department":org.department if org else emp.department,"employee_type":emp.employee_type,"shift_type_id":roster.shift_type_id if roster else None,"compensation_snapshot":comp,"input_fingerprint":fp,"calculated_by":actor}
