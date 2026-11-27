@@ -62,4 +62,4 @@ Implementation, regression tests, scope/authorization tests, migration verificat
 
 **Verification status:** backend unit and tenant-isolation checks passed for the first implementation commit; integrated CI is still running for the latest frontend additions. A frontend strict-TypeScript issue was discovered by CI and corrected; final rerun pending.
 
-**Still incomplete:** employee self-service route and returned-correction resubmission; department-default assignment UI; roster pagination; comprehensive shift/break-rule edit/deactivation UI; explicit daily/monthly report views and export; supervisor dashboard; live API-backed browser acceptance beyond the current mock smoke. These are tracked as remaining slices, not silently considered complete.
+**Still incomplete:** department-default assignment UI; roster pagination; comprehensive shift/break-rule edit/update UI; explicit daily/monthly report views and export; supervisor dashboard; live API-backed browser acceptance beyond the current mock smoke. These are tracked as remaining slices, not silently considered complete.
