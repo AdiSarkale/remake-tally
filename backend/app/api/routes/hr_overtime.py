@@ -2,7 +2,8 @@
 from datetime import date,datetime,timezone
 from typing import Literal
 from fastapi import APIRouter,Depends,HTTPException,Query
-from pydantic import BaseModel,Field\nfrom sqlalchemy.orm import Session
+from pydantic import BaseModel,Field
+from sqlalchemy.orm import Session
 from app import models
 from app.api.deps import current_user,employee_scope_ids,require_permission
 from app.db.session import get_db
@@ -67,7 +68,8 @@ def supervisor_queue(db:Session=Depends(get_db),u:models.User=Depends(current_us
 def submit(cid:str,db:Session=Depends(get_db),u:models.User=Depends(current_user)):
  r=db.get(models.HROvertimeCandidate,cid)
  if not r:raise HTTPException(404,"Candidate missing")
- if r.status not in {"candidate","returned"}:raise HTTPException(409,"Invalid state")\n if frozen(db,r.work_date):raise HTTPException(409,"Frozen payroll blocks submission")
+ if r.status not in {"candidate","returned"}:raise HTTPException(409,"Invalid state")
+ if frozen(db,r.work_date):raise HTTPException(409,"Frozen payroll blocks submission")
  link=db.query(models.EmployeeUserLink).filter_by(user_id=u.id).first()
  if u.role not in (models.Role.admin,models.Role.hr) and (not link or link.employee_id!=r.employee_id):raise HTTPException(403,"Self-only submit")
  if r.requested_by and r.requested_by!=u.username:raise HTTPException(403,"Original requester only")
