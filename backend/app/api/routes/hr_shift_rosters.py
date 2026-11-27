@@ -53,8 +53,8 @@ def list_shift_rosters(
         query = query.filter(models.HRShiftRosterEntry.branch_id == branch_id)
     if department:
         query = query.filter(models.HRShiftRosterEntry.department_snapshot.ilike(department.strip()))
-    # Apply employee scope before pagination so restricted rows cannot consume a
-    # page's limit and cause later authorized records to disappear.
+    # Keep ordering stable across requests; offset applies to the already-scoped
+    # candidate set below so out-of-scope rows cannot hide later authorized rows.
     candidate_rows = query.order_by(
         models.HRShiftRosterEntry.work_date,
         models.HRShiftRosterEntry.employee_id,
