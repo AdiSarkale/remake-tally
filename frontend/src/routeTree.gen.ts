@@ -103,6 +103,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRoute
 }
 export interface FileRoutesByTo {
+  '/attendance': typeof AppAttendanceRoute
   '/login': typeof LoginRoute
   '/approvals': typeof AppApprovalsRoute
   '/finance': typeof AppFinanceRoute
@@ -136,6 +137,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/attendance'
     | '/approvals'
     | '/finance'
     | '/hr'
@@ -148,6 +150,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
+    | '/attendance'
     | '/approvals'
     | '/finance'
     | '/hr'
@@ -162,6 +165,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_app'
     | '/login'
+    | '/_app/attendance'
     | '/_app/approvals'
     | '/_app/finance'
     | '/_app/hr'
@@ -276,6 +280,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppAttendanceRoute: typeof AppAttendanceRoute
   AppApprovalsRoute: typeof AppApprovalsRoute
   AppFinanceRoute: typeof AppFinanceRoute
   AppHrRoute: typeof AppHrRoute
@@ -289,6 +294,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAttendanceRoute: AppAttendanceRoute,
   AppApprovalsRoute: AppApprovalsRoute,
   AppFinanceRoute: AppFinanceRoute,
   AppHrRoute: AppHrRoute,
