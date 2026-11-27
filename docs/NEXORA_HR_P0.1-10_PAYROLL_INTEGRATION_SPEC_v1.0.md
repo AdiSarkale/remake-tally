@@ -159,7 +159,7 @@ Warnings may be acknowledged only through an explicit authorized action and must
 
 Implemented in the integration branch:
 
-- Migration `p0_hr_payroll_daily_snapshots_026`: immutable daily provenance table and payroll exception table.
+- Migrations `p0_hr_payroll_daily_snapshots_026` and `p0_hr_payroll_supersession_027`: immutable daily provenance/exception tables and supersession attribution.
 - Added ORM models and compatibility exports.
 - Batch daily-input resolver for roster, assignment, attendance, daily summary and approved overtime.
 - Payroll preview uses approved overtime candidates for shift-context employees and retains legacy OT behavior for employees without shift context.
