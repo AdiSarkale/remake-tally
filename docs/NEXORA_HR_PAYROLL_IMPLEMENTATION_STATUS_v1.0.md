@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.28  
+**Version:** 1.25  
 **Status:** Active implementation tracker  
 **Baseline:** 9 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -25,7 +25,7 @@ The existing HR foundation and payroll workspace are in place. The next phase is
 | Employee skills and production linkage | Implemented | Preserve cross-module ownership |
 | Payroll, attendance, calendar, payslips and leave workflows | Implemented as the current payroll foundation; PF/PT/TDS remain manual/configured and non-certified | Add effective-dated statutory rules only after qualified compliance review |
 | Payroll-to-Finance reversal | **Implemented** — linked opposite journal is posted atomically with payroll reversal | Preserve journal linkage and regression coverage |
-| Attendance events/reconciliation/summary | **P0.1-05–08 backend verified:** branch/timezone resolution, append-only events/import batches, source anomalies, daily projection/revisions, correction requests and reviewed superseding events | P0.1-08 CI verified; attendance UI/reporting and payroll daily snapshots remain P0.1-10/11 |
+| Attendance events/reconciliation/summary | **P0.1-05–07 verified; P0.1-08 backend implementation in progress:** branch/timezone resolution, append-only events/import batches, source anomalies, daily projection/revisions, correction requests and reviewed superseding events | P0.1-08 CI pending; UI/reporting and payroll daily snapshots remain P0.1-10/11 |
 | P0.1 shift foundation | **Schema, resolver, shift catalog APIs, assignment APIs and roster-generation/override backend implemented** — migrations 016/017, effective-dated assignments, idempotent roster entries and immutable override history | Roster read/view UI, shift catalog UI and assignment UI remain pending |
 | Audit service integration | Implemented for the covered HR/P1 events | Expand the event catalogue as new capabilities are added |
 | Branch/team data scopes | **Implemented and extended to attendance read/write/import with historical effective-date checks** | Continue applying scope checks to every new HR/attendance endpoint; no legacy auto-backfill |
@@ -385,7 +385,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - Shift code and break-rule code are immutable identifiers. Shift schedule changes are rejected once assignments or rosters reference the shift; create a new shift code for revised hours. Break schedules must fit within the shift's local-time window.
 - Added shift catalog API tests for authorization, CRUD, duplicate handling, soft deactivation, immutable identifiers, schedule locking, overnight break validation and invalid shift durations.
 - **Backend implemented:** employee/department assignment APIs, idempotent future roster generation, weekly-off/holiday materialization, date-specific overrides with immutable version history, exact write authorization, effective-date employee scope checks and audit events. Migrations 016 and 017 provide the roster and override-history persistence.
-- **Still pending:** roster read/list endpoints and roster UI; shift catalog and assignment UI; overtime/comp-leave (P0.1-09), payroll daily snapshots (P0.1-10), and related attendance UI/reports (P0.1-11). P0.1-08 summary/correction backend is CI-verified. P0.1-07 adds the source-reconciliation foundation but does not calculate the payroll-facing daily summary.
+- **Still pending:** roster read/list endpoints and roster UI; shift catalog and assignment UI; daily summary projection/corrections (P0.1-08), overtime/comp-leave (P0.1-09), payroll daily snapshots (P0.1-10), and related attendance UI/reports (P0.1-11). P0.1-07 adds the source-reconciliation foundation but does not calculate the payroll-facing daily summary.
 
 **Verification evidence:**
 
@@ -462,7 +462,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - **Verification: P0.1-07 CI-verified on 9 November 2026** at code commit `a951347478be5ebd02393609a7c81954cee96634`. [Backend Tests #42577217620](https://github.com/AdiSarkale/remake-tally/actions/runs/42577217620) passed with **184 passed, 5 skipped, 7 warnings**. [Backend tenant isolation #42577217629](https://github.com/AdiSarkale/remake-tally/actions/runs/42577217629) passed. [Minitally CI #42577217650](https://github.com/AdiSarkale/remake-tally/actions/runs/42577217650) passed backend tests/compile, PostgreSQL control-plane and tenant migrations, tenant provisioning and grant seeding, frontend typecheck/build, and Playwright smoke.
 - **Not included in P0.1-07:** missing-punch detection, overlapping-shift and incomplete-break anomalies, daily summary projection, correction/void workflow, payroll-finalization blocking and anomaly UI/reporting. These remain in P0.1-08, P0.1-10 and P0.1-11 as applicable. P0.1-07 currently detects cross-source event-time mismatches only; it is not a complete anomaly-detection suite.
 
-**P0.1-08 — Daily attendance summary projection and correction workflow (27 November 2026; implemented and CI-verified):**
+**P0.1-08 — Daily attendance summary projection and correction workflow (27 November 2026; implementation/CI pending):**
 
 - Added migration `p0_hr_att_summary_021`: current daily projection, immutable summary revisions and correction-request ledger; exact Admin/HR tenant grants and Operator self-service summary/correction view/create grants.
 - Added the projection service. It fingerprints raw active events plus roster snapshot, retains source-event IDs and timezone, derives first/last punches, elapsed minutes and paired break duration, and classifies `no_events`, `complete`, `incomplete` or `invalid_sequence`. Missing/invalid sequence exceptions are explicit. It does **not** infer absence, half-day, late/early, payable overtime or mutate legacy payroll attendance.
@@ -471,9 +471,9 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 - Added correction requests for adding a missing punch or replacing a referenced punch event, with reason and optional evidence reference. Workflow: submitted → approve/reject/return; returned requests can be resubmitted; approval appends a linked superseding raw event, recalculates the summary and marks the request applied atomically. Requesters cannot approve their own requests. Prepared/approved/finalized/locked payroll periods block correction mutation.
 - Added regression tests for complete/incomplete/invalid sequences, revision idempotency, superseding corrections, self-approval denial and two-tenant summary/correction isolation.
 - **Not included:** daily status override workflow, late/early/absence/half-day rules, detailed break-pay rules, overtime/compensatory leave, payroll snapshot/finalization integration, UI/reporting, evidence-file upload or payroll reopening. P0.1-10/11 remain owners of those integrations.
-- **Verification: P0.1-08 verified on integration commit `7e877fe42668a001ebcd798ea48b8ca88ab47326`.** Standalone Backend Tests: 190 passed, 5 skipped, 7 warnings; Backend tenant isolation passed. Integrated [Minitally CI #45911119136](https://github.com/AdiSarkale/remake-tally/actions/runs/45911119136) passed backend tests/compile, PostgreSQL control-plane and tenant migrations, PostgreSQL tenant provisioning lifecycle, frontend typecheck/build and Playwright smoke. An earlier full run exposed stale tests expecting migration 020; those migration/provisioning expectations were updated to 021 and the rerun passed. Local clone/test execution was unavailable in this environment; CI is the verification source.
+- **Verification:** Fresh backend, tenant-isolation, PostgreSQL migration/provisioning, frontend and integrated CI have not yet been confirmed. Local clone/test execution was unavailable in this environment; the implementation branch must be validated by CI before being considered verified.
 
-**Next action:** P0.1-09 is in implementation. Slice 01 adds versioned tenant overtime policy storage, HR/Admin settings APIs, publish validation, exact grants and tests. CI is pending; candidate calculation, approval workflow and comp-leave credit ledger remain upcoming slices. P0.1-08 is verified. P0.1-08 backend is CI-verified; attendance UI/reporting, payroll snapshots and policy-deferred outcomes remain outstanding. Keep roster read/view UI and anomaly screens tracked for P0.1-11, and do not implement deferred T-01 to T-14 by assumption.
+**Next action:** Verify P0.1-08 backend implementation through fresh CI and fix failures. Then proceed to P0.1-09 overtime/compensatory leave. Keep roster read/view UI and anomaly screens tracked for P0.1-11, and do not implement deferred T-01 to T-14 by assumption.
 
 ---
 
@@ -506,10 +506,7 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 | 1.22 | 9 November 2026 | Records CI corrections and successful verification for P0.1-05 on integration commit 390b8ef: 167 passed, 5 skipped, 7 warnings in each standalone backend suite; tenant isolation passed; integrated PostgreSQL migration/provisioning, frontend build and Playwright smoke passed. |
 | 1.23 | 9 November 2026 | Implements and CI-verifies P0.1-06 raw attendance events and import batches: migration 019, manual/self-punch APIs, legacy summary event capture, v2 event workbook/template, exact permissions, idempotency and atomic import. Backend and tenant-isolation suites: 176 passed, 5 skipped, 7 warnings; PostgreSQL migrations/provisioning, frontend and Playwright smoke passed. |
 | 1.24 | 9 November 2026 | Implements and CI-verifies P0.1-07 tenant-configured source reconciliation and anomaly handling: migration 020, effective-dated threshold versions, cross-source mismatch detection, bounded re-reconciliation, scoped anomaly listing, reasoned resolution/false-positive decisions and audit. Backend: 184 passed, 5 skipped, 7 warnings; tenant isolation and integrated PostgreSQL/frontend/Playwright CI passed. |
-| 1.25 | 27 November 2026 | Adds P0.1-08 daily summary projection/revisions, sequence exceptions, correction request workflow, superseding raw events, automatic/batched projection refresh, exact grants, API endpoints and tests. CI pending; UI, payroll snapshot integration and policy-deferred attendance outcomes remain out of scope. |
-| 1.26 | 27 November 2026 | Records P0.1-08 verification: 190 backend tests passed (5 skipped), tenant isolation passed, and integrated Minitally CI #45911119136 passed PostgreSQL migrations/provisioning, frontend typecheck/build and Playwright smoke. Updates stale PostgreSQL migration-head expectations from 020 to 021. |
-| 1.27 | 27 November 2026 | Confirms P0.1-08 verified; locks P0.1-09 overtime/compensatory-leave specification; records that absence, half-day, late and early attendance policy thresholds/outcomes will be tenant-configurable through HR Admin Settings in a later policy/configuration slice. |
-| 1.28 | 27 November 2026 | P0.1-09 implementation slice 01: versioned overtime policy model/migration 022; exact HR/Admin grants migration 023; HR Admin policy create/update/list/publish/retire APIs and validation tests. CI pending. Overtime candidate engine, review workflow and compensatory credit ledger not yet implemented. |
+| 1.25 | 27 November 2026 | Adds P0.1-08 daily summary projection/revisions, sequence exceptions, correction request workflow, superseding raw events, automatic/batched projection refresh, exact grants, API endpoints and tests. Fresh CI pending; UI, payroll snapshot integration and policy-deferred attendance outcomes remain out of scope. |
 
 ## 11. Integration and verification record
 

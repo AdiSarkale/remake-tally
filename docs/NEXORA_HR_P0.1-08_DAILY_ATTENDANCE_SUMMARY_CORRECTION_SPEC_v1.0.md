@@ -2,10 +2,10 @@
 
 **Document ID:** NEX-HR-P0.1-08-SPEC-001  
 **Version:** 1.0  
-**Status:** Implemented backend slice — CI verified; UI and payroll integration remain deferred  
+**Status:** Implementation specification — approved decisions reused; implementation in progress  
 **Baseline:** 27 November 2026  
 **Integration baseline:** `docs/hr-phase-2-implementation-status`  
-**Feature branch:** `feat/p0-1-08-attendance-summary-corrections` (PR #36 merged into integration)
+**Feature branch:** `feat/p0-1-08-attendance-summary-corrections`
 
 ## 1. Purpose
 
@@ -133,13 +133,5 @@ All APIs are tenant-scoped and employee data-scope enforced server-side.
 - Device/offline attendance integrations.
 - File upload/evidence storage.
 - Reopening finalized payroll or modifying Finance journals.
-
-## 10. Verification record
-
-- **Feature PR:** [PR #36](https://github.com/AdiSarkale/remake-tally/pull/36) — merged into `docs/hr-phase-2-implementation-status`; not merged to `main`.
-- **Standalone Backend Tests:** 190 passed, 5 skipped, 7 warnings.
-- **Backend tenant isolation:** passed.
-- **Integrated Minitally CI:** [run #45911119136](https://github.com/AdiSarkale/remake-tally/actions/runs/45911119136) passed backend tests/compile, PostgreSQL migrations and tenant provisioning, frontend typecheck/build and Playwright smoke.
-- **Integration commit:** `7e877fe42668a001ebcd798ea48b8ca88ab47326`.
 
 **End of specification.**

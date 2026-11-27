@@ -2,7 +2,7 @@
 
 **Document ID:** NEX-HR-DEC-001  
 **Version:** 1.0  
-**Status:** Product decisions approved; P0.1 MVP architecture approved for implementation; clarification addendum recorded 27 November 2026  
+**Status:** Product decisions approved; P0.1 MVP architecture approved for implementation; implementation in progress  
 **Decision baseline:** 9 November 2026  
 **Module:** HR & Payroll  
 **P0.1 architecture:** [Nexora HR P0.1 Architecture & MVP Implementation Specification v1.0](NEXORA_HR_P0.1_ARCHITECTURE_SPECIFICATION_v1.0.md)  
@@ -270,25 +270,5 @@ This document records the product user's decisions as of 9 November 2026. Any la
 - Approval attribution and effective version.
 
 **Current approval boundary:** Product decisions and P0.1 MVP architecture are approved by the project owner. Implementation was explicitly authorized on 9 November 2026; contributor architecture review is not a prerequisite. Release acceptance and any merge to `main` remain separate gates.
-
-
-
-## 10. Clarification addendum — 27 November 2026
-
-### HR-15 / HR-16 — tenant-configurable attendance outcomes
-
-The project owner clarified that **absence, half-day, late-arrival and early-departure rules and thresholds must be configurable later by each tenant through HR Admin Settings**. Nexora must not hard-code a universal absence/half-day threshold, late/early grace period, consequence, or attendance-status outcome.
-
-- These policy settings are a later configuration/policy slice; they are not silently assumed to be implemented by P0.1-08.
-- Configuration must be tenant-isolated, effective-dated, versioned and audited.
-- Policy changes must not retroactively rewrite historical attendance summaries or payroll snapshots.
-- Until an applicable policy is configured and published, the system may report factual attendance/exception information but must not infer an absence, half-day, late/early penalty or payroll consequence.
-- HR Admin Settings will be the configuration entry point; tenant-specific configuration can be set after deployment/onboarding.
-
-### P0.1-09 — overtime and compensatory leave
-
-The P0.1-09 specification is locked as the implementation contract, using approved HR-18–HR-20 and HR-25–HR-27/29–30 decisions. No overtime rate, threshold, cap, rounding increment, compensatory conversion ratio or statutory rule may be assumed. Tenant HR Admin must configure required policy values before the affected calculation is activated.
-
-**Clarification record:** Added by the project owner on 27 November 2026. This addendum does not change the previously approved decisions; it clarifies configuration ownership and implementation timing.
 
 **End of register.**
