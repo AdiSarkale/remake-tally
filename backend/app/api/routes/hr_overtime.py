@@ -62,7 +62,7 @@ def submit(cid:str,db:Session=Depends(get_db),u:models.User=Depends(current_user
  if u.role not in (models.Role.admin,models.Role.hr) and (not link or link.employee_id!=r.employee_id):raise HTTPException(403,"Self-only submit")
  if r.requested_by and r.requested_by!=u.username:raise HTTPException(403,"Original requester only")
  emp=db.get(models.Employee,r.employee_id)
- a=db.query(models.EmployeeOrgAssignment).filter(models.EmployeeOrgAssignment.employee_id==emp.id,models.EmployeeOrgAssignment.valid_from<=r.work_date,(models.EmployeeOrgAssignment.valid_to.is_(None)|(models.EmployeeOrgAssignment.valid_to>=r.work_date)).order_by(models.EmployeeOrgAssignment.valid_from.desc()).first()
+ a=db.query(models.EmployeeOrgAssignment).filter(models.EmployeeOrgAssignment.employee_id==emp.id,models.EmployeeOrgAssignment.valid_from<=r.work_date,(models.EmployeeOrgAssignment.valid_to.is_(None)|(models.EmployeeOrgAssignment.valid_to>=r.work_date))).order_by(models.EmployeeOrgAssignment.valid_from.desc()).first()
  mgr=db.get(models.Employee,a.manager_employee_id) if a and a.manager_employee_id else None
  link=db.query(models.EmployeeUserLink).filter_by(employee_id=mgr.id).first() if mgr else None
  sup=db.get(models.User,link.user_id) if link else None
