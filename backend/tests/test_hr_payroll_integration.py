@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.modules.hr.payroll_integration import build_payroll_daily_inputs
-from app.api.routes.hr_payroll import PayrollSupersedePayload, finalize_monthly_payroll, supersede_payroll_run
+from app.api.routes.hr_payroll import PayrollSupersedePayload, _payroll_snapshot_input_recheck, finalize_monthly_payroll, supersede_payroll_run
 
 
 def _db():
@@ -153,6 +153,62 @@ def test_finalization_is_blocked_by_open_blocking_payroll_exception():
         assert exc.value.status_code == 409
         assert "unresolved attendance exceptions" in exc.value.detail
         assert db.get(models.HRPayrollRun, run.id).status == "approved"
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_payroll_finalization_recheck_detects_changed_attendance_source():
+    engine, db = _db()
+    try:
+        employee = models.Employee(
+            id="payroll-recheck-employee", emp_code="EMP-RECHECK-001",
+            name="Payroll Recheck Employee", department="Legacy",
+            joining_date=date(2026, 11, 1), active=True,
+        )
+        settings = models.HRPayrollSettings(
+            id=1, salary_count_mode="fixed_days", monthly_salary_days=26,
+            week_off_days="5,6", timezone="Asia/Kolkata",
+        )
+        run = models.HRPayrollRun(
+            id="payroll-recheck-run", year=2026, month=11,
+            status="approved", created_by="preparer", revision=1,
+            approved_by="approver", approved_at=datetime(2026, 11, 27, tzinfo=timezone.utc),
+        )
+        attendance = models.EmployeeAttendance(
+            id="payroll-recheck-attendance", employee_id=employee.id,
+            work_date=date(2026, 11, 10), status="present", overtime_minutes=0,
+            note="Initial source",
+        )
+        item = models.HRPayrollItem(
+            payroll_run_id=run.id, employee_id=employee.id,
+            employee_code=employee.emp_code, employee_name=employee.name,
+            annual_salary=600000, monthly_gross=50000, basic=25000, hra=20000, da=0,
+            conveyance=1000, medical_allowance=1000, special_allowance=3000,
+            employee_pf=3000, professional_tax=200, tds=0,
+            absence_deduction=0, overtime_pay=0, net_pay=46800,
+        )
+        db.add_all([employee, settings, run, attendance, item])
+        db.flush()
+        daily_inputs = build_payroll_daily_inputs(
+            db, [employee], date(2026, 11, 1), date(2026, 11, 30),
+            [5, 6], {}, [attendance],
+        )[employee.id]
+        db.add_all([
+            models.HRPayrollDailySnapshot(
+                payroll_run_id=run.id, employee_id=employee.id, work_date=day["work_date"],
+                input_fingerprint=day["fingerprint"], snapshot=day["snapshot"],
+            )
+            for day in daily_inputs
+        ])
+        db.commit()
+
+        attendance.status = "absent"
+        db.commit()
+        issues = _payroll_snapshot_input_recheck(db, run)
+        assert issues
+        assert "source inputs changed after preparation" in issues[0]
+        assert "supersede and prepare a new revision" in issues[0]
     finally:
         db.close()
         engine.dispose()
