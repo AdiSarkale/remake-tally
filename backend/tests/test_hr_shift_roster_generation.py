@@ -561,3 +561,25 @@ def test_roster_list_api_rejects_unbounded_or_invalid_date_range(db):
             limit=100, db=db, user=user,
         )
     assert reversed_dates.value.status_code == 422
+
+
+def test_self_roster_read_uses_linked_employee_identity(db):
+    user = models.User(
+        id="roster-self-user", username="roster-self-user",
+        full_name="Roster Self User", password_hash="test",
+        role=models.Role.operator, active=True, must_change_password=False,
+    )
+    employee, _, _ = _seed(db)
+    db.add(user)
+    db.add(models.EmployeeUserLink(user_id=user.id, employee_id=employee.id, created_by="test"))
+    db.add(models.RolePermissionGrant(
+        role="Operator", module="hr", feature="shift_rosters",
+        action="read", data_scope="self", allowed=True, updated_by="test",
+    ))
+    db.commit()
+    _generate(db, employee, start=date(2040, 1, 2), end=date(2040, 1, 8))
+    rows = hr_shift_rosters.list_self_shift_rosters(
+        from_date=date(2040, 1, 2), to_date=date(2040, 1, 8), db=db, user=user,
+    )
+    assert len(rows) == 7
+    assert all(row["employee_id"] == employee.id for row in rows)
