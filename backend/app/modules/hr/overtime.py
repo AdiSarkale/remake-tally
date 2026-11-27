@@ -11,7 +11,7 @@ def resolve_policy(db,e,d,roster,day):
  rows=db.query(models.HROvertimePolicyVersion).filter(models.HROvertimePolicyVersion.status=="published",models.HROvertimePolicyVersion.effective_from<=d,(models.HROvertimePolicyVersion.effective_to.is_(None)|(models.HROvertimePolicyVersion.effective_to>=d))).all()
  org=db.query(models.EmployeeOrgAssignment).filter(models.EmployeeOrgAssignment.employee_id==e.id,models.EmployeeOrgAssignment.valid_from<=d,(models.EmployeeOrgAssignment.valid_to.is_(None)|(models.EmployeeOrgAssignment.valid_to>=d))).order_by(models.EmployeeOrgAssignment.valid_from.desc()).first()
  values={"branch_ids":org.branch_id if org else None,"departments":org.department if org else e.department,"employee_types":e.employee_type,"shift_ids":roster.shift_type_id if roster else None,"day_types":day}
- matches=[p for p in rows if scope_matches(p.scope or {},emp,org,roster,day)]
+ matches=[p for p in rows if scope_matches(p.scope or {},e,org,roster,day)]
  if not matches:return None,org,"not_configured"
  spec=lambda p:sum(bool((p.scope or {}).get(k)) for k in values)
  n=max(spec(p) for p in matches);best=[p for p in matches if spec(p)==n]
@@ -75,7 +75,7 @@ def calculate_candidate(db,eid,d,actor):
      lo=max(a,x);hi=min(b,y)
      if hi>lo:total+=int((hi-lo).total_seconds()//60)
   return total
- actual=max(0,mins(work)-(breakmins(work) or 0));mode=c.get("workday_mode") if day=="scheduled_workday" else c.get(day+"_mode");raw=0
+ unpaid_actual=breakmins(work) if breaks else 0\n if breaks and unpaid_actual is None:return {"state":"blocked","reason":"break_rule_missing"}\n actual=max(0,mins(work)-unpaid_actual);mode=c.get("workday_mode") if day=="scheduled_workday" else c.get(day+"_mode");raw=0
  if comp.get("method")=="disabled" or mode=="disabled":pass
  elif day!="scheduled_workday" and mode=="actual_work":raw=actual
  elif day=="scheduled_workday" and mode=="beyond_scheduled_net":
@@ -86,7 +86,7 @@ def calculate_candidate(db,eid,d,actor):
   eligible=[]
   if elig.get("pre_shift"):eligible += [(a,min(b,roster.scheduled_start_at_utc)) for a,b in work if a<roster.scheduled_start_at_utc and min(b,roster.scheduled_start_at_utc)>a]
   if elig.get("post_shift"):eligible += [(max(a,roster.scheduled_end_at_utc),b) for a,b in work if b>roster.scheduled_end_at_utc and b>max(a,roster.scheduled_end_at_utc)]
-  raw=max(0,mins(eligible)-(breakmins(eligible) or 0))
+  unpaid_extra=breakmins(eligible) if breaks else 0\n  if breaks and unpaid_extra is None:return {"state":"blocked","reason":"break_rule_missing"}\n  raw=max(0,mins(eligible)-unpaid_extra)
  else:return {"state":"blocked","reason":"invalid_policy_mode"}
  if raw<int(elig.get("minimum_minutes",0)):raw=0
  cap=elig.get("maximum_minutes_per_day")
