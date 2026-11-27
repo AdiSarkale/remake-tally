@@ -1,7 +1,7 @@
 # Nexora HR & Payroll — Implementation Status and Next Work
 
 **Document ID:** NEX-HR-STATUS-001  
-**Version:** 1.26  
+**Version:** 1.27  
 **Status:** Active implementation tracker  
 **Baseline:** 9 November 2026  
 **Integration branch:** `docs/hr-phase-2-implementation-status`  
@@ -524,3 +524,5 @@ The roadmap is a proposed implementation sequence, not evidence that these featu
 **End of document.**
 
 | 1.26 | 27 November 2026 | Starts P0.1-10 payroll integration: migration 026 adds daily payroll provenance and exception tables; shift-aware readiness and divisor compatibility checks; approved overtime candidates are integrated into shift-context payroll preview; prepared payroll stores daily snapshots and blocks finalization on open blocking attendance exceptions; controlled supersession and exception visibility APIs added. Initial tests added; CI and acceptance remain pending. |
+
+| 1.27 | 27 November 2026 | Adds migration 027 for supersession actor/time/reason persistence and initial integration tests for approved OT/source anomaly snapshots and payroll supersession. CI and acceptance remain pending. |
