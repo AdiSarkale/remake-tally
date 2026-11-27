@@ -233,7 +233,7 @@ def _calculate_employee_monthly_payroll(
         if _calendar_type(date(year, month, number), week_off_days, calendar_overrides) == "working_day"
     ]
     daily_input_by_date = {row["work_date"]: row for row in (daily_inputs or [])}
-    has_shift_context = any(row.get("roster") is not None or row.get("exception") == "missing_roster" for row in (daily_inputs or []))
+    has_shift_context = any(row.get("roster") is not None for row in (daily_inputs or []))
     if has_shift_context:
         scheduled_days = scheduled_days_from_daily_inputs(daily_inputs or [])
     eligible_working_days = [
