@@ -96,7 +96,9 @@ def review(cid:str,p:Review,db:Session=Depends(get_db),u:models.User=Depends(cur
 def history(cid:str,db:Session=Depends(get_db),u:models.User=Depends(require_permission("hr","overtime","view","tenant"))):
  r=db.get(models.HROvertimeCandidate,cid)
  if not r:raise HTTPException(404,"Candidate missing")
- return [out(x) for x in db.query(models.HROvertimeCandidate).filter_by(employee_id=r.employee_id,work_date=r.work_date).order_by(models.HROvertimeCandidate.revision).all()]
+ revisions=[out(x) for x in db.query(models.HROvertimeCandidate).filter_by(employee_id=r.employee_id,work_date=r.work_date).order_by(models.HROvertimeCandidate.revision).all()]
+ audits=db.query(models.AuditLog).filter(models.AuditLog.entity=="hr_overtime_candidate",models.AuditLog.detail.contains(r.id)).order_by(models.AuditLog.at.asc()).all()
+ return {"revisions":revisions,"audit_history":[{"at":x.at,"actor":x.username,"action":x.action,"detail":x.detail} for x in audits]}
 @router.get("/compensatory-leave/credits")
 def credits(employee_id:str|None=None,limit:int=Query(300,ge=1,le=1000),db:Session=Depends(get_db),u:models.User=Depends(require_permission("hr","comp_leave_credits","view","tenant"))):
  q=db.query(models.HRCompLeaveCredit)
