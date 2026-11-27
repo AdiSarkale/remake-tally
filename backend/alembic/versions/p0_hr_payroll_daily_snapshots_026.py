@@ -1,11 +1,11 @@
 """Add immutable payroll daily provenance and readiness exceptions.
-Revision ID: p0_hr_payroll_daily_snapshots_026
+Revision ID: p0_hr_payroll_snap_026
 Revises: p0_hr_overtime_core_approval_025
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "p0_hr_payroll_daily_snapshots_026"
+revision = "p0_hr_payroll_snap_026"
 down_revision = "p0_hr_overtime_core_approval_025"
 branch_labels = None
 depends_on = None
