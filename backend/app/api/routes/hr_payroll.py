@@ -1506,6 +1506,18 @@ def _snapshot_payroll_run(
                     detail=f"Scheduled attendance summary is {summary.classification}; resolve the attendance correction before finalization.",
                     source_reference=summary.id,
                 ))
+            open_anomalies = [
+                anomaly for anomaly in day_input["snapshot"].get("source_anomalies", [])
+                if anomaly.get("status") == "open"
+            ]
+            if open_anomalies:
+                refs = ",".join(anomaly["id"] for anomaly in open_anomalies)
+                db.add(models.HRPayrollException(
+                    payroll_run_id=run.id, employee_id=item["employee_id"], work_date=day_input["work_date"],
+                    code="attendance_source_mismatch", severity="blocking", status="open",
+                    detail=f"{len(open_anomalies)} unresolved attendance source mismatch(es) remain open.",
+                    source_reference=refs[:120],
+                ))
     log_audit(db, user.username, "PREPARE", "hr_payroll_run", f"{year}-{month:02d}; revision={revision}")
     db.commit()
     db.refresh(run)
