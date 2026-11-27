@@ -54,6 +54,14 @@ def build_payroll_daily_inputs(
         models.HROvertimeCandidate.work_date >= start,
         models.HROvertimeCandidate.work_date <= end,
     ).all() if employee_ids else []
+    anomaly_rows = db.query(models.HRAttendanceAnomaly).filter(
+        models.HRAttendanceAnomaly.employee_id.in_(employee_ids),
+        models.HRAttendanceAnomaly.work_date >= start,
+        models.HRAttendanceAnomaly.work_date <= end,
+    ).all() if employee_ids else []
+    anomalies_by_employee_date: dict[tuple[str, date], list] = {}
+    for anomaly in anomaly_rows:
+        anomalies_by_employee_date.setdefault((anomaly.employee_id, anomaly.work_date), []).append(anomaly)
     attendance_by_employee_date = {(row.employee_id, row.work_date): row for row in attendance_rows}
     roster_by_employee_date = {(row.employee_id, row.work_date): row for row in roster_rows}
     summary_by_employee_date = {(row.employee_id, row.work_date): row for row in summary_rows}
@@ -148,6 +156,17 @@ def build_payroll_daily_inputs(
                 },
                 "approved_overtime": approved_ot,
                 "approved_payable_overtime_minutes": payable_ot_minutes,
+                "source_anomalies": [{
+                    "id": anomaly.id, "type": anomaly.anomaly_type, "status": anomaly.status,
+                    "delta_minutes": float(anomaly.observed_delta_minutes),
+                    "threshold_minutes": anomaly.threshold_minutes,
+                    "policy_version_id": anomaly.policy_version_id,
+                    "source_event_ids": list(anomaly.source_event_ids or []),
+                    "resolution_reason": anomaly.resolution_reason,
+                    "resolution_result": anomaly.resolution_result,
+                    "resolved_by": anomaly.resolved_by,
+                    "resolved_at": anomaly.resolved_at.isoformat() if anomaly.resolved_at else None,
+                } for anomaly in anomalies_by_employee_date.get((employee.id, work_date), [])],
             }
             fingerprint = hashlib.sha256(json.dumps(snapshot, sort_keys=True, default=str).encode()).hexdigest()
             daily.append({
