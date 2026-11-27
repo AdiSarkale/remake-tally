@@ -497,3 +497,67 @@ def test_branch_scoped_user_cannot_generate_or_override_rosters_outside_scope(db
         )
     assert override_denied.value.status_code == 403
     assert db.query(models.HRShiftRosterEntry).filter_by(employee_id=employee.id).count() == 0
+
+
+def test_roster_list_api_returns_employee_date_scoped_snapshots(db):
+    user = models.User(
+        id="roster-list-admin", username="roster-list-admin",
+        full_name="Roster List Admin", password_hash="test",
+        role=models.Role.admin, active=True, must_change_password=False,
+    )
+    db.add_all([
+        user,
+        models.RolePermissionGrant(
+            role="Admin", module="hr", feature="shift_rosters", action="read",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ),
+        models.RolePermissionGrant(
+            role="Admin", module="hr", feature="employees", action="read",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ),
+    ])
+    db.commit()
+    employee, branch, shift = _seed(db)
+    _generate(db, employee, start=date(2040, 1, 2), end=date(2040, 1, 8))
+    rows = hr_shift_rosters.list_shift_rosters(
+        from_date=date(2040, 1, 2), to_date=date(2040, 1, 8),
+        employee_id=employee.id, branch_id=branch.id, department="Production",
+        limit=100, db=db, user=user,
+    )
+    assert len(rows) == 7
+    monday = next(row for row in rows if row["work_date"] == date(2040, 1, 3))
+    assert monday["employee_code"] == "RS001"
+    assert monday["shift_code"] == shift.code
+    assert monday["status"] == "scheduled"
+    assert monday["timezone_name"] == "Asia/Kolkata"
+    assert monday["scheduled_start_at_utc"] is not None
+
+
+def test_roster_list_api_rejects_unbounded_or_invalid_date_range(db):
+    user = models.User(
+        id="roster-list-invalid-admin", username="roster-list-invalid-admin",
+        full_name="Roster List Admin", password_hash="test",
+        role=models.Role.admin, active=True, must_change_password=False,
+    )
+    db.add_all([
+        user,
+        models.RolePermissionGrant(
+            role="Admin", module="hr", feature="shift_rosters", action="read",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ),
+    ])
+    db.commit()
+    with pytest.raises(HTTPException) as too_long:
+        hr_shift_rosters.list_shift_rosters(
+            from_date=date(2040, 1, 1), to_date=date(2040, 2, 1),
+            employee_id=None, branch_id=None, department=None,
+            limit=100, db=db, user=user,
+        )
+    assert too_long.value.status_code == 422
+    with pytest.raises(HTTPException) as reversed_dates:
+        hr_shift_rosters.list_shift_rosters(
+            from_date=date(2040, 1, 8), to_date=date(2040, 1, 2),
+            employee_id=None, branch_id=None, department=None,
+            limit=100, db=db, user=user,
+        )
+    assert reversed_dates.value.status_code == 422
