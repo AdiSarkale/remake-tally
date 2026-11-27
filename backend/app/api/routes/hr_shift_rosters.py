@@ -1,9 +1,9 @@
 """Authorized API for idempotent, future-only shift roster generation."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -22,7 +22,65 @@ from app.modules.hr.shift_roster_schemas import (
 )
 
 router = APIRouter(prefix="/hr/shift-rosters", tags=["hr", "shift-rosters"])
+read_access = Depends(require_permission("hr", "shift_rosters", "read", "tenant"))
 write_access = Depends(require_permission("hr", "shift_rosters", "write", "tenant"))
+
+
+@router.get("", response_model=list[dict])
+def list_shift_rosters(
+    from_date: date = Query(default_factory=date.today),
+    to_date: date = Query(default_factory=lambda: date.today() + timedelta(days=6)),
+    employee_id: str | None = Query(default=None, max_length=36),
+    branch_id: str | None = Query(default=None, max_length=36),
+    department: str | None = Query(default=None, max_length=120),
+    limit: int = Query(default=500, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    user: models.User = read_access,
+):
+    if to_date < from_date:
+        raise HTTPException(422, "Roster end date cannot precede start date")
+    if (to_date - from_date).days + 1 > 31:
+        raise HTTPException(422, "Roster query cannot exceed 31 calendar days")
+    query = db.query(models.HRShiftRosterEntry).filter(
+        models.HRShiftRosterEntry.work_date >= from_date,
+        models.HRShiftRosterEntry.work_date <= to_date,
+    )
+    if employee_id:
+        query = query.filter(models.HRShiftRosterEntry.employee_id == employee_id)
+    if branch_id:
+        query = query.filter(models.HRShiftRosterEntry.branch_id == branch_id)
+    if department:
+        query = query.filter(models.HRShiftRosterEntry.department_snapshot.ilike(department.strip()))
+    rows = query.order_by(models.HRShiftRosterEntry.work_date, models.HRShiftRosterEntry.employee_id).limit(limit).all()
+    visible = []
+    for row in rows:
+        allowed = employee_scope_ids(db, user, "hr", "employees", "read", as_of_date=row.work_date)
+        if allowed is not None and row.employee_id not in set(allowed):
+            continue
+        employee = db.get(models.Employee, row.employee_id)
+        visible.append({
+            "id": row.id,
+            "employee_id": row.employee_id,
+            "employee_code": employee.emp_code if employee else "",
+            "employee_name": employee.name if employee else "",
+            "work_date": row.work_date,
+            "status": row.status,
+            "shift_type_id": row.shift_type_id,
+            "source_assignment_id": row.source_assignment_id,
+            "is_override": row.is_override,
+            "override_reason": row.override_reason,
+            "version": row.version,
+            "branch_id": row.branch_id,
+            "department": row.department_snapshot,
+            "timezone_name": row.timezone_name,
+            "scheduled_start_at_utc": row.scheduled_start_at_utc,
+            "scheduled_end_at_utc": row.scheduled_end_at_utc,
+            "shift_code": row.shift_code_snapshot,
+            "shift_name": row.shift_name_snapshot,
+            "break_rules": row.break_rules_snapshot,
+            "created_by": row.created_by,
+        })
+    return visible
 
 
 @router.post("/generate", response_model=ShiftRosterGenerateOut)
