@@ -23,6 +23,7 @@ from app.modules.hr.shift_roster_schemas import (
 
 router = APIRouter(prefix="/hr/shift-rosters", tags=["hr", "shift-rosters"])
 read_access = Depends(require_permission("hr", "shift_rosters", "read", "tenant"))
+self_read_access = Depends(require_permission("hr", "shift_rosters", "read", "self"))
 write_access = Depends(require_permission("hr", "shift_rosters", "write", "tenant"))
 
 
@@ -81,6 +82,42 @@ def list_shift_rosters(
             "created_by": row.created_by,
         })
     return visible
+
+
+@router.get("/self", response_model=list[dict])
+def list_self_shift_rosters(
+    from_date: date = Query(default_factory=date.today),
+    to_date: date = Query(default_factory=lambda: date.today() + timedelta(days=6)),
+    db: Session = Depends(get_db),
+    user: models.User = self_read_access,
+):
+    if to_date < from_date:
+        raise HTTPException(422, "Roster end date cannot precede start date")
+    if (to_date - from_date).days + 1 > 31:
+        raise HTTPException(422, "Roster query cannot exceed 31 calendar days")
+    link = db.query(models.EmployeeUserLink).filter_by(user_id=user.id).first()
+    if link is None:
+        raise HTTPException(403, "This login is not linked to an employee")
+    rows = db.query(models.HRShiftRosterEntry).filter(
+        models.HRShiftRosterEntry.employee_id == link.employee_id,
+        models.HRShiftRosterEntry.work_date >= from_date,
+        models.HRShiftRosterEntry.work_date <= to_date,
+    ).order_by(models.HRShiftRosterEntry.work_date).limit(1000).all()
+    return [{
+        "id": row.id,
+        "employee_id": row.employee_id,
+        "work_date": row.work_date,
+        "status": row.status,
+        "shift_code": row.shift_code_snapshot,
+        "shift_name": row.shift_name_snapshot,
+        "scheduled_start_at_utc": row.scheduled_start_at_utc,
+        "scheduled_end_at_utc": row.scheduled_end_at_utc,
+        "timezone_name": row.timezone_name,
+        "department": row.department_snapshot,
+        "is_override": row.is_override,
+        "override_reason": row.override_reason,
+        "version": row.version,
+    } for row in rows]
 
 
 @router.post("/generate", response_model=ShiftRosterGenerateOut)
