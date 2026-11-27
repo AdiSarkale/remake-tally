@@ -35,6 +35,7 @@ def list_shift_rosters(
     branch_id: str | None = Query(default=None, max_length=36),
     department: str | None = Query(default=None, max_length=120),
     limit: int = Query(default=500, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0, le=1000000),
     db: Session = Depends(get_db),
     user: models.User = read_access,
 ):
