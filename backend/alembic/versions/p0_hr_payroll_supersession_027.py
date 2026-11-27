@@ -1,11 +1,11 @@
 """Persist controlled payroll supersession attribution.
-Revision ID: p0_hr_payroll_supersession_027
+Revision ID: p0_hr_payroll_supersede_027
 Revises: p0_hr_payroll_daily_snapshots_026
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "p0_hr_payroll_supersession_027"
+revision = "p0_hr_payroll_supersede_027"
 down_revision = "p0_hr_payroll_daily_snapshots_026"
 branch_labels = None
 depends_on = None
