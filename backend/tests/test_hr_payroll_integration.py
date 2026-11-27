@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.modules.hr.payroll_integration import build_payroll_daily_inputs
+from app.api.routes.hr_payroll import PayrollSupersedePayload, supersede_payroll_run
 
 
 def _db():
@@ -88,6 +89,37 @@ def test_daily_snapshot_includes_only_approved_payable_overtime_and_open_anomaly
         assert snapshot["source_anomalies"][0]["status"] == "open"
         assert snapshot["source_anomalies"][0]["id"] == open_anomaly.id
         assert len(daily["fingerprint"]) == 64
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_prepared_and_approved_payroll_revisions_can_be_superseded_with_reason():
+    engine, db = _db()
+    try:
+        prepared = models.HRPayrollRun(
+            id="payroll-prepared-supersede", year=2026, month=11,
+            status="prepared", created_by="preparer", revision=1,
+        )
+        approved = models.HRPayrollRun(
+            id="payroll-approved-supersede", year=2026, month=11,
+            status="approved", created_by="preparer", revision=2,
+            approved_by="approver", approved_at=datetime(2026, 11, 27, tzinfo=timezone.utc),
+        )
+        db.add_all([prepared, approved])
+        db.commit()
+        actor = type("Actor", (), {"username": "payroll-admin"})()
+        permission = object()
+        for run_id in (prepared.id, approved.id):
+            result = supersede_payroll_run(
+                run_id, PayrollSupersedePayload(reason="Corrected attendance source records"),
+                db, actor, permission,
+            )
+            assert result.status == "superseded"
+        approved_refresh = db.get(models.HRPayrollRun, approved.id)
+        assert approved_refresh.status == "superseded"
+        assert approved_refresh.approved_by is None
+        assert approved_refresh.approved_at is None
     finally:
         db.close()
         engine.dispose()
