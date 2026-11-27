@@ -53,11 +53,21 @@ def listing(from_date:date|None=None,to_date:date|None=None,employee_id:str|None
    ids=employee_scope_ids(db,u,"hr","overtime","view",as_of_date=r.work_date);scopes[r.work_date]=None if ids is None else set(ids)
   if scopes[r.work_date] is None or r.employee_id in scopes[r.work_date]:outrows.append(out(r))
  return outrows
+@router.get("/self")
+def self_candidates(db:Session=Depends(get_db),u:models.User=Depends(current_user)):
+ link=db.query(models.EmployeeUserLink).filter_by(user_id=u.id).first()
+ if not link:raise HTTPException(403,"Login is not linked to employee")
+ rows=db.query(models.HROvertimeCandidate).filter_by(employee_id=link.employee_id).order_by(models.HROvertimeCandidate.work_date.desc()).limit(200).all()
+ return [out(x) for x in rows]
+@router.get("/supervisor-queue")
+def supervisor_queue(db:Session=Depends(get_db),u:models.User=Depends(current_user)):
+ rows=db.query(models.HROvertimeCandidate).filter_by(supervisor_username=u.username,status="submitted").order_by(models.HROvertimeCandidate.work_date.desc()).limit(200).all()
+ return [out(x) for x in rows]
 @router.post("/{cid}/submit")
 def submit(cid:str,db:Session=Depends(get_db),u:models.User=Depends(current_user)):
  r=db.get(models.HROvertimeCandidate,cid)
  if not r:raise HTTPException(404,"Candidate missing")
- if r.status not in {"candidate","returned"}:raise HTTPException(409,"Invalid state")
+ if r.status not in {"candidate","returned"}:raise HTTPException(409,"Invalid state")\n if frozen(db,r.work_date):raise HTTPException(409,"Frozen payroll blocks submission")
  link=db.query(models.EmployeeUserLink).filter_by(user_id=u.id).first()
  if u.role not in (models.Role.admin,models.Role.hr) and (not link or link.employee_id!=r.employee_id):raise HTTPException(403,"Self-only submit")
  if r.requested_by and r.requested_by!=u.username:raise HTTPException(403,"Original requester only")
