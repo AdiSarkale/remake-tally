@@ -233,6 +233,9 @@ def test_attendance_summary_route_applies_offset_after_employee_scope(monkeypatc
         def query(self, model):
             return Query(rows if model is models.HRAttendanceDailySummary else [])
 
+        def get(self, *_args, **_kwargs):
+            return None
+
     monkeypatch.setattr(route, "_summary_scope", lambda _db, _user, work_date: (
         {"visible-a", "visible-b"} if work_date != date(2026, 11, 12) else set()
     ))
