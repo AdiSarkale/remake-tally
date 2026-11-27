@@ -55,13 +55,13 @@ def list_shift_rosters(
         query = query.filter(models.HRShiftRosterEntry.department_snapshot.ilike(department.strip()))
     # Apply employee scope before pagination so restricted rows cannot consume a
     # page's limit and cause later authorized records to disappear.
-    ordered = query.order_by(
+    candidate_rows = query.order_by(
         models.HRShiftRosterEntry.work_date,
         models.HRShiftRosterEntry.employee_id,
         models.HRShiftRosterEntry.id,
     ).all()
     visible = []
-    for row in ordered:
+    for row in candidate_rows:
         allowed = employee_scope_ids(db, user, "hr", "employees", "read", as_of_date=row.work_date)
         if allowed is not None and row.employee_id not in set(allowed):
             continue
