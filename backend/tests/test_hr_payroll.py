@@ -852,3 +852,50 @@ def test_import_rejects_wrong_selected_branch_for_employee_work_date():
         db.close()
         engine.dispose()
 
+
+
+
+def test_shift_payroll_uses_approved_overtime_not_legacy_minutes():
+    attendance = [
+        SimpleNamespace(status="present", work_date=date(2026, 10, 7), overtime_minutes=180),
+    ]
+    daily_inputs = [
+        {
+            "work_date": date(2026, 10, 7), "roster": SimpleNamespace(id="roster-1"),
+            "exception": None, "scheduled": True, "approved_overtime_minutes": 60,
+        }
+    ]
+    result = _calculate_employee_monthly_payroll(
+        _employee(), _profile(), attendance, 2026, 10, "fixed_days", 30, [5, 6], {},
+        daily_inputs,
+    )
+    assert result["overtime_minutes"] == 60
+    assert float(result["overtime_pay"]) == 208.33
+
+
+def test_shift_roster_schedule_controls_absence_classification():
+    attendance = [
+        SimpleNamespace(status="absent", work_date=date(2026, 10, 7), overtime_minutes=0),
+        SimpleNamespace(status="absent", work_date=date(2026, 10, 8), overtime_minutes=0),
+    ]
+    daily_inputs = [
+        {"work_date": date(2026, 10, 7), "roster": SimpleNamespace(id="r1"), "exception": None, "scheduled": True, "approved_overtime_minutes": 0},
+        {"work_date": date(2026, 10, 8), "roster": SimpleNamespace(id="r2"), "exception": None, "scheduled": False, "approved_overtime_minutes": 0},
+    ]
+    result = _calculate_employee_monthly_payroll(
+        _employee(), _profile(), attendance, 2026, 10, "fixed_days", 30, [5, 6], {},
+        daily_inputs,
+    )
+    assert result["absent_days"] == 2
+    assert float(result["absence_deduction"]) == 1666.67
+
+
+def test_payroll_daily_snapshot_schedule_helper_uses_roster_day_flags():
+    from app.modules.hr.payroll_integration import scheduled_days_from_daily_inputs
+
+    inputs = [
+        {"work_date": date(2026, 10, 7), "scheduled": True},
+        {"work_date": date(2026, 10, 8), "scheduled": False},
+        {"work_date": date(2026, 10, 9), "scheduled": True},
+    ]
+    assert scheduled_days_from_daily_inputs(inputs) == [date(2026, 10, 7), date(2026, 10, 9)]
