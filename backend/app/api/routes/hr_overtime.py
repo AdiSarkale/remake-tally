@@ -42,7 +42,7 @@ def calculate(p:Calc,db:Session=Depends(get_db),u:models.User=Depends(require_pe
    db.add(row);db.flush();log_audit(db,u.username,"CALCULATE","hr_overtime_candidate",row.id);results.append({"candidate":out(row),"created":True});d=date.fromordinal(d.toordinal()+1)
  db.commit();return {"processed":len(results),"results":results}
 @router.get("")
-def listing(from_date:date|None=None,to_date:date|None=None,employee_id:str|None=None,status:str|None=None,limit:int=Query(300,ge=1,le=1000),offset:int=Query(0,ge=0,le=1000000),db:Session=Depends(get_db),u:models.User=Depends(require_permission("hr","overtime","view","tenant"))):
+def listing(from_date:date|None=None,to_date:date|None=None,employee_id:str|None=None,status:str|None=None,limit:int=Query(300,ge=1,le=1000),offset:int=0,db:Session=Depends(get_db),u:models.User=Depends(require_permission("hr","overtime","view","tenant"))):
  if from_date and to_date and to_date<from_date:raise HTTPException(422,"to_date cannot be earlier than from_date")
  if from_date and to_date and (to_date-from_date).days+1>31:raise HTTPException(422,"Overtime query cannot exceed 31 calendar days")
  q=db.query(models.HROvertimeCandidate)
