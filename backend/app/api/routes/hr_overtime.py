@@ -42,19 +42,19 @@ def calculate(p:Calc,db:Session=Depends(get_db),u:models.User=Depends(require_pe
    db.add(row);db.flush();log_audit(db,u.username,"CALCULATE","hr_overtime_candidate",row.id);results.append({"candidate":out(row),"created":True});d=date.fromordinal(d.toordinal()+1)
  db.commit();return {"processed":len(results),"results":results}
 @router.get("")
-def listing(from_date:date|None=None,to_date:date|None=None,employee_id:str|None=None,status:str|None=None,limit:int=Query(300,ge=1,le=1000),db:Session=Depends(get_db),u:models.User=Depends(require_permission("hr","overtime","view","tenant"))):
+def listing(from_date:date|None=None,to_date:date|None=None,employee_id:str|None=None,status:str|None=None,limit:int=Query(300,ge=1,le=1000),offset:int=Query(0,ge=0,le=1000000),db:Session=Depends(get_db),u:models.User=Depends(require_permission("hr","overtime","view","tenant"))):
  q=db.query(models.HROvertimeCandidate)
  if from_date:q=q.filter(models.HROvertimeCandidate.work_date>=from_date)
  if to_date:q=q.filter(models.HROvertimeCandidate.work_date<=to_date)
  if employee_id:q=q.filter(models.HROvertimeCandidate.employee_id==employee_id)
  if status:q=q.filter(models.HROvertimeCandidate.status==status)
- rows=q.order_by(models.HROvertimeCandidate.work_date.desc()).limit(limit).all();scopes={}
+ rows=q.order_by(models.HROvertimeCandidate.work_date.desc(),models.HROvertimeCandidate.id.desc()).all();scopes={}
  outrows=[]
  for r in rows:
   if r.work_date not in scopes:
    ids=employee_scope_ids(db,u,"hr","overtime","view",as_of_date=r.work_date);scopes[r.work_date]=None if ids is None else set(ids)
   if scopes[r.work_date] is None or r.employee_id in scopes[r.work_date]:outrows.append(out(r))
- return outrows
+ return outrows[offset:offset+limit]
 @router.get("/self")
 def self_candidates(db:Session=Depends(get_db),u:models.User=Depends(current_user)):
  link=db.query(models.EmployeeUserLink).filter_by(user_id=u.id).first()
