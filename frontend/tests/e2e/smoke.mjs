@@ -232,6 +232,73 @@ try {
     await context.close();
   }
 
+  // P0.1-11: live UI interactions for shift/break-rule updates and department-default assignment controls.
+  {
+    const employee = { id: "shift-ui-employee", emp_code: "SH-001", name: "Shift UI Employee", active: true, department: "Production" };
+    let shift = { id: "shift-ui-day", code: "DAY", name: "Day Shift", start_time: "09:00", end_time: "17:00", end_day_offset: 0, active: true };
+    let rule = { id: "break-ui-lunch", shift_type_id: shift.id, code: "LUNCH", name: "Lunch break", sequence: 1, is_paid: false, planned_duration_minutes: 30, scheduled_start_time: "13:00", scheduled_end_time: "13:30", active: true };
+    let assignments = [];
+    let assignmentPayload = null;
+    const { context, page } = await persona("HR", "shift-edit-e2e", async (route, url, path) => {
+      const method = route.request().method();
+      if (path === "/manufacturing/employees" && method === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([employee]) }); return true;
+      }
+      if (path === "/hr/shifts" && method === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([shift]) }); return true;
+      }
+      if (path === "/hr/shifts/shift-ui-day/break-rules" && method === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([rule]) }); return true;
+      }
+      if (path === "/hr/shifts/shift-ui-day" && method === "PUT") {
+        shift = { ...shift, ...route.request().postDataJSON() };
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(shift) }); return true;
+      }
+      if (path === "/hr/shifts/shift-ui-day/active" && method === "PATCH") {
+        shift = { ...shift, ...route.request().postDataJSON() };
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(shift) }); return true;
+      }
+      if (path === "/hr/shifts/shift-ui-day/break-rules/break-ui-lunch" && method === "PUT") {
+        rule = { ...rule, ...route.request().postDataJSON() };
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(rule) }); return true;
+      }
+      if (path === "/hr/shifts/shift-ui-day/break-rules/break-ui-lunch/active" && method === "PATCH") {
+        rule = { ...rule, ...route.request().postDataJSON() };
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(rule) }); return true;
+      }
+      if (path === "/hr/shift-assignments" && method === "GET") {
+        const offset = Number(url.searchParams.get("offset") || 0);
+        const limit = Number(url.searchParams.get("limit") || 500);
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(assignments.slice(offset, offset + limit)) }); return true;
+      }
+      if (path === "/hr/shift-assignments" && method === "POST") {
+        assignmentPayload = route.request().postDataJSON();
+        assignments = [{ id: "department-assignment-e2e", ...assignmentPayload, created_by: "shift-edit-e2e" }];
+        await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(assignments[0]) }); return true;
+      }
+      return false;
+    });
+    await page.goto(base + "/hr");
+    await page.getByRole("tab", { name: "Attendance & Shifts", exact: true }).click();
+    await page.getByRole("tab", { name: "Shifts & Assignments", exact: true }).click();
+    await page.getByRole("button", { name: "Edit", exact: true }).first().click();
+    await page.getByLabel("name", { exact: true }).first().fill("Day Shift Updated");
+    await page.getByRole("button", { name: "Update shift", exact: true }).click();
+    await page.getByText("Day Shift Updated", { exact: false }).waitFor();
+    await page.getByLabel("Shift", { exact: true }).nth(1).selectOption(shift.id);
+    await page.getByRole("button", { name: "Edit", exact: true }).nth(1).click();
+    await page.getByLabel("name", { exact: true }).nth(1).fill("Lunch break updated");
+    await page.getByRole("button", { name: "Update break rule", exact: true }).click();
+    await page.getByText("Lunch break updated", { exact: false }).waitFor();
+    await page.getByLabel("Assignment scope", { exact: true }).selectOption("department");
+    await page.getByLabel("Department", { exact: true }).fill("Production");
+    await page.getByLabel("Shift", { exact: true }).first().selectOption(shift.id);
+    await page.getByRole("button", { name: "Assign shift", exact: true }).click();
+    assert.equal(assignmentPayload?.scope_type, "department");
+    assert.equal(assignmentPayload?.department, "Production");
+    await context.close();
+  }
+
   // HOD persona: a department approver can decide only requests assigned to their login.
   {
     let decision = "pending";
