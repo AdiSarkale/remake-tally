@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chromium } from "playwright";
+import { chromium, expect } from "playwright";
 
 const base = process.env.P0_11_LIVE_FRONTEND_URL || "http://127.0.0.1:5173";
 const browser = await chromium.launch({ headless: true });
@@ -32,9 +32,11 @@ try {
   await page.getByRole("heading", { name: "Daily attendance report", exact: true }).waitFor();
   assert.match(await page.locator("body").innerText(), /Scheduled roster days\s*1/);
   assert.match(await page.locator("body").innerText(), /Complete days\s*1/);
-  const monthlyDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "Monthly report", exact: true }).click();
-  await page.getByRole("button", { name: "Export monthly CSV", exact: true }).click();
+  const monthlyExport = page.getByRole("button", { name: "Export monthly CSV", exact: true });
+  await expect(monthlyExport).toBeEnabled({ timeout: 15000 });
+  const monthlyDownload = page.waitForEvent("download");
+  await monthlyExport.click();
   assert.match((await monthlyDownload).suggestedFilename(), /attendance-monthly/);
 
   await page.getByRole("tab", { name: "Team Overview", exact: true }).click();
