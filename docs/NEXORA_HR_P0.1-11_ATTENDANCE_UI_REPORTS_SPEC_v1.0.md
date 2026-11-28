@@ -63,3 +63,26 @@ Implementation, regression tests, scope/authorization tests, migration verificat
 **Verification status:** backend unit and tenant-isolation checks passed for the first implementation commit; integrated CI is still running for the latest frontend additions. A frontend strict-TypeScript issue was discovered by CI and corrected; final rerun pending.
 
 **Still incomplete:** department-default assignment UI; roster pagination; comprehensive shift/break-rule edit/update UI; explicit daily/monthly report views and export; supervisor dashboard; live API-backed browser acceptance beyond the current mock smoke. These are tracked as remaining slices, not silently considered complete.
+
+
+## Implementation status update — 28 November 2026
+
+This update supersedes the earlier "Still incomplete" list in Section 7. The implementation is now materially expanded, but P0.1-11 is **not accepted/closed until CI and owner walkthrough pass**.
+
+### Implemented in the integration branch
+- Bounded, stable-offset read pagination for roster, daily summary, raw events, anomalies, correction queues, overtime candidates, and shift assignments.
+- Employee-scope filtering is applied before page slicing on the affected list routes; offsets are validated and date windows are capped at 31 calendar days.
+- A bounded complete-list client helper loads all API pages for report aggregation/export; workspace tables use visible page controls and row-count metadata.
+- Daily and explicit monthly attendance reports, employee-period rollups, shift-wise roster/summary coverage, overtime candidate summaries, anomaly/correction status summaries, and raw source-event summaries.
+- Full-dataset CSV exports with metadata and formula-injection-safe cell escaping.
+- Supervisor/team overview with rostered days, missing summaries, summary classifications, elapsed/break time, open anomalies, pending corrections and OT candidates; queues are separately paginated.
+- Shift and break-rule edit/reactivation controls; department-default assignment creation is present.
+- Date filters use local calendar dates; attendance timestamps render using their recorded timezone.
+- Regression tests cover scope-safe offset pagination; browser smoke coverage now includes report views/exports, team overview, shift/break edits and department assignment.
+
+### Verification added
+- Backend live API integration acceptance uses FastAPI TestClient and isolated tenant SQLite fixtures for paginated roster/summary reads and tenant isolation.
+- A separate CI Playwright flow is added to log in to a real ephemeral FastAPI + SQLite server and exercise roster, summary/events, corrections, daily/monthly reporting, supervisor overview, shift/break-rule updates and department-default assignment. This is distinct from the API-mocked smoke test.
+
+### Acceptance status
+**P0.1-11 — IN PROGRESS.** CI for the latest commit must complete successfully, including strict TypeScript, production build, API-mocked smoke, live API-backed Playwright, backend tests, tenant isolation, and PostgreSQL migration lifecycle. A focused owner walkthrough must then be recorded. No final CI/acceptance claim is made in this update.
