@@ -53,6 +53,7 @@ export function HrAttendanceWorkspace({ canManage }: { canManage: boolean }) {
  useEffect(()=>{void loadBase();},[]);
  useEffect(()=>{if(selectedShiftId){void api.get<BreakRule[]>("/hr/shifts/"+selectedShiftId+"/break-rules?include_inactive=true").then(setBreakRules).catch(()=>setBreakRules([]))}else setBreakRules([])},[selectedShiftId]);
  useEffect(()=>{setPage(0);setPeriodPage(0);setTeamAnomalyPage(0);setTeamCorrectionPage(0);setRosters([]);setSummaries([]);setOvertime([]);setEvents([]);setAnomalies([]);setCorrections([]);},[from,to,employeeFilter]);
+ useEffect(()=>{setPage(0);setTeamAnomalyPage(0);setTeamCorrectionPage(0)},[tab]);
  useEffect(()=>{setPage(0);setPeriodPage(0);setTeamAnomalyPage(0);setTeamCorrectionPage(0)},[pageSize,reportMode]);
  useEffect(()=>{void load()},[tab,from,to,employeeFilter]);
  const action=async(fn:()=>Promise<unknown>,success:string)=>{setBusy(true);try{await fn();toast.success(success);await loadBase();await load()}catch(e){toast.error(e instanceof Error?e.message:"Action failed")}finally{setBusy(false)}};
