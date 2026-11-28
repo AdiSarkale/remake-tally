@@ -340,6 +340,8 @@ def list_attendance_anomalies(
 ):
     if from_date and to_date and to_date < from_date:
         raise HTTPException(status_code=422, detail="to_date cannot be earlier than from_date")
+    if from_date and to_date and (to_date - from_date).days + 1 > 31:
+        raise HTTPException(status_code=422, detail="Attendance anomaly query cannot exceed 31 calendar days")
     query = db.query(models.HRAttendanceAnomaly)
     if status:
         query = query.filter(models.HRAttendanceAnomaly.status == status)
@@ -514,6 +516,10 @@ def list_attendance_events(
     db: Session = Depends(get_db),
     user: models.User = Depends(require_permission("hr", "attendance", "view", "tenant")),
 ):
+    if from_date and to_date and to_date < from_date:
+        raise HTTPException(status_code=422, detail="to_date cannot be earlier than from_date")
+    if from_date and to_date and (to_date - from_date).days + 1 > 31:
+        raise HTTPException(status_code=422, detail="Attendance event query cannot exceed 31 calendar days")
     query = db.query(models.HRAttendanceEvent)
     if employee_id:
         query = query.filter(models.HRAttendanceEvent.employee_id == employee_id)
