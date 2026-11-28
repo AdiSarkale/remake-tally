@@ -85,7 +85,7 @@ def seed() -> None:
     if db.get(models.HRBranch, "p0-11-live-branch") is None:
         db.add(models.HRBranch(
             id="p0-11-live-branch", code="P011", name="Live Test Plant",
-            timezone="Asia/Kolkata", active=True, created_by="admin",
+            timezone="Asia/Kolkata", active=True,
         ))
         db.add(models.EmployeeOrgAssignment(
             id="p0-11-live-org", employee_id=EMPLOYEE_ID, branch_id="p0-11-live-branch",
