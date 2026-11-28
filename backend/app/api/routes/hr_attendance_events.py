@@ -340,6 +340,8 @@ def list_attendance_anomalies(
 ):
     if from_date and to_date and to_date < from_date:
         raise HTTPException(status_code=422, detail="to_date cannot be earlier than from_date")
+    if offset < 0 or offset > 1000000:
+        raise HTTPException(status_code=422, detail="Attendance list offset must be between 0 and 1000000")
     if from_date and to_date and (to_date - from_date).days + 1 > 31:
         raise HTTPException(status_code=422, detail="Attendance anomaly query cannot exceed 31 calendar days")
     query = db.query(models.HRAttendanceAnomaly)
