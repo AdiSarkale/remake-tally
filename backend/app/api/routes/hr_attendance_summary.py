@@ -345,6 +345,8 @@ def list_attendance_corrections(
         raise HTTPException(status_code=422, detail="to_date cannot be earlier than from_date")
     if from_date and to_date and (to_date - from_date).days + 1 > 31:
         raise HTTPException(status_code=422, detail="Attendance correction query cannot exceed 31 calendar days")
+    if offset < 0 or offset > 1000000:
+        raise HTTPException(status_code=422, detail="Attendance correction offset must be between 0 and 1000000")
     query = db.query(models.HRAttendanceCorrectionRequest)
     if status:
         query = query.filter(models.HRAttendanceCorrectionRequest.status == status)
