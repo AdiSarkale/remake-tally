@@ -169,6 +169,8 @@ def list_shift_assignments(
     user: models.User = read_access,
 ):
     query = db.query(models.HRShiftAssignment)
+    if offset < 0 or offset > 1000000:
+        raise HTTPException(422, "Shift assignment offset must be between 0 and 1000000")
     if scope_type:
         query = query.filter(models.HRShiftAssignment.scope_type == scope_type)
     if employee_id:
