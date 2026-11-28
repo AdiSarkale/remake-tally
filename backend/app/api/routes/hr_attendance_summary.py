@@ -331,6 +331,7 @@ def list_attendance_corrections(
     from_date: date | None = None,
     to_date: date | None = None,
     limit: int = Query(default=500, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0, le=1000000),
     db: Session = Depends(get_db),
     user: models.User = Depends(require_permission("hr", "attendance_corrections", "view", "tenant")),
 ):
@@ -343,13 +344,16 @@ def list_attendance_corrections(
         query = query.filter(models.HRAttendanceCorrectionRequest.work_date >= from_date)
     if to_date:
         query = query.filter(models.HRAttendanceCorrectionRequest.work_date <= to_date)
-    rows = query.order_by(models.HRAttendanceCorrectionRequest.requested_at.desc()).limit(limit).all()
+    rows = query.order_by(
+        models.HRAttendanceCorrectionRequest.requested_at.desc(),
+        models.HRAttendanceCorrectionRequest.id.desc(),
+    ).all()
     visible = []
     for row in rows:
         scope = _correction_scope(db, user, row.work_date, "view")
         if scope is None or row.employee_id in scope:
             visible.append(_correction_output(row))
-    return visible
+    return visible[offset:offset + limit]
 
 
 @router.get("/corrections/self")
