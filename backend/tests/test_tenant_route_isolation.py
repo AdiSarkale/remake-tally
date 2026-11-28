@@ -1739,10 +1739,17 @@ def test_hr_p0_11_live_api_pagination_and_tenant_scope(isolated_tenants):
         (isolated_tenants["sessions"][1], "b"),
     ):
         tenant = Session()
-        tenant.add(models.RolePermissionGrant(
-            role="Admin", module="hr", feature="shift_rosters", action="read",
-            data_scope="tenant", allowed=True, updated_by="test",
-        ))
+        existing_grants = {
+            (grant.role, grant.module, grant.feature, grant.action, grant.data_scope)
+            for grant in tenant.query(models.RolePermissionGrant).all()
+        }
+        for feature, action in (("shift_rosters", "read"), ("employees", "read")):
+            key = ("Admin", "hr", feature, action, "tenant")
+            if key not in existing_grants:
+                tenant.add(models.RolePermissionGrant(
+                    role="Admin", module="hr", feature=feature, action=action,
+                    data_scope="tenant", allowed=True, updated_by="test",
+                ))
         if suffix == "a":
             employee_ids = [f"p011-{suffix}-1", f"p011-{suffix}-2"]
             tenant.add(models.HRShiftType(
