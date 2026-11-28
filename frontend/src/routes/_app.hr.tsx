@@ -146,7 +146,7 @@ function HrPage() {
           </>
         ) : null}
       </DetailSheet>
-      <BackendGap>Attendance, shift rosters, reporting and supervisor visibility are available in the HR workspace.</BackendGap>
+      <p className="text-sm text-muted-foreground">Attendance, shift rosters, reporting and supervisor visibility are available in the HR workspace.</p>
       </>}
     </div>
   );
