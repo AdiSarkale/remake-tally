@@ -1,0 +1,129 @@
+"""Regression tests for HR leave workflows and payroll state safeguards."""
+import ast
+from typing import get_args
+from datetime import date
+from pathlib import Path
+import sys
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+from types import SimpleNamespace
+
+from app.api.routes.hr_payroll import _calculate_employee_monthly_payroll
+from app.api.routes.hr_leave import _monthly_accrual_amount
+from app.modules.hr.leave import HRLeaveAccrualLedger
+from app.modules.hr.payroll_schemas import AttendanceStatus
+
+
+def _employee():
+    return SimpleNamespace(
+        id="emp-p0", emp_code="EMP-P0", name="P0 Employee",
+        department="Operations", joining_date=date(2000, 1, 1), end_date=None,
+    )
+
+
+def _profile():
+    return SimpleNamespace(
+        annual_salary=372000, basic_pct=50, hra_pct=0, da_pct=0,
+        conveyance_monthly=0, medical_allowance_monthly=0,
+        pf_pct=0, professional_tax_monthly=0, tds_monthly=0,
+    )
+
+
+def test_paid_and_unpaid_half_day_statuses_are_supported():
+    assert "paid_half_day" in get_args(AttendanceStatus)
+    assert "unpaid_half_day" in get_args(AttendanceStatus)
+
+
+def test_paid_half_day_does_not_create_absence_deduction():
+    result = _calculate_employee_monthly_payroll(
+        _employee(),
+        _profile(),
+        [SimpleNamespace(status="paid_half_day", work_date=date(2026, 10, 1), overtime_minutes=0)],
+        2026, 10, "calendar_days", 26, [5, 6], {},
+    )
+    assert result["paid_leave_days"] == 0.5
+    assert result["unpaid_leave_days"] == 0
+    assert result["absence_deduction"] == 0
+
+
+def test_unpaid_half_day_deducts_half_a_day():
+    result = _calculate_employee_monthly_payroll(
+        _employee(),
+        _profile(),
+        [SimpleNamespace(status="unpaid_half_day", work_date=date(2026, 10, 1), overtime_minutes=0)],
+        2026, 10, "calendar_days", 26, [5, 6], {},
+    )
+    assert result["unpaid_leave_days"] == 0.5
+    assert float(result["absence_deduction"]) == 500
+
+
+def test_payroll_api_exposes_separate_approval_lock_and_reversal_transitions():
+    path = Path(__file__).resolve().parents[1] / "app" / "api" / "routes" / "hr_payroll.py"
+    module = ast.parse(path.read_text(encoding="utf-8"))
+    functions = {
+        node.name for node in module.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    assert "prepare_monthly_payroll" in functions
+    assert "approve_monthly_payroll" in functions
+    assert "finalize_monthly_payroll" in functions
+    assert "lock_monthly_payroll" in functions
+    assert "reverse_monthly_payroll" in functions
+
+
+def test_leave_decision_does_not_allow_requestor_selected_approver():
+    path = Path(__file__).resolve().parents[1] / "app" / "api" / "routes" / "hr_leave.py"
+    source = path.read_text(encoding="utf-8")
+    module = ast.parse(source)
+    request_schema = next(
+        node for node in module.body if isinstance(node, ast.ClassDef) and node.name == "LeaveRequestIn"
+    )
+    fields = {
+        node.target.id for node in request_schema.body
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+    }
+    assert "approver_username" not in fields
+    assert "approver_username=department.hod_username" in source
+
+
+
+def test_monthly_leave_accrual_reaches_annual_entitlement_over_twelve_months():
+    period_end = date(2026, 1, 31)
+    monthly_amount = _monthly_accrual_amount(
+        12, "monthly", date(2026, 1, 1), period_end, period_end,
+    )
+    assert monthly_amount == 1.0
+    assert round(monthly_amount * 12, 2) == 12.0
+
+
+def test_monthly_prorated_leave_accrual_prorates_mid_month_joining():
+    period_end = date(2026, 4, 30)
+    amount = _monthly_accrual_amount(
+        12, "monthly_prorated", date(2026, 4, 16), period_end, period_end,
+    )
+    assert amount == 0.5
+
+
+def test_monthly_prorated_leave_accrual_prorates_mid_month_exit():
+    period_end = date(2026, 4, 30)
+    amount = _monthly_accrual_amount(
+        12, "monthly_prorated", date(2026, 4, 1), date(2026, 4, 15), period_end,
+    )
+    assert amount == 0.5
+
+
+def test_monthly_prorated_leave_accrual_respects_policy_effective_date():
+    period_end = date(2026, 4, 30)
+    amount = _monthly_accrual_amount(
+        12, "monthly_prorated", date(2026, 4, 21), period_end, period_end,
+    )
+    assert amount == 0.33
+
+
+def test_leave_accrual_ledger_has_one_entry_per_employee_type_and_month():
+    constraints = {
+        constraint.name for constraint in HRLeaveAccrualLedger.__table__.constraints
+    }
+    assert "uq_hr_leave_accrual_period" in constraints

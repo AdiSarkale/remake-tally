@@ -14,6 +14,10 @@ import * as H from "@/lib/api/hooks";
 import type * as T from "@/lib/api/types";
 import { useAuth } from "@/lib/auth";
 import { PayrollPanel } from "@/components/hr-payroll-panel";
+import { LeavePanel } from "@/components/hr-leave-panel";
+import { AuthorizationPanel } from "@/components/hr-authorization-panel";
+import { OvertimePanel } from "@/components/hr-overtime-panel";
+import { HrAttendanceWorkspace } from "@/components/hr-attendance-workspace";
 
 export const Route = createFileRoute("/_app/hr")({
   head: () => ({
@@ -28,13 +32,14 @@ export const Route = createFileRoute("/_app/hr")({
 });
 
 function HrPage() {
-  const { can } = useAuth();
+  const { can, profile } = useAuth();
   const canEdit = can("hr");
+  const canManageAccess = can("settings");
   const canManageEmployees = can("hr");
   const [showInactive, setShowInactive] = useState(false);
   const query = H.useEmployees(showInactive);
   const employeeTypes = H.useEmployeeTypes();
-  const [activeTab, setActiveTab] = useState<"employees" | "types" | "codes" | "payroll">("employees");
+  const [activeTab, setActiveTab] = useState<"employees" | "types" | "codes" | "payroll" | "leave" | "overtime" | "attendance" | "access">("employees");
   const orders = H.useProductionOrders();
   const create = H.useCreateEmployee();
   const update = H.useUpdateEmployee();
@@ -81,8 +86,12 @@ function HrPage() {
         <Button size="sm" variant={activeTab === "types" ? "default" : "outline"} role="tab" aria-selected={activeTab === "types"} onClick={() => setActiveTab("types")}>Employee Types</Button>
         <Button size="sm" variant={activeTab === "codes" ? "default" : "outline"} role="tab" aria-selected={activeTab === "codes"} onClick={() => setActiveTab("codes")}>Employee Code Rules</Button>
         {canEdit ? <Button size="sm" variant={activeTab === "payroll" ? "default" : "outline"} role="tab" aria-selected={activeTab === "payroll"} onClick={() => setActiveTab("payroll")}>Payroll</Button> : null}
+        <Button size="sm" variant={activeTab === "leave" ? "default" : "outline"} role="tab" aria-selected={activeTab === "leave"} onClick={() => setActiveTab("leave")}>Leave</Button>
+        <Button size="sm" variant={activeTab === "overtime" ? "default" : "outline"} role="tab" aria-selected={activeTab === "overtime"} onClick={() => setActiveTab("overtime")}>Overtime & Comp-Off</Button>
+        {canEdit ? <Button size="sm" variant={activeTab === "attendance" ? "default" : "outline"} role="tab" aria-selected={activeTab === "attendance"} onClick={() => setActiveTab("attendance")}>Attendance & Shifts</Button> : null}
+        {canManageAccess ? <Button size="sm" variant={activeTab === "access" ? "default" : "outline"} role="tab" aria-selected={activeTab === "access"} onClick={() => setActiveTab("access")}>Access Control</Button> : null}
       </div>
-      {activeTab === "types" ? <EmployeeTypesPanel canEdit={canEdit} /> : activeTab === "codes" ? <EmployeeCodeConfigPanel canEdit={canEdit} /> : activeTab === "payroll" ? <PayrollPanel canEdit={canEdit} /> : <>
+      {activeTab === "types" ? <EmployeeTypesPanel canEdit={canEdit} /> : activeTab === "codes" ? <EmployeeCodeConfigPanel canEdit={canEdit} /> : activeTab === "payroll" ? <PayrollPanel canEdit={canEdit} username={profile?.username ?? ""} />  : activeTab === "leave" ? <LeavePanel canManage={canEdit} username={profile?.username ?? ""} /> : activeTab === "overtime" ? <OvertimePanel canManage={canEdit} /> : activeTab === "attendance" ? <HrAttendanceWorkspace canManage={canEdit} /> : activeTab === "access" && canManageAccess ? <AuthorizationPanel /> : <>
       <div className="flex flex-wrap items-start justify-between gap-3"><PageHeader title="Employees" description="Employee codes are system-generated. Skills drive automatic operation assignment on production orders." />{canEdit ? <Button size="sm" variant="outline" onClick={() => setShowInactive((value) => !value)}>{showInactive ? "Hide inactive" : "Show historical employees"}</Button> : null}</div>
       <QueryTable
         query={query}
@@ -137,7 +146,7 @@ function HrPage() {
           </>
         ) : null}
       </DetailSheet>
-      <BackendGap>Shift rosters and attendance are not part of HR Foundation v1 and remain unimplemented.</BackendGap>
+      <p className="text-sm text-muted-foreground">Attendance, shift rosters, reporting and supervisor visibility are available in the HR workspace.</p>
       </>}
     </div>
   );

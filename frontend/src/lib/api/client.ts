@@ -101,6 +101,28 @@ export const api = {
 
 export { BASE_URL };
 
+/**
+ * Read a complete filtered list from array-returning paginated HR APIs.
+ * The endpoints keep their array contract for compatibility, but offset is
+ * applied after employee scope filtering. This helper is intentionally bounded.
+ */
+export async function getAllPages<T>(path: string, pageSize = 500, maxPages = 200): Promise<T[]> {
+  const base = path;
+  const queryStart = base.indexOf("?");
+  const pathname = queryStart >= 0 ? base.slice(0, queryStart) : base;
+  const existing = queryStart >= 0 ? base.slice(queryStart + 1) : "";
+  const rows: T[] = [];
+  for (let page = 0; page < maxPages; page += 1) {
+    const params = new URLSearchParams(existing);
+    params.set("limit", String(pageSize));
+    params.set("offset", String(page * pageSize));
+    const batch = await api.get<T[]>(pathname + "?" + params.toString());
+    rows.push(...batch);
+    if (batch.length < pageSize) return rows;
+  }
+  throw new ApiError(422, `Pagination safety limit reached (${maxPages * pageSize} records). Narrow the date range or employee filter.`);
+}
+
 
 export async function apiFetch<T = unknown>(
   path: string,

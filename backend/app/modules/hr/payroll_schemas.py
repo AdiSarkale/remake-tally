@@ -9,7 +9,7 @@ from app.modules.core.schemas import ORMModel
 
 SalaryCountMode = Literal["working_days", "calendar_days", "fixed_days"]
 CalendarDayType = Literal["working_day", "holiday", "week_off"]
-AttendanceStatus = Literal["present", "absent", "half_day", "paid_leave", "unpaid_leave", "unmarked"]
+AttendanceStatus = Literal["present", "absent", "half_day", "paid_leave", "unpaid_leave", "paid_half_day", "unpaid_half_day", "unmarked"]
 
 
 class PayrollSettingsIn(BaseModel):
@@ -159,7 +159,13 @@ class PayrollRunSummaryOut(BaseModel):
     status: str
     created_by: str
     created_at: datetime
-    finalized_at: datetime
+    finalized_at: datetime | None
+    revision: int = 1
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+    locked_at: datetime | None = None
+    reversed_at: datetime | None = None
+    reversal_reason: str = ""
     employee_count: int
     net_total: float
 

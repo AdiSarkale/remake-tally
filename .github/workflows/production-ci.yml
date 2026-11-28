@@ -2,7 +2,7 @@ name: Minitally CI
 
 on:
   push:
-    branches: ["main", "production", "phase-*"]
+    branches: ["main", "production", "phase-*", "feat/p0-hr-leave-payroll-authorization", "docs/hr-phase-2-implementation-status"]
     paths:
       - "backend/**"
       - "frontend/**"
@@ -96,6 +96,21 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies for live HR browser acceptance
+        working-directory: backend
+        run: pip install -r requirements.txt
+      - name: Start ephemeral SQLite API for live HR acceptance
+        run: |
+          PYTHONPATH=backend python backend/scripts/hr_p0_11_live_api_server.py > /tmp/p0-11-live-api.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health/live >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/p0-11-live-api.log
+          exit 1
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
@@ -105,3 +120,26 @@ jobs:
       - name: Production build
         working-directory: frontend
         run: npm run build
+      - name: Install Playwright for browser smoke tests
+        working-directory: frontend
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Start frontend for browser smoke tests
+        working-directory: frontend
+        run: |
+          VITE_API_URL=http://127.0.0.1:8000 npm run dev -- --host 0.0.0.0 > /tmp/nexora-vite.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:5173/ >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/nexora-vite.log
+          exit 1
+      - name: Verify employee, HR, Admin and Finance browser workflows (mock API smoke)
+        working-directory: frontend
+        run: node tests/e2e/smoke.mjs
+      - name: Verify P0.1-11 HR workflows against live FastAPI + SQLite
+        working-directory: frontend
+        env:
+          P0_11_LIVE_FRONTEND_URL: http://localhost:5173
+        run: node tests/e2e/live-api-acceptance.mjs

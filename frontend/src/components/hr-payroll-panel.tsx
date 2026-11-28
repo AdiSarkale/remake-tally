@@ -8,7 +8,7 @@ import { api, BASE_URL, getToken } from "@/lib/api/client";
 type Tab = "salary" | "attendance" | "calendar" | "payroll" | "settings";
 type SalaryMode = "working_days" | "calendar_days" | "fixed_days";
 type CalendarType = "working_day" | "holiday" | "week_off";
-type AttendanceStatus = "present" | "absent" | "half_day" | "paid_leave" | "unpaid_leave" | "unmarked";
+type AttendanceStatus = "present" | "absent" | "half_day" | "paid_leave" | "unpaid_leave" | "paid_half_day" | "unpaid_half_day" | "unmarked";
 interface SalaryRow {
   employee_id: string; employee_code: string; employee_name: string; department: string; active: boolean; configured: boolean;
   annual_salary: number; basic_pct: number; hra_pct: number; da_pct: number; conveyance_monthly: number; medical_allowance_monthly: number;
@@ -19,7 +19,7 @@ interface SalaryInput {
   annual_salary: number; basic_pct: number; hra_pct: number; da_pct: number; conveyance_monthly: number;
   medical_allowance_monthly: number; pf_pct: number; professional_tax_monthly: number; tds_monthly: number;
 }
-interface PayrollSettings { id: number; salary_count_mode: SalaryMode; monthly_salary_days: number; week_off_days: number[]; updated_at?: string | null; }
+interface PayrollSettings { id: number; salary_count_mode: SalaryMode; monthly_salary_days: number; week_off_days: number[]; timezone: string; updated_at?: string | null; }
 interface CalendarDay { work_date: string; day_type: CalendarType; description: string; is_override: boolean; }
 interface AttendanceRow {
   id: string | null; employee_id: string; employee_code: string; employee_name: string; work_date: string; status: string;
@@ -32,17 +32,22 @@ interface PayrollItem {
   present_days: number; half_days: number; absent_days: number; paid_leave_days: number; unpaid_leave_days: number; overtime_minutes: number;
 }
 interface PayrollPreview { year: number; month: number; salary_count_mode: SalaryMode; salary_count_days: number; items: PayrollItem[]; }
-interface PayrollRun { id: string; year: number; month: number; status: string; created_by: string; created_at: string; finalized_at: string; employee_count: number; net_total: number; }
+interface PayrollRun { id: string; year: number; month: number; status: string; revision: number; created_by: string; created_at: string; finalized_at: string | null; approved_by?: string | null; approved_at?: string | null; locked_at?: string | null; reversed_at?: string | null; reversal_reason?: string; superseded_by?: string | null; superseded_at?: string | null; superseded_reason?: string; employee_count: number; net_total: number; }
+interface PayrollException { id: string; employee_id: string | null; work_date: string | null; code: string; severity: "blocking" | "warning"; status: string; detail: string; source_reference: string; }
+interface PayrollDailySnapshot { id: string; employee_id: string; work_date: string; input_fingerprint: string; snapshot: Record<string, unknown>; created_at: string; }
 const emptySalary: SalaryInput = {
   annual_salary: 0, basic_pct: 50, hra_pct: 40, da_pct: 0, conveyance_monthly: 0,
   medical_allowance_monthly: 0, pf_pct: 12, professional_tax_monthly: 200, tds_monthly: 0,
 };
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const fallbackTimeZones = ["Asia/Kolkata", "UTC", "Asia/Dubai", "Asia/Singapore", "Asia/Tokyo", "Europe/London", "Europe/Berlin", "America/New_York", "America/Los_Angeles", "Australia/Sydney"];
+const timeZoneApi = Intl as unknown as { supportedValuesOf?: (key: "timeZone") => string[] };
+const availableTimeZones: string[] = Array.from(new Set(["UTC", ...(timeZoneApi.supportedValuesOf ? timeZoneApi.supportedValuesOf("timeZone") : fallbackTimeZones)]));
 const money = (value: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(value || 0);
 const monthName = (year: number, month: number) => new Date(year, month - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 const dayLabel = (value: string) => new Date(value + "T12:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" });
 
-export function PayrollPanel({ canEdit }: { canEdit: boolean }) {
+export function PayrollPanel({ canEdit, username }: { canEdit: boolean; username: string }) {
   const today = new Date();
   const [tab, setTab] = useState<Tab>("salary");
   const [year, setYear] = useState(today.getFullYear());
@@ -52,11 +57,17 @@ export function PayrollPanel({ canEdit }: { canEdit: boolean }) {
   const [calendar, setCalendar] = useState<CalendarDay[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRow[]>([]);
   const [attendanceFile, setAttendanceFile] = useState<File | null>(null);
+  const [importTimezone, setImportTimezone] = useState("Asia/Kolkata");
   const [selectedEmployee, setSelectedEmployee] = useState("");
   const [editingEmployee, setEditingEmployee] = useState<string | null>(null);
   const [salaryForm, setSalaryForm] = useState<SalaryInput>(emptySalary);
   const [preview, setPreview] = useState<PayrollPreview | null>(null);
   const [runs, setRuns] = useState<PayrollRun[]>([]);
+  const [exceptions, setExceptions] = useState<PayrollException[]>([]);
+  const [dailySnapshots, setDailySnapshots] = useState<PayrollDailySnapshot[]>([]);
+  const [showDailySnapshots, setShowDailySnapshots] = useState(false);
+  const [snapshotEmployeeId, setSnapshotEmployeeId] = useState("");
+  const [snapshotFilterInitialized, setSnapshotFilterInitialized] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -72,7 +83,7 @@ export function PayrollPanel({ canEdit }: { canEdit: boolean }) {
     } catch (err) { fail(err); }
   }, []);
   const loadSettings = useCallback(async () => {
-    try { setSettings(await api.get<PayrollSettings>("/hr/payroll/settings")); } catch (err) { fail(err); }
+    try { const row = await api.get<PayrollSettings>("/hr/payroll/settings"); setSettings(row); setImportTimezone(row.timezone || "Asia/Kolkata"); } catch (err) { fail(err); }
   }, []);
   const loadCalendar = useCallback(async () => {
     try { setCalendar(await api.get<CalendarDay[]>("/hr/calendar?year=" + year + "&month=" + month)); } catch (err) { fail(err); }
@@ -174,7 +185,7 @@ export function PayrollPanel({ canEdit }: { canEdit: boolean }) {
       const formData = new FormData();
       formData.append("file", attendanceFile);
       const response = await fetch(
-        BASE_URL + "/api/v1/hr/attendance/import?year=" + year + "&month=" + month,
+        BASE_URL + "/api/v1/hr/attendance/import?year=" + year + "&month=" + month + "&import_timezone=" + encodeURIComponent(importTimezone),
         { method: "POST", headers: token ? { Authorization: "Bearer " + token } : {}, body: formData },
       );
       if (!response.ok) {
@@ -193,11 +204,91 @@ export function PayrollPanel({ canEdit }: { canEdit: boolean }) {
     } catch (err) { fail(err); } finally { setBusy(false); }
   };
 
+  const selectedRun = runs
+    .filter((run) => run.year === year && run.month === month)
+    .sort((a, b) => b.revision - a.revision)[0];
+  useEffect(() => {
+    if (tab !== "payroll" || !selectedRun) {
+      setExceptions([]);
+      setDailySnapshots([]);
+      setShowDailySnapshots(false);
+      return;
+    }
+    setDailySnapshots([]);
+    setShowDailySnapshots(false);
+    void api.get<PayrollException[]>("/hr/payroll/revisions/" + selectedRun.id + "/exceptions")
+      .then(setExceptions).catch(fail);
+  }, [tab, selectedRun?.id]);
+
+  const refreshPayroll = async () => Promise.all([loadPreview(), loadRuns()]);
+
+  const preparePayroll = async () => {
+    setBusy(true);
+    try {
+      const run = await api.post<PayrollRun>("/hr/payroll/runs/" + year + "/" + month + "/prepare");
+      toast.success("Payroll snapshot prepared — revision " + run.revision);
+      await refreshPayroll();
+    } catch (err) { fail(err); } finally { setBusy(false); }
+  };
+  const supersedePayroll = async () => {
+    if (!selectedRun) return;
+    const reason = window.prompt("Reason for superseding this payroll revision (minimum 10 characters):");
+    if (!reason?.trim() || reason.trim().length < 10) return;
+    setBusy(true);
+    try {
+      await api.post("/hr/payroll/runs/" + selectedRun.id + "/supersede", { reason });
+      toast.success("Payroll revision superseded; the original snapshot remains in history.");
+      await refreshPayroll();
+    } catch (err) { fail(err); } finally { setBusy(false); }
+  };
+  useEffect(() => {
+    if (!snapshotFilterInitialized && selectedEmployee) {
+      setSnapshotEmployeeId(selectedEmployee);
+      setSnapshotFilterInitialized(true);
+    }
+  }, [snapshotFilterInitialized, selectedEmployee]);
+
+  const loadDailySnapshots = async () => {
+    if (!selectedRun) return;
+    setBusy(true);
+    try {
+      const query = snapshotEmployeeId ? "?employee_id=" + encodeURIComponent(snapshotEmployeeId) : "";
+      setDailySnapshots(await api.get<PayrollDailySnapshot[]>("/hr/payroll/revisions/" + selectedRun.id + "/daily-snapshots" + query));
+      setShowDailySnapshots(true);
+    } catch (err) { fail(err); } finally { setBusy(false); }
+  };
+  const approvePayroll = async () => {
+    if (!selectedRun) return;
+    setBusy(true);
+    try {
+      await api.post("/hr/payroll/runs/" + selectedRun.id + "/approve");
+      toast.success("Payroll approved"); await refreshPayroll();
+    } catch (err) { fail(err); } finally { setBusy(false); }
+  };
   const finalizePayroll = async () => {
     setBusy(true);
     try {
       await api.post("/hr/payroll/runs/" + year + "/" + month + "/finalize");
-      toast.success("Payroll finalized for " + monthName(year, month)); await Promise.all([loadPreview(), loadRuns()]);
+      toast.success("Payroll finalized for " + monthName(year, month)); await refreshPayroll();
+    } catch (err) { fail(err); } finally { setBusy(false); }
+  };
+  const lockPayroll = async () => {
+    if (!selectedRun) return;
+    setBusy(true);
+    try {
+      await api.post("/hr/payroll/runs/" + selectedRun.id + "/lock");
+      toast.success("Payroll locked"); await refreshPayroll();
+    } catch (err) { fail(err); } finally { setBusy(false); }
+  };
+  const reversePayroll = async () => {
+    if (!selectedRun) return;
+    const reason = window.prompt("Enter the reason for reversing this payroll (minimum 10 characters):");
+    if (!reason?.trim()) return;
+    setBusy(true);
+    try {
+      await api.post("/hr/payroll/runs/" + selectedRun.id + "/reverse", { reason });
+      toast.success("Payroll revision reversed; the original snapshot remains in history");
+      await refreshPayroll();
     } catch (err) { fail(err); } finally { setBusy(false); }
   };
   const downloadSlip = async (employeeId: string, code: string) => {
@@ -255,7 +346,8 @@ export function PayrollPanel({ canEdit }: { canEdit: boolean }) {
             ["pf_pct", "Employee PF (% of basic)"], ["professional_tax_monthly", "Professional tax / month (₹)"], ["tds_monthly", "TDS / month (₹)"],
           ] as const).map(([field, label]) => <label key={field} className="space-y-1 text-sm"><span>{label}</span><Input disabled={!canEdit || busy} type="number" min="0" step="0.01" value={salaryForm[field]} onChange={(e) => setSalaryForm((old) => ({ ...old, [field]: Number(e.target.value) }))} /></label>)}
         </div>
-        <p className="text-xs text-muted-foreground">Basic + HRA + DA + fixed allowances must not exceed monthly gross. Confirm statutory PF and tax values with your payroll policy.</p>
+        <p className="text-xs text-muted-foreground">Basic + HRA + DA + fixed allowances must not exceed monthly gross.</p>
+        <p role="note" className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-xs text-amber-900 dark:text-amber-200">PF, Professional Tax (PT) and TDS are configured/manual deductions in this release. They are not certified statutory calculations. Verify the applicable jurisdiction, employee eligibility, effective-date rules and current rates with a qualified payroll professional before finalizing live payroll.</p>
         {canEdit ? <Button disabled={busy || salaryForm.annual_salary <= 0} onClick={() => void saveSalary()}><Save className="mr-1 size-4" />Save salary structure</Button> : null}
         <div className="grid gap-2 rounded-md bg-muted/40 p-3 text-sm sm:grid-cols-3">
           <div>Monthly gross <strong>{money(salaryForm.annual_salary / 12)}</strong></div>
@@ -290,19 +382,20 @@ export function PayrollPanel({ canEdit }: { canEdit: boolean }) {
     {tab === "attendance" ? <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3"><label className="text-sm font-medium" htmlFor="attendance-employee">Employee</label><select id="attendance-employee" className="h-9 min-w-[240px] rounded-md border bg-background px-3 text-sm" value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)}>{employees.map((row) => <option key={row.employee_id} value={row.employee_id}>{row.employee_code} — {row.employee_name}</option>)}</select><Button size="sm" variant="outline" disabled={busy} onClick={() => void loadAttendance()}>Refresh month</Button></div>
       <div className="flex flex-wrap items-center gap-3 rounded-lg border p-3">
-        <div className="min-w-0 flex-1"><h3 className="font-medium">Bulk attendance import</h3><p className="text-xs text-muted-foreground">Download the template for {monthName(year, month)}. The import validates the entire workbook and changes no rows if any validation error is found.</p></div>
+        <div className="min-w-0 flex-1"><h3 className="font-medium">Bulk attendance import</h3><p className="text-xs text-muted-foreground">Download the template for {monthName(year, month)}. Select the timezone in which the Excel punch times were recorded. The import validates the entire workbook and changes no rows if any validation error is found.</p></div>
         <Button size="sm" variant="outline" disabled={busy} onClick={() => void downloadAttendanceTemplate()}><Download className="mr-1 size-3.5" />Download Excel template</Button>
         {canEdit ? <>
+          <label className="min-w-[220px] space-y-1 text-xs"><span className="block font-medium">Timezone used by this Excel file</span><select aria-label="Attendance import timezone" className="h-9 w-full rounded-md border bg-background px-2 text-sm" disabled={busy} value={importTimezone} onChange={(event) => setImportTimezone(event.target.value)}>{!availableTimeZones.includes(importTimezone) ? <option value={importTimezone}>{importTimezone}</option> : null}{availableTimeZones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}</select></label>
           <label className="text-sm"><span className="sr-only">Choose attendance workbook</span><input key={attendanceFile ? attendanceFile.name + ":" + attendanceFile.size : "attendance-empty"} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={busy} className="max-w-[260px] text-sm file:mr-2 file:rounded-md file:border file:bg-background file:px-2 file:py-1" onChange={(event) => setAttendanceFile(event.target.files?.[0] ?? null)} /></label>
           <Button size="sm" disabled={busy || !attendanceFile} onClick={() => void importAttendanceWorkbook()}><Upload className="mr-1 size-3.5" />Import attendance</Button>
         </> : null}
       </div>
-      <p className="text-sm text-muted-foreground">The fixed format is: Employee Code, Work Date, Status, Overtime Minutes, Punch In, Punch Out, Note. Use one row per employee per date; the Work Date must be within the selected month. Accepted statuses are present, half_day, absent, paid_leave, unpaid_leave, and unmarked (clears that date).</p>
+      <p className="text-sm text-muted-foreground">The fixed format is: Employee Code, Work Date, Status, Overtime Minutes, Punch In, Punch Out, Note. Use one row per employee per date; the Work Date must be within the selected month. Accepted statuses are present, half_day, absent, paid_leave, unpaid_leave, paid_half_day, unpaid_half_day, and unmarked (clears that date).</p>
       <p className="text-sm text-muted-foreground">Attendance is tracked for each calendar day of the selected month. A holiday/week-off may still be marked present when worked.</p>
       <div className="overflow-x-auto rounded-lg border"><table className="w-full min-w-[900px] text-sm"><thead className="bg-muted/50 text-left"><tr>{["Date", "Calendar", "Attendance", "OT minutes", "Note", "Action"].map((title) => <th key={title} className="px-3 py-2 font-medium">{title}</th>)}</tr></thead>
         <tbody>{attendance.map((row) => <tr key={row.work_date} className="border-t"><td className="px-3 py-2">{dayLabel(row.work_date)}</td>
           <td className="px-3 py-2">{row.calendar_type.replace("_", " ")}{row.calendar_description ? <div className="text-xs text-muted-foreground">{row.calendar_description}</div> : null}</td>
-          <td className="px-3 py-2"><select disabled={!canEdit || busy} aria-label={"Attendance " + row.work_date} className="h-8 rounded-md border bg-background px-2" value={(["present", "absent", "half_day", "paid_leave", "unpaid_leave", "unmarked"] as string[]).includes(row.status) ? row.status : "unmarked"} onChange={(e) => patchAttendance(row.work_date, { status: e.target.value })}>{[["present", "Present"], ["absent", "Absent"], ["half_day", "Half day"], ["paid_leave", "Paid leave"], ["unpaid_leave", "Unpaid leave"], ["unmarked", "Unmarked"]].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></td>
+          <td className="px-3 py-2"><select disabled={!canEdit || busy} aria-label={"Attendance " + row.work_date} className="h-8 rounded-md border bg-background px-2" value={(["present", "absent", "half_day", "paid_leave", "unpaid_leave", "paid_half_day", "unpaid_half_day", "unmarked"] as string[]).includes(row.status) ? row.status : "unmarked"} onChange={(e) => patchAttendance(row.work_date, { status: e.target.value })}>{[["present", "Present"], ["absent", "Absent"], ["half_day", "Half day (unpaid)"], ["paid_half_day", "Paid half day"], ["unpaid_half_day", "Unpaid half day"], ["paid_leave", "Paid leave"], ["unpaid_leave", "Unpaid leave"], ["unmarked", "Unmarked"]].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></td>
           <td className="px-3 py-2"><Input className="w-24" type="number" min="0" max="1440" disabled={!canEdit || busy} value={row.overtime_minutes} onChange={(e) => patchAttendance(row.work_date, { overtime_minutes: Number(e.target.value) })} /></td>
           <td className="px-3 py-2"><Input className="min-w-[140px]" disabled={!canEdit || busy} value={row.note} onChange={(e) => patchAttendance(row.work_date, { note: e.target.value })} /></td>
           <td className="px-3 py-2">{canEdit ? <Button size="sm" disabled={busy} onClick={() => void saveAttendance(row)}><Save className="mr-1 size-3.5" />Save</Button> : null}</td>
@@ -319,17 +412,54 @@ export function PayrollPanel({ canEdit }: { canEdit: boolean }) {
     </div> : <p className="text-sm text-muted-foreground">Loading payroll settings…</p> : null}
 
     {tab === "payroll" ? <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"><div><h3 className="font-semibold">Payroll preview — {monthName(year, month)}</h3><p className="text-sm text-muted-foreground">Divisor: {preview?.salary_count_days ?? "—"} days ({preview?.salary_count_mode.replace("_", " ") ?? "loading"}). Finalization snapshots the month’s payroll.</p></div>
-        <div className="flex gap-2"><Button variant="outline" disabled={busy} onClick={() => void Promise.all([loadPreview(), loadRuns()])}>Refresh</Button>{canEdit ? <Button disabled={busy || !preview?.items.some((item) => item.configured) || runs.some((run) => run.year === year && run.month === month && run.status === "finalized")} onClick={() => void finalizePayroll()}>Finalize month</Button> : null}</div></div>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+        <div>
+          <h3 className="font-semibold">Payroll preview — {monthName(year, month)}</h3>
+          <p className="text-sm text-muted-foreground">Divisor: {preview?.salary_count_days ?? "—"} days ({preview?.salary_count_mode.replace("_", " ") ?? "loading"}).</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {selectedRun ? "Revision " + selectedRun.revision + " · " + selectedRun.status + (selectedRun.approved_by ? " · Approved by " + selectedRun.approved_by : "") : "No payroll snapshot prepared for this period."}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" disabled={busy} onClick={() => void refreshPayroll()}>Refresh</Button>
+          {canEdit && (!selectedRun || selectedRun.status === "reversed" || selectedRun.status === "superseded") ? <Button disabled={busy || !preview?.items.some((item) => item.configured)} onClick={() => void preparePayroll()}>Prepare snapshot</Button> : null}
+          {canEdit && (selectedRun?.status === "prepared" || selectedRun?.status === "approved") ? <Button variant="outline" disabled={busy} onClick={() => void supersedePayroll()}>Supersede revision</Button> : null}
+          {canEdit && selectedRun?.status === "prepared" && selectedRun.created_by !== username ? <Button disabled={busy} onClick={() => void approvePayroll()}>Approve</Button> : null}
+          {canEdit && selectedRun?.status === "prepared" && selectedRun.created_by === username ? <span className="self-center text-xs text-muted-foreground">Awaiting a different approver</span> : null}
+          {canEdit && selectedRun?.status === "approved" ? <Button disabled={busy} onClick={() => void finalizePayroll()}>Finalize</Button> : null}
+          {canEdit && selectedRun?.status === "finalized" ? <Button disabled={busy} onClick={() => void lockPayroll()}>Lock payroll</Button> : null}
+          {canEdit && (selectedRun?.status === "finalized" || selectedRun?.status === "locked") ? <Button variant="destructive" disabled={busy} onClick={() => void reversePayroll()}>Reverse</Button> : null}
+        </div>
+      </div>
+      {selectedRun ? <div className="flex flex-wrap items-end gap-2">
+        <label className="min-w-[220px] space-y-1 text-xs"><span className="block font-medium">Daily snapshot employee</span><select className="h-9 w-full rounded-md border bg-background px-2 text-sm" value={snapshotEmployeeId} onChange={(event) => setSnapshotEmployeeId(event.target.value)}><option value="">All employees (large result)</option>{employees.map((employee) => <option key={employee.employee_id} value={employee.employee_id}>{employee.employee_code} · {employee.employee_name}</option>)}</select></label>
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => void loadDailySnapshots()}>View daily source snapshots</Button>
+        <span className="self-center text-xs text-muted-foreground">{exceptions.filter((row) => row.status === "open" && row.severity === "blocking").length} blocking exception(s)</span>
+      </div> : null}
+      {exceptions.length ? <div className="space-y-2 rounded-lg border p-3">
+        <h3 className="font-semibold">Payroll exceptions</h3>
+        <div className="space-y-2">{exceptions.map((row) => <div key={row.id} className="rounded-md border p-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{row.code}</span><span className={row.severity === "blocking" ? "text-destructive font-medium" : "text-muted-foreground"}>{row.severity}</span><span className="text-muted-foreground">{row.status}</span><span>{row.work_date ?? "Period-level"}</span></div>
+          <p className="mt-1">{row.detail}</p>{row.source_reference ? <p className="mt-1 text-xs text-muted-foreground">Source: {row.source_reference}</p> : null}
+        </div>)}</div>
+      </div> : null}
+      {showDailySnapshots ? <div className="space-y-2 rounded-lg border p-3">
+        <div className="flex items-center justify-between"><h3 className="font-semibold">Immutable daily source snapshots</h3><Button size="sm" variant="outline" onClick={() => setShowDailySnapshots(false)}>Hide</Button></div>
+        <div className="overflow-x-auto"><table className="w-full min-w-[850px] text-sm"><thead className="bg-muted/50 text-left"><tr>{["Employee ID","Work date","Day type","Roster","Attendance","Approved OT","Source anomalies","Fingerprint"].map(h=><th key={h} className="px-2 py-2">{h}</th>)}</tr></thead>
+        <tbody>{dailySnapshots.map(row=>{
+          const s=row.snapshot as {day_type?:string;roster?:{status?:string;shift_code?:string};attendance?:{status?:string};approved_payable_overtime_minutes?:number;source_anomalies?:unknown[]};
+          return <tr key={row.id} className="border-t"><td className="px-2 py-2">{row.employee_id}</td><td className="px-2 py-2">{row.work_date}</td><td className="px-2 py-2">{s.day_type ?? "—"}</td><td className="px-2 py-2">{s.roster?.status ? s.roster.status + (s.roster.shift_code ? " · "+s.roster.shift_code : "") : "—"}</td><td className="px-2 py-2">{s.attendance?.status ?? "—"}</td><td className="px-2 py-2">{s.approved_payable_overtime_minutes ?? 0} min</td><td className="px-2 py-2">{s.source_anomalies?.length ?? 0}</td><td className="px-2 py-2"><details><summary className="cursor-pointer text-xs">Inspect</summary><pre className="mt-2 max-w-xl overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(row.snapshot,null,2)}</pre><p className="mt-1 text-xs text-muted-foreground">{row.input_fingerprint}</p></details></td></tr>
+        })}{dailySnapshots.length===0?<tr><td colSpan={8} className="px-3 py-4 text-center text-muted-foreground">No daily snapshots found.</td></tr>:null}</tbody></table></div>
+      </div> : null}
       <div className="overflow-x-auto rounded-lg border"><table className="w-full min-w-[1050px] text-sm"><thead className="bg-muted/50 text-left"><tr>{["Employee", "Annual salary", "Gross/month", "Absent", "Half days", "Unpaid leave", "Total deductions", "Overtime pay", "Net payable", "Slip"].map((title) => <th key={title} className="px-3 py-2 font-medium">{title}</th>)}</tr></thead>
         <tbody>{(preview?.items ?? []).map((item) => <tr key={item.employee_id} className="border-t"><td className="px-3 py-2"><div>{item.employee_name}</div><div className="text-xs text-muted-foreground">{item.employee_code}{item.configured ? "" : " · Salary missing"}</div></td>
           <td className="px-3 py-2 tabular-nums">{money(item.annual_salary)}</td><td className="px-3 py-2 tabular-nums">{money(item.monthly_gross)}</td><td className="px-3 py-2">{item.absent_days}</td><td className="px-3 py-2">{item.half_days}</td><td className="px-3 py-2">{item.unpaid_leave_days}</td>
           <td className="px-3 py-2 tabular-nums">{money(item.absence_deduction + item.employee_pf + item.professional_tax + item.tds)}</td><td className="px-3 py-2 tabular-nums">{money(item.overtime_pay)}</td><td className="px-3 py-2 font-semibold tabular-nums">{money(item.net_pay)}</td>
-          <td className="px-3 py-2">{runs.some((run) => run.year === year && run.month === month && run.status === "finalized") ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void downloadSlip(item.employee_id, item.employee_code)}><Download className="mr-1 size-3.5" />PDF</Button> : "—"}</td>
+          <td className="px-3 py-2">{(selectedRun?.status === "finalized" || selectedRun?.status === "locked") ? <Button size="sm" variant="outline" disabled={busy} onClick={() => void downloadSlip(item.employee_id, item.employee_code)}><Download className="mr-1 size-3.5" />PDF</Button> : "—"}</td>
         </tr>)}{(preview?.items.length ?? 0) === 0 ? <tr><td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">No active employees for this period.</td></tr> : null}</tbody>
       </table></div>
-      <div className="space-y-2"><h3 className="font-semibold">Finalized payroll history</h3><div className="overflow-x-auto rounded-lg border"><table className="w-full min-w-[600px] text-sm"><thead className="bg-muted/50 text-left"><tr>{["Period", "Employees", "Net total", "Status", "Created by"].map((title) => <th key={title} className="px-3 py-2 font-medium">{title}</th>)}</tr></thead>
-        <tbody>{runs.map((run) => <tr key={run.id} className="border-t"><td className="px-3 py-2">{monthName(run.year, run.month)}</td><td className="px-3 py-2">{run.employee_count}</td><td className="px-3 py-2 tabular-nums">{money(run.net_total)}</td><td className="px-3 py-2 capitalize">{run.status}</td><td className="px-3 py-2">{run.created_by}</td></tr>)}{runs.length === 0 ? <tr><td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">No finalized payroll months yet.</td></tr> : null}</tbody></table></div></div>
+      <div className="space-y-2"><h3 className="font-semibold">Payroll revision history</h3><div className="overflow-x-auto rounded-lg border"><table className="w-full min-w-[600px] text-sm"><thead className="bg-muted/50 text-left"><tr>{["Period / revision", "Employees", "Net total", "Status", "Created by", "Approved by", "Supersession reason"].map((title) => <th key={title} className="px-3 py-2 font-medium">{title}</th>)}</tr></thead>
+        <tbody>{runs.map((run) => <tr key={run.id} className="border-t"><td className="px-3 py-2">{monthName(run.year, run.month)} · r{run.revision}</td><td className="px-3 py-2">{run.employee_count}</td><td className="px-3 py-2 tabular-nums">{money(run.net_total)}</td><td className="px-3 py-2 capitalize">{run.status}</td><td className="px-3 py-2">{run.created_by}</td><td className="px-3 py-2">{run.approved_by || "—"}</td><td className="px-3 py-2 text-xs">{run.superseded_reason || "—"}</td></tr>)}{runs.length === 0 ? <tr><td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">No payroll runs yet.</td></tr> : null}</tbody></table></div></div>
     </div> : null}
   </section>;
 }

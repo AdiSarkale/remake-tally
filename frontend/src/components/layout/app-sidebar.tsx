@@ -8,6 +8,7 @@ import {
   ShoppingCart,
   TrendingUp,
   Users,
+  CalendarClock,
   Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,7 @@ const NAV: NavItem[] = [
   { to: "/production", label: "Production", icon: Factory, area: "production" },
   { to: "/finance", label: "Finance", icon: Wallet, area: "finance" },
   { to: "/hr", label: "HR", icon: Users, anyArea: ["production", "hr"] },
+  { to: "/attendance", label: "My Attendance", icon: CalendarClock },
   { to: "/reports", label: "Reports", icon: FileBarChart, area: "reports" },
   { to: "/settings", label: "Settings", icon: Settings, area: "settings" },
 ];

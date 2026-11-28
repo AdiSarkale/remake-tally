@@ -1,0 +1,71 @@
+"""Seed exact roster read grants for the P0.1-11 attendance workspace.
+
+Revision ID: p0_hr_roster_ui_read_028
+Revises: p0_hr_payroll_supersede_027
+"""
+from alembic import op
+import sqlalchemy as sa
+import uuid
+
+revision = "p0_hr_roster_ui_read_028"
+down_revision = "p0_hr_payroll_supersede_027"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    bind = op.get_bind()
+    grants = sa.Table("role_permission_grants", sa.MetaData(), autoload_with=bind)
+    existing = {
+        (row.role, row.module, row.feature, row.action, row.data_scope)
+        for row in bind.execute(sa.select(
+            grants.c.role, grants.c.module, grants.c.feature,
+            grants.c.action, grants.c.data_scope,
+        ))
+    }
+    rows = []
+    grant_specs = [
+        (role, feature, action, "tenant")
+        for role in ("Admin", "HR")
+        for feature, actions in (
+            ("shifts", ("read", "write")),
+            ("shift_assignments", ("read", "write")),
+            ("shift_rosters", ("read", "write")),
+        )
+        for action in actions
+    ]
+    for role, feature, action, scope in grant_specs:
+        key = (role, "hr", feature, action, scope)
+        if key not in existing:
+            rows.append({
+                "id": str(uuid.uuid4()),
+                "role": role,
+                "module": "hr",
+                "feature": feature,
+                "action": action,
+                "data_scope": scope,
+                "allowed": True,
+                "updated_by": "migration:p0_hr_roster_ui_read_028",
+            })
+    operator_key = ("Operator", "hr", "shift_rosters", "read", "self")
+    if operator_key not in existing:
+        rows.append({
+            "id": str(uuid.uuid4()),
+            "role": "Operator",
+            "module": "hr",
+            "feature": "shift_rosters",
+            "action": "read",
+            "data_scope": "self",
+            "allowed": True,
+            "updated_by": "migration:p0_hr_roster_ui_read_028",
+        })
+    if rows:
+        op.bulk_insert(grants, rows)
+
+
+def downgrade() -> None:
+    bind = op.get_bind()
+    grants = sa.Table("role_permission_grants", sa.MetaData(), autoload_with=bind)
+    op.execute(sa.delete(grants).where(
+        grants.c.updated_by == "migration:p0_hr_roster_ui_read_028",
+    ))

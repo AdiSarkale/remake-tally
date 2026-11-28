@@ -13,6 +13,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
 import { Route as AppApprovalsRouteImport } from './routes/_app.approvals'
+import { Route as AppAttendanceRouteImport } from './routes/_app.attendance'
 import { Route as AppFinanceRouteImport } from './routes/_app.finance'
 import { Route as AppHrRouteImport } from './routes/_app.hr'
 import { Route as AppInventoryRouteImport } from './routes/_app.inventory'
@@ -34,6 +35,11 @@ const LoginRoute = LoginRouteImport.update({
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAttendanceRoute = AppAttendanceRouteImport.update({
+  id: '/_app/attendance',
+  path: '/attendance',
   getParentRoute: () => AppRoute,
 } as any)
 const AppApprovalsRoute = AppApprovalsRouteImport.update({
@@ -85,6 +91,7 @@ const AppSettingsRoute = AppSettingsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
+  '/attendance': typeof AppAttendanceRoute
   '/approvals': typeof AppApprovalsRoute
   '/finance': typeof AppFinanceRoute
   '/hr': typeof AppHrRoute
@@ -96,6 +103,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRoute
 }
 export interface FileRoutesByTo {
+  '/attendance': typeof AppAttendanceRoute
   '/login': typeof LoginRoute
   '/approvals': typeof AppApprovalsRoute
   '/finance': typeof AppFinanceRoute
@@ -112,6 +120,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/_app/attendance': typeof AppAttendanceRoute
   '/_app/approvals': typeof AppApprovalsRoute
   '/_app/finance': typeof AppFinanceRoute
   '/_app/hr': typeof AppHrRoute
@@ -128,6 +137,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/attendance'
     | '/approvals'
     | '/finance'
     | '/hr'
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
+    | '/attendance'
     | '/approvals'
     | '/finance'
     | '/hr'
@@ -154,6 +165,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_app'
     | '/login'
+    | '/_app/attendance'
     | '/_app/approvals'
     | '/_app/finance'
     | '/_app/hr'
@@ -192,6 +204,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/attendance': {
+      id: '/_app/attendance'
+      path: '/attendance'
+      fullPath: '/attendance'
+      preLoaderRoute: typeof AppAttendanceRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/approvals': {
@@ -261,6 +280,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppAttendanceRoute: typeof AppAttendanceRoute
   AppApprovalsRoute: typeof AppApprovalsRoute
   AppFinanceRoute: typeof AppFinanceRoute
   AppHrRoute: typeof AppHrRoute
@@ -274,6 +294,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAttendanceRoute: AppAttendanceRoute,
   AppApprovalsRoute: AppApprovalsRoute,
   AppFinanceRoute: AppFinanceRoute,
   AppHrRoute: AppHrRoute,
