@@ -287,7 +287,7 @@ try {
     await page.getByLabel("name", { exact: true }).first().fill("Day Shift Updated");
     await page.getByRole("button", { name: "Update shift", exact: true }).click();
     await page.getByText("DAY · Day Shift Updated · 09:", { exact: false }).waitFor();
-    await page.getByLabel("Shift", { exact: true }).nth(1).selectOption(shift.id);
+    await page.getByLabel("Shift", { exact: true }).first().selectOption(shift.id);
     await page.getByRole("button", { name: "Edit", exact: true }).nth(1).click();
     await page.getByLabel("name", { exact: true }).nth(1).fill("Lunch break updated");
     await page.getByRole("button", { name: "Update break rule", exact: true }).click();
