@@ -334,6 +334,7 @@ def list_attendance_anomalies(
     from_date: date | None = None,
     to_date: date | None = None,
     limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0, le=1000000),
     db: Session = Depends(get_db),
     user: models.User = Depends(require_permission("hr", "attendance_anomalies", "view", "tenant")),
 ):
@@ -351,7 +352,8 @@ def list_attendance_anomalies(
     rows = query.order_by(
         models.HRAttendanceAnomaly.work_date.desc(),
         models.HRAttendanceAnomaly.created_at.desc(),
-    ).limit(limit).all()
+        models.HRAttendanceAnomaly.id.desc(),
+    ).all()
 
     scope_cache: dict[date, set[str] | None] = {}
     visible = []
@@ -366,7 +368,7 @@ def list_attendance_anomalies(
             visible.append(_anomaly_output(db, anomaly))
     if employee_id and rows and not visible:
         raise HTTPException(status_code=403, detail="Employee is outside your configured attendance access scope")
-    return visible
+    return visible[offset:offset + limit]
 
 
 @router.post("/anomalies/{anomaly_id}/resolve")
@@ -508,6 +510,7 @@ def list_attendance_events(
     from_date: date | None = None,
     to_date: date | None = None,
     limit: int = Query(default=500, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0, le=1000000),
     db: Session = Depends(get_db),
     user: models.User = Depends(require_permission("hr", "attendance", "view", "tenant")),
 ):
@@ -521,7 +524,8 @@ def list_attendance_events(
     rows = query.order_by(
         models.HRAttendanceEvent.work_date.desc(),
         models.HRAttendanceEvent.occurred_at_utc.desc(),
-    ).limit(limit).all()
+        models.HRAttendanceEvent.id.desc(),
+    ).all()
 
     scope_cache: dict[date, set[str] | None] = {}
     visible = []
@@ -536,7 +540,7 @@ def list_attendance_events(
             visible.append(_event_output(row))
     if employee_id and not visible and rows:
         raise HTTPException(status_code=403, detail="Employee is outside your configured attendance access scope")
-    return visible
+    return visible[offset:offset + limit]
 
 
 @router.post("/events")
