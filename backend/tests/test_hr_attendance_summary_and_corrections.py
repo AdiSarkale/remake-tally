@@ -309,3 +309,72 @@ def test_roster_route_paginates_after_effective_employee_scope(monkeypatch):
         db=Db(), user=user,
     )
     assert [row["employee_id"] for row in result] == ["visible"]
+
+
+def test_event_anomaly_correction_and_overtime_pages_are_scope_safe(monkeypatch):
+    from types import SimpleNamespace
+    from app.api.routes import hr_attendance_events as event_route
+    from app.api.routes import hr_attendance_summary as correction_route
+    from app.api.routes import hr_overtime as overtime_route
+
+    user = SimpleNamespace(username="scope-pager")
+    work_date = date(2026, 11, 10)
+
+    def rows(prefix):
+        return [
+            SimpleNamespace(id=prefix + "-hidden", employee_id="hidden", work_date=work_date, status="open", requested_at=datetime(2026, 11, 12, tzinfo=timezone.utc), created_at=datetime(2026, 11, 12, tzinfo=timezone.utc), occurred_at_utc=datetime(2026, 11, 12, tzinfo=timezone.utc), event_type="punch_in", source_type="test"),
+            SimpleNamespace(id=prefix + "-visible-a", employee_id="visible-a", work_date=work_date, status="open", requested_at=datetime(2026, 11, 11, tzinfo=timezone.utc), created_at=datetime(2026, 11, 11, tzinfo=timezone.utc), occurred_at_utc=datetime(2026, 11, 11, tzinfo=timezone.utc), event_type="punch_in", source_type="test"),
+            SimpleNamespace(id=prefix + "-visible-b", employee_id="visible-b", work_date=work_date, status="open", requested_at=datetime(2026, 11, 10, tzinfo=timezone.utc), created_at=datetime(2026, 11, 10, tzinfo=timezone.utc), occurred_at_utc=datetime(2026, 11, 10, tzinfo=timezone.utc), event_type="punch_out", source_type="test"),
+        ]
+
+    class Query:
+        def __init__(self, data):
+            self.data = data
+
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def all(self):
+            return self.data
+
+    class Db:
+        def __init__(self, data):
+            self.data = data
+
+        def query(self, _model):
+            return Query(self.data)
+
+    scoped = {"visible-a", "visible-b"}
+    monkeypatch.setattr(event_route, "employee_scope_ids", lambda *_args, **_kwargs: scoped)
+    monkeypatch.setattr(event_route, "_event_output", lambda row: {"id": row.id, "employee_id": row.employee_id})
+    event_result = event_route.list_attendance_events(
+        employee_id=None, from_date=work_date, to_date=work_date,
+        limit=1, offset=1, db=Db(rows("event")), user=user,
+    )
+    assert event_result == [{"id": "event-visible-b", "employee_id": "visible-b"}]
+
+    monkeypatch.setattr(event_route, "_anomaly_output", lambda _db, row: {"id": row.id, "employee_id": row.employee_id})
+    anomaly_result = event_route.list_attendance_anomalies(
+        status=None, employee_id=None, from_date=work_date, to_date=work_date,
+        limit=1, offset=1, db=Db(rows("anomaly")), user=user,
+    )
+    assert anomaly_result == [{"id": "anomaly-visible-b", "employee_id": "visible-b"}]
+
+    monkeypatch.setattr(correction_route, "_correction_scope", lambda *_args, **_kwargs: scoped)
+    monkeypatch.setattr(correction_route, "_correction_output", lambda row: {"id": row.id, "employee_id": row.employee_id})
+    correction_result = correction_route.list_attendance_corrections(
+        status=None, employee_id=None, from_date=work_date, to_date=work_date,
+        limit=1, offset=1, db=Db(rows("correction")), user=user,
+    )
+    assert correction_result == [{"id": "correction-visible-b", "employee_id": "visible-b"}]
+
+    monkeypatch.setattr(overtime_route, "employee_scope_ids", lambda *_args, **_kwargs: scoped)
+    monkeypatch.setattr(overtime_route, "out", lambda row: {"id": row.id, "employee_id": row.employee_id})
+    overtime_result = overtime_route.listing(
+        from_date=work_date, to_date=work_date, employee_id=None, status=None,
+        limit=1, offset=1, db=Db(rows("overtime")), u=user,
+    )
+    assert overtime_result == [{"id": "overtime-visible-b", "employee_id": "visible-b"}]
