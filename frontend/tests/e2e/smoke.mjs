@@ -198,6 +198,7 @@ try {
     await page.getByRole("button", { name: "Monthly report", exact: true }).click();
     const monthlySection = page.getByRole("heading", { name: "Monthly attendance report", exact: true }).locator("xpath=ancestor::section[1]");
     await monthlySection.getByText("Showing 1–25 of 30", { exact: true }).waitFor();
+    await monthlySection.getByRole("button", { name: "Export monthly CSV", exact: true }).waitFor();
     const monthlyDownload = page.waitForEvent("download");
     await monthlySection.getByRole("button", { name: "Export monthly CSV", exact: true }).click();
     assert.match((await monthlyDownload).suggestedFilename(), /attendance-monthly/);
