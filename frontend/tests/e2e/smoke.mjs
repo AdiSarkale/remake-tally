@@ -229,7 +229,8 @@ try {
     await page.getByRole("heading", { name: "Supervisor / team attendance overview", exact: true }).waitFor();
     assert.match(await page.locator("body").innerText(), /Open anomalies\s*1/);
     assert.match(await page.locator("body").innerText(), /Pending corrections\s*1/);
-    await page.getByText("anomaly-e2e", { exact: false }).waitFor().catch(() => {});
+    await page.getByText("late_arrival", { exact: false }).waitFor();
+    await page.getByText("Missing punch-in test", { exact: false }).waitFor();
     await context.close();
   }
 
