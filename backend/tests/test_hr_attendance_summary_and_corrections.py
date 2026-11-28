@@ -223,6 +223,9 @@ def test_attendance_summary_route_applies_offset_after_employee_scope(monkeypatc
         def filter(self, *_args, **_kwargs):
             return self
 
+        def filter_by(self, *_args, **_kwargs):
+            return self
+
         def order_by(self, *_args):
             return self
 
