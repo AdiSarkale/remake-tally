@@ -1729,3 +1729,80 @@ def test_shift_roster_read_list_is_tenant_isolated(isolated_tenants):
     assert rows_b.status_code == 200, rows_b.text
     assert [row["employee_id"] for row in rows_a.json()] == ["roster-read-isolation-a"]
     assert [row["employee_id"] for row in rows_b.json()] == ["roster-read-isolation-b"]
+
+
+def test_hr_p0_11_live_api_pagination_and_tenant_scope(isolated_tenants):
+    """Real FastAPI requests validate paginated roster/summary reads, not mock routes."""
+    work_date = date(2026, 11, 10)
+    for Session, suffix in (
+        (isolated_tenants["sessions"][0], "a"),
+        (isolated_tenants["sessions"][1], "b"),
+    ):
+        tenant = Session()
+        if suffix == "a":
+            tenant.add(models.RolePermissionGrant(
+                role="Admin", module="hr", feature="shift_rosters", action="read",
+                data_scope="tenant", allowed=True, updated_by="test",
+            ))
+            employee_ids = [f"p011-{suffix}-1", f"p011-{suffix}-2"]
+            for index, employee_id in enumerate(employee_ids, start=1):
+                tenant.add(models.Employee(
+                    id=employee_id, emp_code=f"P011-{suffix.upper()}-{index}",
+                    name=f"P0.1-11 Employee {index}", joining_date=date(2026, 1, 1), active=True,
+                ))
+                fingerprint = f"{suffix}{index}" * 32
+                revision_id = f"p011-summary-revision-{suffix}-{index}"
+                tenant.add(models.HRAttendanceSummaryRevision(
+                    id=revision_id, employee_id=employee_id, work_date=work_date, revision=1,
+                    roster_entry_id=None, timezone_name="Asia/Kolkata", source_event_ids=[],
+                    first_punch_in_utc=None, last_punch_out_utc=None, elapsed_minutes=0,
+                    paired_break_minutes=0, classification="no_events", exception_codes=[],
+                    input_fingerprint=fingerprint, calculated_by="test",
+                ))
+                tenant.add(models.HRAttendanceDailySummary(
+                    id=f"p011-summary-{suffix}-{index}", employee_id=employee_id,
+                    work_date=work_date, current_revision=1, roster_entry_id=None,
+                    timezone_name="Asia/Kolkata", source_event_ids=[], first_punch_in_utc=None,
+                    last_punch_out_utc=None, elapsed_minutes=0, paired_break_minutes=0,
+                    classification="no_events", exception_codes=[], input_fingerprint=fingerprint,
+                    calculated_by="test",
+                ))
+                tenant.add(models.HRShiftRosterEntry(
+                    id=f"p011-roster-{suffix}-{index}", employee_id=employee_id,
+                    work_date=work_date, status="scheduled", shift_type_id=None,
+                    source_assignment_id=None, is_override=False, override_reason=None,
+                    branch_id=None, department_snapshot="Production", timezone_name="Asia/Kolkata",
+                    scheduled_start_at_utc=None, scheduled_end_at_utc=None,
+                    shift_code_snapshot="DAY", shift_name_snapshot="Day Shift",
+                    break_rules_snapshot=[], policy_version_id=None, created_by="test",
+                ))
+            tenant.commit()
+        tenant.close()
+
+    client = isolated_tenants["client"]
+    login = _login(client, "AA")
+    headers = {"Authorization": f"Bearer {login['access_token']}"}
+    roster_url = "/api/v1/hr/shift-rosters?from_date=2026-11-10&to_date=2026-11-10&limit=1"
+    summary_url = "/api/v1/hr/attendance/summaries?from_date=2026-11-10&to_date=2026-11-10&limit=1"
+
+    roster_page_1 = client.get(roster_url + "&offset=0", headers=headers)
+    roster_page_2 = client.get(roster_url + "&offset=1", headers=headers)
+    summary_page_1 = client.get(summary_url + "&offset=0", headers=headers)
+    summary_page_2 = client.get(summary_url + "&offset=1", headers=headers)
+    for response in (roster_page_1, roster_page_2, summary_page_1, summary_page_2):
+        assert response.status_code == 200, response.text
+        assert len(response.json()) == 1
+    assert roster_page_1.json()[0]["employee_id"] != roster_page_2.json()[0]["employee_id"]
+    assert summary_page_1.json()[0]["employee_id"] != summary_page_2.json()[0]["employee_id"]
+
+    roster_out_of_range = client.get(roster_url + "&offset=20", headers=headers)
+    summary_out_of_range = client.get(summary_url + "&offset=20", headers=headers)
+    assert roster_out_of_range.status_code == 200 and roster_out_of_range.json() == []
+    assert summary_out_of_range.status_code == 200 and summary_out_of_range.json() == []
+
+    company_b = _login(client, "BB")
+    b_headers = {"Authorization": f"Bearer {company_b['access_token']}"}
+    b_rosters = client.get(roster_url + "&offset=0", headers=b_headers)
+    b_summaries = client.get(summary_url + "&offset=0", headers=b_headers)
+    assert b_rosters.status_code == 200 and b_rosters.json() == []
+    assert b_summaries.status_code == 200 and b_summaries.json() == []
