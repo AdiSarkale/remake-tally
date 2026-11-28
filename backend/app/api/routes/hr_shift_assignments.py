@@ -164,7 +164,7 @@ def list_shift_assignments(
     branch_id: str | None = None,
     department: str | None = None,
     limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    offset: int = 0,
     db: Session = Depends(get_db),
     user: models.User = read_access,
 ):
