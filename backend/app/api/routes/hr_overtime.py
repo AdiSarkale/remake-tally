@@ -44,6 +44,7 @@ def calculate(p:Calc,db:Session=Depends(get_db),u:models.User=Depends(require_pe
 @router.get("")
 def listing(from_date:date|None=None,to_date:date|None=None,employee_id:str|None=None,status:str|None=None,limit:int=Query(300,ge=1,le=1000),offset:int=0,db:Session=Depends(get_db),u:models.User=Depends(require_permission("hr","overtime","view","tenant"))):
  if from_date and to_date and to_date<from_date:raise HTTPException(422,"to_date cannot be earlier than from_date")
+ if offset<0 or offset>1000000:raise HTTPException(422,"Overtime offset must be between 0 and 1000000")
  if from_date and to_date and (to_date-from_date).days+1>31:raise HTTPException(422,"Overtime query cannot exceed 31 calendar days")
  q=db.query(models.HROvertimeCandidate)
  if from_date:q=q.filter(models.HROvertimeCandidate.work_date>=from_date)
