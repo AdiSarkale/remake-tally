@@ -241,10 +241,9 @@ try {
     let rule = { id: "break-ui-lunch", shift_type_id: shift.id, code: "LUNCH", name: "Lunch break", sequence: 1, is_paid: false, planned_duration_minutes: 30, scheduled_start_time: "13:00", scheduled_end_time: "13:30", active: true };
     let assignments = [];
     let assignmentPayload = null;
-    const shiftScenarioRequests = [];
+    let breakRuleFixtureHits = 0;
     const { context, page } = await persona("HR", "shift-edit-e2e", async (route, url, path) => {
       const method = route.request().method();
-      shiftScenarioRequests.push(`${method} ${path}`);
       if (path === "/manufacturing/employees" && method === "GET") {
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([employee]) }); return true;
       }
@@ -252,6 +251,7 @@ try {
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([shift]) }); return true;
       }
       if (path === "/hr/shifts/shift-ui-day/break-rules" && method === "GET") {
+        breakRuleFixtureHits += 1;
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([rule]) }); return true;
       }
       if (path === "/hr/shifts/shift-ui-day" && method === "PUT") {
@@ -292,15 +292,13 @@ try {
     const shiftCatalog = page.getByRole("heading", { name: "Shift catalog", exact: true }).locator("xpath=ancestor::section[1]");
     const shiftBreakRuleSelector = shiftCatalog.getByRole("combobox");
     await shiftBreakRuleSelector.selectOption(shift.id);
-    try {
-      await page.getByText("Lunch break", { exact: true }).waitFor({ timeout: 8000 });
-    } catch (error) {
-      process.stderr.write("Shift/break-rule API requests observed:\\n" + shiftScenarioRequests.join("\\n") + "\\n");
-      process.stderr.write("Shift selector options/value: " + JSON.stringify(await shiftBreakRuleSelector.evaluate((el) => ({ value: el.value, options: Array.from(el.options).map((option) => ({ value: option.value, text: option.text })) }))) + "\\n");
-      throw error;
-    }
-    await page.getByRole("button", { name: "Edit", exact: true }).nth(1).click();
-    await page.getByLabel("name", { exact: true }).nth(1).fill("Lunch break updated");
+    // The break-rule card renders a combined text node (sequence, code, name, duration),
+    // so exact matching against just the name incorrectly times out despite correct data.
+    await shiftCatalog.getByText("Lunch break", { exact: false }).waitFor({ timeout: 8000 });
+    assert.equal(breakRuleFixtureHits, 1, "Break-rule API fixture must be served exactly once after selecting a shift");
+    await shiftCatalog.getByRole("button", { name: "Edit", exact: true }).nth(1).click();
+    const breakRuleForm = shiftCatalog.getByText("Add break rule", { exact: true }).locator("xpath=ancestor::div[contains(@class, 'rounded')][1]");
+    await breakRuleForm.getByLabel("name", { exact: true }).fill("Lunch break updated");
     await page.getByRole("button", { name: "Update break rule", exact: true }).click();
     await page.getByText("Lunch break updated", { exact: false }).waitFor();
     const assignmentSection = page.getByRole("heading", { name: "Create shift assignment", exact: true }).locator("xpath=ancestor::section[1]");
