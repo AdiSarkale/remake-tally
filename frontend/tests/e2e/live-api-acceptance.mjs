@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chromium, expect } from "playwright";
+import { chromium } from "playwright";
 
 const base = process.env.P0_11_LIVE_FRONTEND_URL || "http://127.0.0.1:5173";
 const browser = await chromium.launch({ headless: true });
@@ -34,7 +34,12 @@ try {
   assert.match(await page.locator("body").innerText(), /Complete days\s*1/);
   await page.getByRole("button", { name: "Monthly report", exact: true }).click();
   const monthlyExport = page.getByRole("button", { name: "Export monthly CSV", exact: true });
-  await expect(monthlyExport).toBeEnabled({ timeout: 15000 });
+  await monthlyExport.waitFor({ state: "visible", timeout: 15000 });
+  const enableDeadline = Date.now() + 15000;
+  while (!(await monthlyExport.isEnabled()) && Date.now() < enableDeadline) {
+    await page.waitForTimeout(250);
+  }
+  assert.equal(await monthlyExport.isEnabled(), true, "Monthly CSV export should become enabled");
   const monthlyDownload = page.waitForEvent("download");
   await monthlyExport.click();
   assert.match((await monthlyDownload).suggestedFilename(), /attendance-monthly/);
