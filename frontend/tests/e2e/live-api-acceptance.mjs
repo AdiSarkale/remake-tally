@@ -53,7 +53,7 @@ try {
   await page.getByRole("button", { name: "Edit", exact: true }).first().click();
   await page.getByLabel("name", { exact: true }).first().fill("Day Shift Live Updated");
   await page.getByRole("button", { name: "Update shift", exact: true }).click();
-  await page.getByText("DAY · Day Shift Live Updated", { exact: false }).waitFor({ state: "visible", timeout: 15000 });
+  await page.getByText("DAY · Day Shift Live Updated · 09:00:00–17:00:00 · Active", { exact: false }).waitFor({ state: "visible", timeout: 15000 });
   assert.match(await page.locator("body").innerText(), /DAY · Day Shift Live Updated/);
 
   await page.getByLabel("Shift", { exact: true }).nth(1).selectOption("p0-11-live-shift");
