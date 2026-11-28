@@ -19,7 +19,7 @@ try {
   await page.goto(base + "/hr");
   await page.getByRole("tab", { name: "Attendance & Shifts", exact: true }).click();
   await page.getByRole("tab", { name: "Roster", exact: true }).click();
-  await page.getByText("P011-001", { exact: false }).waitFor();
+  await page.getByRole("cell", { name: "P011-001", exact: false }).waitFor({ timeout: 15000 });
 
   await page.getByRole("tab", { name: "Attendance", exact: true }).click();
   await page.getByText("complete", { exact: false }).waitFor();
