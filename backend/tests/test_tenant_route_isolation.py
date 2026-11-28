@@ -1739,6 +1739,10 @@ def test_hr_p0_11_live_api_pagination_and_tenant_scope(isolated_tenants):
         (isolated_tenants["sessions"][1], "b"),
     ):
         tenant = Session()
+        tenant.add(models.RolePermissionGrant(
+            role="Admin", module="hr", feature="employees", action="read",
+            data_scope="tenant", allowed=True, updated_by="test",
+        ))
         if suffix == "a":
             tenant.add(models.RolePermissionGrant(
                 role="Admin", module="hr", feature="shift_rosters", action="read",
