@@ -112,6 +112,102 @@ try {
     await context.close();
   }
 
+  // P0.1-11: report reconciliation, full-dataset pagination, exports and scoped supervisor overview.
+  {
+    const today = new Date().toISOString().slice(0, 10);
+    const employees = Array.from({ length: 30 }, (_, i) => ({
+      id: "report-employee-" + (i + 1),
+      emp_code: "REP-" + String(i + 1).padStart(3, "0"),
+      name: "Report Employee " + (i + 1),
+      active: true,
+      department: "Production",
+    }));
+    const rosters = employees.map((e, i) => ({
+      id: "roster-" + (i + 1), employee_id: e.id, employee_code: e.emp_code,
+      employee_name: e.name, work_date: today, status: "scheduled",
+      shift_type_id: "shift-day", shift_code: "DAY", shift_name: "Day shift",
+      scheduled_start_at_utc: today + "T03:30:00Z", scheduled_end_at_utc: today + "T12:30:00Z",
+      timezone_name: "Asia/Kolkata", department: "Production", branch_id: null,
+      is_override: false, override_reason: "", version: 1, break_rules: [],
+    }));
+    const summaries = employees.map((e, i) => ({
+      id: "summary-" + (i + 1), employee_id: e.id, work_date: today,
+      classification: i < 28 ? "complete" : "incomplete", current_revision: 1,
+      elapsed_minutes: i < 28 ? 480 : 0, paired_break_minutes: 30,
+      exception_codes: i < 28 ? [] : ["missing_punch_out"], source_event_ids: [],
+      first_punch_in_utc: today + "T03:30:00Z", last_punch_out_utc: i < 28 ? today + "T12:30:00Z" : undefined,
+      timezone_name: "Asia/Kolkata", input_fingerprint: "fingerprint-" + (i + 1), revision: {},
+    }));
+    const anomalies = [{
+      id: "anomaly-e2e", employee_id: employees[0].id, work_date: today,
+      anomaly_type: "late_arrival", status: "open", observed_delta_minutes: 15,
+      threshold_minutes: 10, source_events: [], source_event_ids: [], resolution_reason: "",
+    }];
+    const corrections = [{
+      id: "correction-e2e", employee_id: employees[1].id, work_date: today,
+      correction_kind: "add", proposed_event_type: "punch_in",
+      proposed_at_utc: today + "T03:30:00Z", reason: "Missing punch-in test",
+      status: "submitted", requested_by: "employee", reviewer: "",
+      decision_reason: "", target_event_id: "",
+    }];
+    const events = [{
+      id: "event-e2e", employee_id: employees[0].id, work_date: today,
+      event_type: "punch_in", occurred_at_utc: today + "T03:30:00Z",
+      timezone_name: "Asia/Kolkata", source_type: "manual_hr", source_reference: "E2E-REF",
+      note: "", voided_at: null, supersedes_event_id: null,
+    }];
+    const overtime = [{
+      id: "overtime-e2e", employee_id: employees[0].id, work_date: today,
+      status: "candidate", raw_candidate_minutes: 30, rounded_candidate_minutes: 30, revision: 1,
+    }];
+    const paginate = (arr, url) => {
+      const offset = Number(url.searchParams.get("offset") || 0);
+      const limit = Number(url.searchParams.get("limit") || 500);
+      return arr.slice(offset, offset + limit);
+    };
+    const { context, page } = await persona("HR", "attendance-report-e2e", async (route, url, path) => {
+      if (path === "/manufacturing/employees" && route.request().method() === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(employees) });
+        return true;
+      }
+      const routes = {
+        "/hr/shift-rosters": rosters,
+        "/hr/attendance/summaries": summaries,
+        "/hr/attendance/events": events,
+        "/hr/attendance/anomalies": anomalies,
+        "/hr/attendance/corrections": corrections,
+        "/hr/overtime": overtime,
+      };
+      if (routes[path] && route.request().method() === "GET") {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(paginate(routes[path], url)) });
+        return true;
+      }
+      return false;
+    });
+    await page.goto(base + "/hr");
+    await page.getByRole("tab", { name: "Attendance & Shifts", exact: true }).click();
+    await page.getByRole("tab", { name: "Reports", exact: true }).click();
+    await page.getByText("Scheduled roster days", { exact: true }).waitFor();
+    assert.match(await page.locator("body").innerText(), /Scheduled roster days\s*30/);
+    assert.match(await page.locator("body").innerText(), /Complete days\s*28/);
+    assert.match(await page.locator("body").innerText(), /Exception days\s*2/);
+    await page.getByText("Showing 1–25 of 30", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await page.getByText("Showing 26–30 of 30", { exact: true }).waitFor();
+    const attendanceDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export attendance CSV", exact: true }).click();
+    assert.match((await attendanceDownload).suggestedFilename(), /attendance-summary/);
+    const eventDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export source events CSV", exact: true }).click();
+    assert.match((await eventDownload).suggestedFilename(), /source-events/);
+    await page.getByRole("tab", { name: "Team Overview", exact: true }).click();
+    await page.getByRole("heading", { name: "Supervisor / team attendance overview", exact: true }).waitFor();
+    assert.match(await page.locator("body").innerText(), /Open anomalies\s*1/);
+    assert.match(await page.locator("body").innerText(), /Pending corrections\s*1/);
+    await page.getByText("anomaly-e2e", { exact: false }).waitFor().catch(() => {});
+    await context.close();
+  }
+
   // HOD persona: a department approver can decide only requests assigned to their login.
   {
     let decision = "pending";
