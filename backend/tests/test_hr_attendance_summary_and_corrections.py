@@ -229,6 +229,12 @@ def test_attendance_summary_route_applies_offset_after_employee_scope(monkeypatc
         def all(self):
             return self.data
 
+        def first(self):
+            return self.data[0] if self.data else None
+
+        def yield_per(self, _size):
+            return iter(self.data)
+
     class Db:
         def query(self, model):
             return Query(rows if model is models.HRAttendanceDailySummary else [])
@@ -246,3 +252,60 @@ def test_attendance_summary_route_applies_offset_after_employee_scope(monkeypatc
         db=Db(), user=user,
     )
     assert result == [{"employee_id": "visible-b"}]
+
+
+def test_roster_route_paginates_after_effective_employee_scope(monkeypatch):
+    from types import SimpleNamespace
+    from app.api.routes import hr_shift_rosters as route
+
+    user = SimpleNamespace(username="scoped-supervisor")
+    rows = [
+        SimpleNamespace(
+            id="hidden-row", work_date=date(2026, 11, 12), employee_id="hidden",
+            status="scheduled", shift_type_id=None, source_assignment_id=None,
+            is_override=False, override_reason=None, version=1, branch_id=None,
+            department_snapshot=None, timezone_name="Asia/Kolkata",
+            scheduled_start_at_utc=None, scheduled_end_at_utc=None,
+            shift_code_snapshot="", shift_name_snapshot="", break_rules_snapshot=[],
+            created_by="system",
+        ),
+        SimpleNamespace(
+            id="visible-row", work_date=date(2026, 11, 11), employee_id="visible",
+            status="scheduled", shift_type_id=None, source_assignment_id=None,
+            is_override=False, override_reason=None, version=1, branch_id=None,
+            department_snapshot=None, timezone_name="Asia/Kolkata",
+            scheduled_start_at_utc=None, scheduled_end_at_utc=None,
+            shift_code_snapshot="", shift_name_snapshot="", break_rules_snapshot=[],
+            created_by="system",
+        ),
+    ]
+
+    class Query:
+        def __init__(self, data):
+            self.data = data
+
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def order_by(self, *_args):
+            return self
+
+        def yield_per(self, _size):
+            return iter(self.data)
+
+    class Db:
+        def query(self, _model):
+            return Query(rows)
+
+        def get(self, _model, employee_id):
+            return SimpleNamespace(emp_code=employee_id.upper(), name=employee_id)
+
+    monkeypatch.setattr(route, "employee_scope_ids", lambda _db, _user, _module, _feature, _action, as_of_date=None: (
+        {"visible"} if as_of_date == date(2026, 11, 11) else set()
+    ))
+    result = route.list_shift_rosters(
+        from_date=date(2026, 11, 10), to_date=date(2026, 11, 12),
+        employee_id=None, branch_id=None, department=None, limit=1, offset=0,
+        db=Db(), user=user,
+    )
+    assert [row["employee_id"] for row in result] == ["visible"]
