@@ -180,7 +180,8 @@ def list_shift_assignments(
     rows = query.order_by(
         models.HRShiftAssignment.valid_from.desc(),
         models.HRShiftAssignment.created_at.desc(),
-    ).offset(offset).limit(limit).all()
+        models.HRShiftAssignment.id.desc(),
+    ).all()
     visible = []
     for row in rows:
         try:
@@ -190,7 +191,7 @@ def list_shift_assignments(
                 continue
             raise
         visible.append(row)
-    return visible
+    return visible[offset:offset + limit]
 
 
 @router.post("", response_model=schemas.ShiftAssignmentOut, status_code=201)
