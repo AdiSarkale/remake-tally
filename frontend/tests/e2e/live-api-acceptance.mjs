@@ -56,8 +56,10 @@ try {
   await page.getByText("DAY · Day Shift Live Updated · 09:00:00–17:00:00 · Active", { exact: false }).waitFor({ state: "visible", timeout: 15000 });
   assert.match(await page.locator("body").innerText(), /DAY · Day Shift Live Updated/);
 
-  const shiftCatalog = page.getByRole("heading", { name: "Shift catalog", exact: true }).locator("xpath=..");
-  await shiftCatalog.getByLabel("Shift", { exact: true }).selectOption("p0-11-live-shift");
+  const shiftCatalog = page
+    .locator("section")
+    .filter({ has: page.getByRole("heading", { name: "Shift catalog", exact: true }) });
+  await shiftCatalog.locator("select").first().selectOption("p0-11-live-shift");
   await page.getByRole("button", { name: "Edit", exact: true }).nth(1).click();
   await page.getByLabel("name", { exact: true }).nth(1).fill("Lunch break Live Updated");
   await page.getByRole("button", { name: "Update break rule", exact: true }).click();
