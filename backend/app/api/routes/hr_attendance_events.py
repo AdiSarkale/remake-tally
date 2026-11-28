@@ -334,7 +334,7 @@ def list_attendance_anomalies(
     from_date: date | None = None,
     to_date: date | None = None,
     limit: int = Query(default=200, ge=1, le=500),
-    offset: int = Query(default=0, ge=0, le=1000000),
+    offset: int = 0,
     db: Session = Depends(get_db),
     user: models.User = Depends(require_permission("hr", "attendance_anomalies", "view", "tenant")),
 ):
