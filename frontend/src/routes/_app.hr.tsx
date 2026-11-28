@@ -146,7 +146,7 @@ function HrPage() {
           </>
         ) : null}
       </DetailSheet>
-      <BackendGap>Shift rosters and attendance are not part of HR Foundation v1 and remain unimplemented.</BackendGap>
+      <BackendGap>Attendance, shift rosters, reporting and supervisor visibility are available in the HR workspace.</BackendGap>
       </>}
     </div>
   );
