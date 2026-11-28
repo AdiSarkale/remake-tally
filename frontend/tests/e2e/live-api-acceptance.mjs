@@ -26,7 +26,7 @@ try {
   await page.getByRole("heading", { name: "Raw attendance events", exact: true }).waitFor();
 
   await page.getByRole("tab", { name: "Corrections", exact: true }).click();
-  await page.getByText("P0.1-11 Live Employee", { exact: false }).waitFor();
+  await page.getByText("p0-11-live-employee", { exact: false }).waitFor();
 
   await page.getByRole("tab", { name: "Reports", exact: true }).click();
   await page.getByRole("heading", { name: "Daily attendance report", exact: true }).waitFor();
