@@ -22,7 +22,7 @@ try {
   await page.getByRole("cell", { name: "P011-001", exact: false }).waitFor({ timeout: 15000 });
 
   await page.getByRole("tab", { name: "Attendance", exact: true }).click();
-  await page.getByText("complete", { exact: false }).waitFor();
+  await page.getByRole("cell", { name: "complete", exact: true }).waitFor();
   await page.getByRole("heading", { name: "Raw attendance events", exact: true }).waitFor();
 
   await page.getByRole("tab", { name: "Corrections", exact: true }).click();
