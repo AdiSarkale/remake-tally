@@ -158,6 +158,10 @@ def list_daily_attendance_summaries(
     db: Session = Depends(get_db),
     user: models.User = Depends(require_permission("hr", "attendance_summaries", "view", "tenant")),
 ):
+    if from_date and to_date and to_date < from_date:
+        raise HTTPException(status_code=422, detail="to_date cannot be earlier than from_date")
+    if from_date and to_date and (to_date - from_date).days + 1 > 31:
+        raise HTTPException(status_code=422, detail="Attendance summary query cannot exceed 31 calendar days")
     query = db.query(models.HRAttendanceDailySummary)
     if from_date:
         query = query.filter(models.HRAttendanceDailySummary.work_date >= from_date)
@@ -335,6 +339,10 @@ def list_attendance_corrections(
     db: Session = Depends(get_db),
     user: models.User = Depends(require_permission("hr", "attendance_corrections", "view", "tenant")),
 ):
+    if from_date and to_date and to_date < from_date:
+        raise HTTPException(status_code=422, detail="to_date cannot be earlier than from_date")
+    if from_date and to_date and (to_date - from_date).days + 1 > 31:
+        raise HTTPException(status_code=422, detail="Attendance correction query cannot exceed 31 calendar days")
     query = db.query(models.HRAttendanceCorrectionRequest)
     if status:
         query = query.filter(models.HRAttendanceCorrectionRequest.status == status)
