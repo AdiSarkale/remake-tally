@@ -104,21 +104,13 @@ def seed() -> None:
             sequence=1, is_paid=False, planned_duration_minutes=30,
             scheduled_start_time=time(13), scheduled_end_time=time(13, 30), active=True,
         ))
-    if db.get(models.HRShiftAssignment, "p0-11-live-assignment") is None:
-        db.add(models.HRShiftAssignment(
-            id="p0-11-live-assignment", scope_type="employee", employee_id=EMPLOYEE_ID,
-            branch_id="p0-11-live-branch", department=None, shift_type_id=SHIFT_ID,
-            weekdays=[0,1,2,3,4], valid_from=TODAY - timedelta(days=30),
-            valid_to=None, created_by="admin",
-        ))
-
     local_tz = ZoneInfo("Asia/Kolkata")
     start_utc = datetime.combine(TODAY, time(9), tzinfo=local_tz).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
     end_utc = datetime.combine(TODAY, time(17), tzinfo=local_tz).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
     if db.get(models.HRShiftRosterEntry, ROSTER_ID) is None:
         db.add(models.HRShiftRosterEntry(
             id=ROSTER_ID, employee_id=EMPLOYEE_ID, work_date=TODAY, status="scheduled",
-            shift_type_id=SHIFT_ID, source_assignment_id="p0-11-live-assignment",
+            shift_type_id=SHIFT_ID, source_assignment_id=None,
             is_override=False, override_reason="", branch_id="p0-11-live-branch",
             department_snapshot="Production", timezone_name="Asia/Kolkata",
             scheduled_start_at_utc=start_utc, scheduled_end_at_utc=end_utc,
