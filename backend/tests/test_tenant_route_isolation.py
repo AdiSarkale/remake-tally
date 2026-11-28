@@ -1789,7 +1789,7 @@ def test_hr_p0_11_live_api_pagination_and_tenant_scope(isolated_tenants):
                     shift_code_snapshot="DAY", shift_name_snapshot="Day Shift",
                     break_rules_snapshot=[], policy_version_id=None, created_by="test",
                 ))
-            tenant.commit()
+        tenant.commit()
         tenant.close()
 
     client = isolated_tenants["client"]
