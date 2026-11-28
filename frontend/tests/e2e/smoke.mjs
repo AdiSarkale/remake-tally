@@ -200,6 +200,18 @@ try {
     const eventDownload = page.waitForEvent("download");
     await page.getByRole("button", { name: "Export source events CSV", exact: true }).click();
     assert.match((await eventDownload).suggestedFilename(), /source-events/);
+    const shiftDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export shift CSV", exact: true }).click();
+    assert.match((await shiftDownload).suggestedFilename(), /attendance-by-shift/);
+    const overtimeDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export overtime CSV", exact: true }).click();
+    assert.match((await overtimeDownload).suggestedFilename(), /overtime-candidates/);
+    const anomalyDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export anomalies CSV", exact: true }).click();
+    assert.match((await anomalyDownload).suggestedFilename(), /attendance-anomalies/);
+    const correctionDownload = page.waitForEvent("download");
+    await page.getByRole("button", { name: "Export corrections CSV", exact: true }).click();
+    assert.match((await correctionDownload).suggestedFilename(), /attendance-corrections/);
     await page.getByRole("tab", { name: "Team Overview", exact: true }).click();
     await page.getByRole("heading", { name: "Supervisor / team attendance overview", exact: true }).waitFor();
     assert.match(await page.locator("body").innerText(), /Open anomalies\s*1/);
