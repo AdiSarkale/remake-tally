@@ -1745,6 +1745,11 @@ def test_hr_p0_11_live_api_pagination_and_tenant_scope(isolated_tenants):
                 data_scope="tenant", allowed=True, updated_by="test",
             ))
             employee_ids = [f"p011-{suffix}-1", f"p011-{suffix}-2"]
+            tenant.add(models.HRShiftType(
+                id=f"p011-shift-{suffix}", code="P011", name="P0.1-11 Test Shift",
+                start_time=time(9, 0), end_time=time(17, 0), end_day_offset=0,
+                active=True, created_by="test",
+            ))
             for index, employee_id in enumerate(employee_ids, start=1):
                 tenant.add(models.Employee(
                     id=employee_id, emp_code=f"P011-{suffix.upper()}-{index}",
@@ -1769,10 +1774,11 @@ def test_hr_p0_11_live_api_pagination_and_tenant_scope(isolated_tenants):
                 ))
                 tenant.add(models.HRShiftRosterEntry(
                     id=f"p011-roster-{suffix}-{index}", employee_id=employee_id,
-                    work_date=work_date, status="scheduled", shift_type_id=None,
+                    work_date=work_date, status="scheduled", shift_type_id=f"p011-shift-{suffix}",
                     source_assignment_id=None, is_override=False, override_reason=None,
                     branch_id=None, department_snapshot="Production", timezone_name="Asia/Kolkata",
-                    scheduled_start_at_utc=None, scheduled_end_at_utc=None,
+                    scheduled_start_at_utc=datetime(2026, 11, 10, 3, 30),
+                    scheduled_end_at_utc=datetime(2026, 11, 10, 11, 30),
                     shift_code_snapshot="DAY", shift_name_snapshot="Day Shift",
                     break_rules_snapshot=[], policy_version_id=None, created_by="test",
                 ))
